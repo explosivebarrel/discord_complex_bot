@@ -24,7 +24,7 @@ class AddAdminBody(BaseModel):
 
 
 def _guild_brief(guild: Any) -> dict[str, Any]:
-    return {"id": guild.id, "name": guild.name, "member_count": guild.member_count}
+    return {"id": str(guild.id), "name": guild.name, "member_count": guild.member_count}
 
 
 @router.get("/guilds")
@@ -49,10 +49,10 @@ async def get_settings(
     admins = await db.list_guild_admins(guild_id)
     guild = bot.get_guild(guild_id)
     return {
-        "guild": _guild_brief(guild) if guild else {"id": guild_id, "name": settings.name},
+        "guild": _guild_brief(guild) if guild else {"id": str(guild_id), "name": settings.name},
         "default_voice_channel_id": settings.default_voice_channel_id,
         "admin_role_ids": json.loads(settings.admin_role_ids),
-        "admins": admins,
+        "admins": [str(a) for a in admins],
     }
 
 
@@ -102,7 +102,7 @@ async def add_admin(
         actor_kind="web",
         details={"discord_id": body.discord_id},
     )
-    return {"admins": await db.list_guild_admins(guild_id)}
+    return {"admins": [str(a) for a in await db.list_guild_admins(guild_id)]}
 
 
 @router.delete("/guilds/{guild_id}/admins/{discord_id}")
@@ -123,4 +123,4 @@ async def remove_admin(
         actor_kind="web",
         details={"discord_id": discord_id},
     )
-    return {"admins": await db.list_guild_admins(guild_id)}
+    return {"admins": [str(a) for a in await db.list_guild_admins(guild_id)]}

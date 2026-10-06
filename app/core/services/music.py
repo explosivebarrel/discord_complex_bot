@@ -219,10 +219,10 @@ class MusicService:
             current["position"] = player.position
             current["paused"] = player.paused
         return {
-            "guild_id": guild_id,
+            "guild_id": str(guild_id),
             "guild_name": guild.name if guild else None,
             "connected": player is not None,
-            "channel_id": player.channel.id if player is not None and player.channel else None,
+            "channel_id": str(player.channel.id) if player is not None and player.channel else None,
             "channel_name": player.channel.name if player is not None and player.channel else None,
             "volume": player.volume if player is not None else 100,
             "playing": bool(player is not None and player.playing),

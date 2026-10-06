@@ -6,7 +6,7 @@ import { Topbar } from "../components/Topbar";
 
 export function AdminPage() {
   const { guildId } = useParams<{ guildId: string }>();
-  const gid = Number(guildId);
+  const gid = guildId ?? "";
   const { me, loading } = useAuth();
   const [settings, setSettings] = useState<GuildSettings | null>(null);
   const [error, setError] = useState<string | null>(null);

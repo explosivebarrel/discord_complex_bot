@@ -11,7 +11,7 @@ function fmt(ms: number): string {
 
 export function PlayerPage() {
   const { guildId } = useParams<{ guildId: string }>();
-  const gid = Number(guildId);
+  const gid = guildId ?? "";
   const { me, loading } = useAuth();
   const [state, setState] = useState<PlayerState | null>(null);
   const [channels, setChannels] = useState<VoiceChannel[]>([]);

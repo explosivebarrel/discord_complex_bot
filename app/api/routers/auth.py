@@ -18,7 +18,7 @@ from app.api.deps import (
     revoke_session,
 )
 from app.api.discord_oauth import DiscordAPIError, DiscordOAuthClient
-from app.api.sessions import fetch_guilds_with_retry
+from app.api.sessions import SessionExpiredError, fetch_guilds_with_retry
 from app.core.config import Config
 from app.core.db import Database
 
@@ -102,7 +102,7 @@ async def me(user: CurrentUser = Depends(get_current_user)) -> dict[str, Any]:
         else f"https://cdn.discordapp.com/embed/avatars/{int(user.discord_id) % 6}.png"
     )
     return {
-        "discord_id": user.discord_id,
+        "discord_id": str(user.discord_id),
         "username": user.username,
         "global_name": user.global_name,
         "avatar_url": avatar_url,
@@ -118,7 +118,11 @@ async def my_guilds(
     bot: ComplexBot = Depends(get_bot),
 ) -> list[dict[str, Any]]:
     """Return the guilds that have the user and the bot. Mark the guilds that the user can manage."""
-    user_guilds = await fetch_guilds_with_retry(oauth, db, user)
+    try:
+        user_guilds = await fetch_guilds_with_retry(oauth, db, user)
+    except SessionExpiredError as exc:
+        # The SPA starts a new login when it sees 401.
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     bot_guild_ids = {g.id for g in bot.guilds}
     result = []
     for g in user_guilds:
@@ -130,7 +134,7 @@ async def my_guilds(
         is_admin = is_owner or bool(permissions & 0x20) or gid in await db.list_guild_admins(gid)
         result.append(
             {
-                "id": gid,
+                "id": str(gid),
                 "name": g["name"],
                 "icon": g.get("icon"),
                 "is_admin": is_admin,

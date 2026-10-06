@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class SessionExpiredError(Exception):
+    """The Discord tokens of the web session are no longer valid."""
+
+
 async def _persist_tokens(db: Database, user: CurrentUser, token_payload: dict[str, Any]) -> None:
     from app.core.db import WebSession
 
@@ -28,8 +32,11 @@ async def _persist_tokens(db: Database, user: CurrentUser, token_payload: dict[s
 async def refresh_session_token(oauth: DiscordOAuthClient, db: Database, user: CurrentUser) -> str:
     """Refresh the user's Discord access token. Save the new token on the session row."""
     if not user.refresh_token:
-        raise DiscordAPIError("Session has no refresh token")
-    payload = await oauth.refresh_token(user.refresh_token)
+        raise SessionExpiredError("The session has no refresh token.")
+    try:
+        payload = await oauth.refresh_token(user.refresh_token)
+    except DiscordAPIError as exc:
+        raise SessionExpiredError("Discord rejected the refresh token. Log in again.") from exc
     user.access_token = payload["access_token"]
     user.refresh_token = payload.get("refresh_token", user.refresh_token)
     await _persist_tokens(db, user, payload)

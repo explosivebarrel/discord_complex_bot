@@ -7,7 +7,7 @@ export interface Me {
 }
 
 export interface GuildBrief {
-  id: number;
+  id: string;
   name: string;
   icon: string | null;
   is_admin: boolean;
@@ -27,10 +27,10 @@ export interface TrackInfo {
 }
 
 export interface PlayerState {
-  guild_id: number;
+  guild_id: string;
   guild_name: string | null;
   connected: boolean;
-  channel_id: number | null;
+  channel_id: string | null;
   channel_name: string | null;
   volume: number;
   playing: boolean;
@@ -39,16 +39,16 @@ export interface PlayerState {
 }
 
 export interface VoiceChannel {
-  id: number;
+  id: string;
   name: string;
   user_limit: number;
 }
 
 export interface GuildSettings {
-  guild: { id: number; name: string; member_count?: number };
+  guild: { id: string; name: string; member_count?: number };
   default_voice_channel_id: number | null;
   admin_role_ids: number[];
-  admins: number[];
+  admins: string[];
 }
 
 async function handle<T>(resp: Response): Promise<T> {
@@ -70,71 +70,71 @@ export const api = {
 
   myGuilds: () => fetch("/api/auth/guilds").then((r) => handle<GuildBrief[]>(r)),
 
-  playerState: (guildId: number) =>
+  playerState: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/state`).then((r) => handle<PlayerState>(r)),
 
-  voiceChannels: (guildId: number) =>
+  voiceChannels: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/channels`).then((r) => handle<VoiceChannel[]>(r)),
 
-  join: (guildId: number, channelId: number) =>
+  join: (guildId: string, channelId: string) =>
     fetch(`/api/guilds/${guildId}/player/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel_id: channelId }),
     }).then((r) => handle<{ connected: boolean }>(r)),
 
-  leave: (guildId: number) =>
+  leave: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/leave`, { method: "POST" }).then((r) => handle<unknown>(r)),
 
-  search: (guildId: number, q: string) =>
+  search: (guildId: string, q: string) =>
     fetch(`/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}`).then((r) =>
       handle<TrackInfo[]>(r),
     ),
 
-  enqueue: (guildId: number, query: string) =>
+  enqueue: (guildId: string, query: string) =>
     fetch(`/api/guilds/${guildId}/player/enqueue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
     }).then((r) => handle<{ queued: number; title: string; now_playing: boolean }>(r)),
 
-  simpleAction: (guildId: number, action: "pause" | "resume" | "skip" | "stop") =>
+  simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop") =>
     fetch(`/api/guilds/${guildId}/player/${action}`, { method: "POST" }).then((r) => handle<unknown>(r)),
 
-  volume: (guildId: number, volume: number) =>
+  volume: (guildId: string, volume: number) =>
     fetch(`/api/guilds/${guildId}/player/volume`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ volume }),
     }).then((r) => handle<{ volume: number }>(r)),
 
-  seek: (guildId: number, position: number) =>
+  seek: (guildId: string, position: number) =>
     fetch(`/api/guilds/${guildId}/player/seek`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ position }),
     }).then((r) => handle<unknown>(r)),
 
-  guildSettings: (guildId: number) =>
+  guildSettings: (guildId: string) =>
     fetch(`/api/admin/guilds/${guildId}/settings`).then((r) => handle<GuildSettings>(r)),
 
-  updateGuildSettings: (guildId: number, defaultVoiceChannelId: number | null) =>
+  updateGuildSettings: (guildId: string, defaultVoiceChannelId: number | null) =>
     fetch(`/api/admin/guilds/${guildId}/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ default_voice_channel_id: defaultVoiceChannelId }),
     }).then((r) => handle<GuildSettings>(r)),
 
-  addGuildAdmin: (guildId: number, discordId: string) =>
+  addGuildAdmin: (guildId: string, discordId: string) =>
     fetch(`/api/admin/guilds/${guildId}/admins`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ discord_id: Number(discordId) }),
-    }).then((r) => handle<{ admins: number[] }>(r)),
+      body: JSON.stringify({ discord_id: discordId }),
+    }).then((r) => handle<{ admins: string[] }>(r)),
 
-  removeGuildAdmin: (guildId: number, discordId: number) =>
+  removeGuildAdmin: (guildId: string, discordId: string) =>
     fetch(`/api/admin/guilds/${guildId}/admins/${discordId}`, { method: "DELETE" }).then((r) =>
-      handle<{ admins: number[] }>(r),
+      handle<{ admins: string[] }>(r),
     ),
 
   allBotGuilds: () => fetch("/api/admin/guilds").then((r) => handle<GuildBrief[]>(r)),

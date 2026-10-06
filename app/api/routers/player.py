@@ -49,7 +49,7 @@ async def voice_channels(
     guild = bot.get_guild(guild_id)
     if guild is None:
         raise HTTPException(status_code=404, detail="Bot is not on this server")
-    return [{"id": ch.id, "name": ch.name, "user_limit": ch.user_limit} for ch in guild.voice_channels]
+    return [{"id": str(ch.id), "name": ch.name, "user_limit": ch.user_limit} for ch in guild.voice_channels]
 
 
 @router.post("/join")

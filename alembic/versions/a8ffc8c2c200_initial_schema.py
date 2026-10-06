@@ -28,7 +28,7 @@ def upgrade() -> None:
     sa.Column('actor_kind', sa.String(length=16), nullable=False),
     sa.Column('action', sa.String(length=64), nullable=False),
     sa.Column('details', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('audit_log', schema=None) as batch_op:
@@ -39,7 +39,7 @@ def upgrade() -> None:
     sa.Column('guild_id', sa.BigInteger(), nullable=False),
     sa.Column('discord_id', sa.BigInteger(), nullable=False),
     sa.Column('added_by', sa.BigInteger(), nullable=True),
-    sa.Column('added_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('added_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('guild_id', 'discord_id')
     )
     op.create_table('guild_settings',
@@ -47,8 +47,8 @@ def upgrade() -> None:
     sa.Column('name', sa.String(length=128), nullable=False),
     sa.Column('default_voice_channel_id', sa.BigInteger(), nullable=True),
     sa.Column('admin_role_ids', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('guild_id')
     )
     op.create_table('web_sessions',
@@ -59,8 +59,8 @@ def upgrade() -> None:
     sa.Column('avatar', sa.String(length=256), nullable=True),
     sa.Column('access_token', sa.String(length=256), nullable=False),
     sa.Column('refresh_token', sa.String(length=256), nullable=False),
-    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('expires_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('revoked', sa.Boolean(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )

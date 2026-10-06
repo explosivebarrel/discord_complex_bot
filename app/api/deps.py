@@ -10,6 +10,7 @@ from sqlalchemy import delete
 
 from app.core.config import Config
 from app.core.db import Database, WebSession
+from app.core.db.models import utcnow
 
 if TYPE_CHECKING:
     from app.api.discord_oauth import DiscordOAuthClient
@@ -59,7 +60,7 @@ async def load_session(request: Request, db: Database = Depends(get_db)) -> WebS
         row = await db_session.get(WebSession, hash_token(token))
     if row is None or row.revoked:
         return None
-    if row.expires_at is not None and row.expires_at < dt.datetime.now(dt.timezone.utc):
+    if row.expires_at is not None and row.expires_at < utcnow():
         return None
     return row
 
@@ -77,7 +78,7 @@ async def create_session(db: Database, token_payload: dict, user: dict) -> str:
                 avatar=user.get("avatar"),
                 access_token=token_payload["access_token"],
                 refresh_token=token_payload.get("refresh_token", ""),
-                expires_at=dt.datetime.now(dt.timezone.utc) + SESSION_TTL,
+                expires_at=utcnow() + SESSION_TTL,
             )
         )
         await db_session.commit()
@@ -95,9 +96,7 @@ async def revoke_session(db: Database, request: Request) -> None:
 
 async def cleanup_expired_sessions(db: Database) -> None:
     async with db.session_factory() as db_session:
-        await db_session.execute(
-            delete(WebSession).where(WebSession.expires_at < dt.datetime.now(dt.timezone.utc))
-        )
+        await db_session.execute(delete(WebSession).where(WebSession.expires_at < utcnow()))
         await db_session.commit()
 
 
