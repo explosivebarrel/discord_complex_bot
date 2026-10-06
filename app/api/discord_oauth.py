@@ -18,7 +18,7 @@ class DiscordAPIError(Exception):
 
 
 class DiscordOAuthClient:
-    """Discord OAuth2 + REST helper (Authorization Code flow, token refresh)."""
+    """Helper for the Discord OAuth2 Authorization Code flow and for Discord REST requests."""
 
     def __init__(self, config: Config) -> None:
         self.config = config

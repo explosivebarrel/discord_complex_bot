@@ -26,7 +26,7 @@ async def _persist_tokens(db: Database, user: CurrentUser, token_payload: dict[s
 
 
 async def refresh_session_token(oauth: DiscordOAuthClient, db: Database, user: CurrentUser) -> str:
-    """Refresh the user's Discord access token and persist it on the session row."""
+    """Refresh the user's Discord access token. Save the new token on the session row."""
     if not user.refresh_token:
         raise DiscordAPIError("Session has no refresh token")
     payload = await oauth.refresh_token(user.refresh_token)
@@ -37,7 +37,7 @@ async def refresh_session_token(oauth: DiscordOAuthClient, db: Database, user: C
 
 
 async def fetch_guilds_with_retry(oauth: DiscordOAuthClient, db: Database, user: CurrentUser) -> list[dict]:
-    """GET /users/@me/guilds, refreshing the token once on 401."""
+    """Get /users/@me/guilds. If the API rejects the token, refresh the token one time and try again."""
     try:
         return await oauth.fetch_guilds(user.access_token)
     except DiscordAPIError:

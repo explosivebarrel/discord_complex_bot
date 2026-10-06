@@ -37,11 +37,11 @@ class QueueItem:
 
 
 class MusicServiceError(Exception):
-    """User-facing music control error."""
+    """Error in music control. Show the message text to the user."""
 
 
 class MusicService:
-    """Single source of truth for music state, shared by slash commands and the web API."""
+    """Holds the music state for all guilds. The slash commands and the web API use this service."""
 
     def __init__(self, bot: discord.Client, db: Database, config: Config) -> None:
         self.bot = bot
@@ -126,7 +126,10 @@ class MusicService:
     async def enqueue(
         self, guild_id: int, query: str, requester_id: int, requester_name: str = ""
     ) -> dict[str, Any]:
-        """Search `query`, add the first match (or whole playlist) to the queue and ensure playback."""
+        """Search for `query`. Add the first track or a full playlist to the queue.
+
+        Start playback if the player is idle.
+        """
         result = await wavelink.Playable.search(query)
         if isinstance(result, wavelink.Playlist):
             tracks = list(result.tracks)
@@ -174,7 +177,7 @@ class MusicService:
         player = self._require_player(guild_id)
         if not player.playing:
             return False
-        await player.stop()  # TrackEnd listener will start the next queued item
+        await player.stop()  # The TrackEnd listener starts the next queued item.
         await self.db.audit("music.skip", guild_id=guild_id, actor_id=requester_id)
         return True
 

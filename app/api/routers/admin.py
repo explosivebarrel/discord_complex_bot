@@ -32,7 +32,7 @@ async def all_bot_guilds(
     user: CurrentUser = Depends(get_current_user),
     bot: ComplexBot = Depends(get_bot),
 ) -> list[dict[str, Any]]:
-    """Super-admin only: every guild the bot is on."""
+    """Return all guilds that the bot is on. Super-admin only."""
     if not user.is_superadmin:
         raise HTTPException(status_code=403, detail="Super-admin only")
     return [_guild_brief(g) for g in bot.guilds]

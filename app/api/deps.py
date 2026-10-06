@@ -65,7 +65,7 @@ async def load_session(request: Request, db: Database = Depends(get_db)) -> WebS
 
 
 async def create_session(db: Database, token_payload: dict, user: dict) -> str:
-    """Persist a web session and return the raw cookie token."""
+    """Write a web session record to the database. Return the raw cookie token."""
     token = secrets.token_urlsafe(32)
     async with db.session_factory() as db_session:
         db_session.add(
@@ -133,7 +133,7 @@ async def is_guild_admin(db: Database, user: CurrentUser, guild_id: int) -> bool
 async def _is_guild_member(
     user: CurrentUser, oauth: DiscordOAuthClient, bot: ComplexBot, db: Database, guild_id: int
 ) -> bool:
-    """Check via fresh Discord API call; falls back to the bot-side member cache."""
+    """Check membership with a request to the Discord API. If the request fails, use the bot member cache."""
     try:
         from app.api.sessions import fetch_guilds_with_retry
 

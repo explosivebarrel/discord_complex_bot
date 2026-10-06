@@ -16,7 +16,7 @@ class Database:
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
 
     async def create_all(self) -> None:
-        # dev convenience; production uses alembic migrations
+        # Helper for development. In production, use the Alembic migrations.
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 

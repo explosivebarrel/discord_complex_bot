@@ -37,7 +37,7 @@ class GuildAdmin(Base):
 class WebSession(Base):
     __tablename__ = "web_sessions"
 
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 of cookie token
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # SHA-256 hash of the cookie token
     discord_id: Mapped[int] = mapped_column(BigInteger, index=True)
     username: Mapped[str] = mapped_column(String(128), default="")
     global_name: Mapped[str] = mapped_column(String(128), default="")
@@ -54,7 +54,7 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     guild_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
-    actor_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # discord user id
+    actor_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # Discord user ID
     actor_kind: Mapped[str] = mapped_column(String(16), default="user")  # user | web | system
     action: Mapped[str] = mapped_column(String(64))
     details: Mapped[str] = mapped_column(Text, default="{}")  # JSON

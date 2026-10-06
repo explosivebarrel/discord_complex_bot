@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ModerationCog(commands.Cog):
-    """Basic moderation stub; extended per-guild management arrives in later iterations."""
+    """Basic moderation commands. More moderation functions come in later versions."""
 
     def __init__(self, bot: ComplexBot) -> None:
         self.bot = bot

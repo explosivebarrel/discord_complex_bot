@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class MusicCog(commands.Cog):
-    """Slash commands for music playback (web panel reuses MusicService directly)."""
+    """Slash commands for music. The web panel uses MusicService directly."""
 
     def __init__(self, bot: ComplexBot) -> None:
         self.bot = bot
@@ -138,7 +138,7 @@ class MusicCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_inactive_player(self, player: wavelink.Player) -> None:
-        # default inactivity timeout (180s): leave voice to free resources
+        # The node dispatches this event after 300 seconds without activity. Leave the voice channel.
         await player.disconnect()
 
 

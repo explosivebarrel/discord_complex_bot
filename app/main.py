@@ -15,7 +15,7 @@ from app.api.deps import cleanup_expired_sessions
 from app.api.discord_oauth import DiscordOAuthClient
 from app.api.routers import admin, auth, player
 from app.bot.client import ComplexBot
-from app.core.config import load_config, setup_logging
+from app.core.config import load_config, setup_logging, validate_config
 from app.core.db import Database
 from app.core.services.music import MusicService
 
@@ -27,11 +27,20 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 def create_app() -> FastAPI:
     config = load_config()
     setup_logging(config.log_level)
+    validate_config(config)
 
     db = Database(config)
-    music = MusicService(None, db, config)  # bot is wired right after creation
+    music = MusicService(None, db, config)  # The code below sets music.bot to the bot object.
     bot = ComplexBot(config, db, music)
     music.bot = bot
+
+    async def _run_bot() -> None:
+        try:
+            await bot.start(config.discord_bot_token)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("The Discord bot stopped with an error")
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -40,7 +49,7 @@ def create_app() -> FastAPI:
         app.state.music = music
         app.state.bot = bot
         app.state.oauth = DiscordOAuthClient(config)
-        bot_task = asyncio.create_task(bot.start(config.discord_bot_token), name="discord-bot")
+        bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
         cleanup_task = asyncio.create_task(_session_cleanup_loop(db), name="session-cleanup")
         try:
             yield
@@ -89,7 +98,7 @@ async def _session_cleanup_loop(db: Database) -> None:
         await asyncio.sleep(3600)
         try:
             await cleanup_expired_sessions(db)
-        except Exception:  # noqa: BLE001 - background maintenance must not kill the loop
+        except Exception:  # noqa: BLE001 - an error here must not stop the loop
             logger.exception("Session cleanup failed")
 
 

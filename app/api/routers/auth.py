@@ -35,6 +35,13 @@ def _session_cookie_kwargs(config: Config) -> dict[str, Any]:
 
 @router.get("/login")
 async def login(request: Request, oauth: DiscordOAuthClient = Depends(get_oauth)) -> RedirectResponse:
+    config = request.app.state.config
+    if not config.discord_client_id or not config.discord_client_secret:
+        # Do not send the user to Discord with an empty client_id.
+        raise HTTPException(
+            status_code=503,
+            detail="OAuth2 is not configured. Set DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET in .env.",
+        )
     state = secrets.token_urlsafe(24)
     response = RedirectResponse(oauth.authorize_url(state), status_code=302)
     response.set_cookie(
@@ -43,7 +50,7 @@ async def login(request: Request, oauth: DiscordOAuthClient = Depends(get_oauth)
         max_age=600,
         httponly=True,
         samesite="lax",
-        secure=request.app.state.config.base_url.startswith("https"),
+        secure=config.base_url.startswith("https"),
     )
     return response
 
@@ -110,7 +117,7 @@ async def my_guilds(
     oauth: DiscordOAuthClient = Depends(get_oauth),
     bot: ComplexBot = Depends(get_bot),
 ) -> list[dict[str, Any]]:
-    """Guilds where both the user and the bot are present, with the user's access level."""
+    """Return the guilds that have the user and the bot. Mark the guilds that the user can manage."""
     user_guilds = await fetch_guilds_with_retry(oauth, db, user)
     bot_guild_ids = {g.id for g in bot.guilds}
     result = []

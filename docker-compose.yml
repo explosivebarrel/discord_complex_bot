@@ -19,9 +19,9 @@ services:
       - lavalink
     env_file: .env
     environment:
-      # inside compose the bot reaches Lavalink by service name
+      # In docker-compose the bot uses the lavalink service name.
       LAVALINK_HOST: lavalink
-      # keep the SQLite file on the named volume, not inside the container
+      # Keep the SQLite file on the named volume. Do not put it inside the container.
       DATABASE_URL: sqlite+aiosqlite:////data/bot.db
     volumes:
       - bot-data:/data

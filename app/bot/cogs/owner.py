@@ -18,7 +18,7 @@ def is_superadmin(bot: ComplexBot, user_id: int) -> bool:
 
 
 class OwnerCog(commands.Cog):
-    """Owner/super-admin utilities inside Discord."""
+    """Commands for super-admins. These commands work in Discord, not in the web panel."""
 
     def __init__(self, bot: ComplexBot) -> None:
         self.bot = bot
