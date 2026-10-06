@@ -19,6 +19,7 @@ export function PlayerPage() {
   const [state, setState] = useState<PlayerState | null>(null);
   const [channels, setChannels] = useState<VoiceChannel[]>([]);
   const [query, setQuery] = useState("");
+  const [searchSource, setSearchSource] = useState("yt");
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
@@ -53,7 +54,7 @@ export function PlayerPage() {
     if (!query.trim()) return;
     act(() =>
       api
-        .search(gid, query)
+        .search(gid, query, searchSource)
         .then((r) => setResults(r))
         .then(() => undefined),
     );
@@ -96,17 +97,38 @@ export function PlayerPage() {
 
       <div className="card">
         <h2>Add music</h2>
+        <div className="row" style={{ marginBottom: 8 }}>
+          {[
+            ["yt", "YouTube Music"],
+            ["radio", "📻 Radio"],
+            ["archive", "Archive.org"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={searchSource === value ? "" : "secondary"}
+              onClick={() => setSearchSource(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="row">
           <input
             type="text"
-            placeholder="Track name or URL (YouTube, SoundCloud, …)"
+            placeholder={
+              searchSource === "yt"
+                ? "Track name or URL (YouTube, SoundCloud, …)"
+                : searchSource === "radio"
+                  ? "Station name or genre (jazz, rock, news…)"
+                  : "Search audio on Archive.org"
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
           />
           <button onClick={doSearch}>Search</button>
           <button className="secondary" onClick={() => enqueue({ query })}>
-            Queue URL / first match
+            Queue URL
           </button>
         </div>
         {results && (

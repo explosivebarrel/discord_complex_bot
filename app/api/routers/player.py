@@ -7,6 +7,7 @@ from pydantic import BaseModel, model_validator
 
 from app.api.deps import CurrentUser, get_bot, get_db, get_music, require_guild_member
 from app.core.db import Database
+from app.core.services.extern_search import ExternalSearchError, archive_search, radio_search
 from app.core.services.music import MusicService, MusicServiceError
 
 if TYPE_CHECKING:
@@ -88,9 +89,20 @@ async def leave(
 async def search(
     guild_id: int,
     q: str,
+    source: str = "yt",
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
 ) -> list[dict[str, Any]]:
+    if source == "radio":
+        try:
+            return await radio_search(q)
+        except ExternalSearchError as exc:
+            raise HTTPException(status_code=502, detail=f"Radio search failed: {exc}") from exc
+    if source == "archive":
+        try:
+            return await archive_search(q)
+        except ExternalSearchError as exc:
+            raise HTTPException(status_code=502, detail=f"Archive search failed: {exc}") from exc
     return await music.search(q)
 
 

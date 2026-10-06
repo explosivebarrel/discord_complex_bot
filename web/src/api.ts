@@ -101,8 +101,8 @@ export const api = {
   leave: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/leave`, { method: "POST" }).then((r) => handle<unknown>(r)),
 
-  search: (guildId: string, q: string) =>
-    fetch(`/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}`).then((r) =>
+  search: (guildId: string, q: string, source: string = "yt") =>
+    fetch(`/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}`).then((r) =>
       handle<TrackInfo[]>(r),
     ),
 
