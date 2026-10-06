@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,31 @@ class SessionExpiredError(Exception):
     """The Discord tokens of the web session are no longer valid."""
 
 
+# One refresh at a time per user. Parallel refreshes consume the same
+# refresh token twice, and Discord then rejects it with invalid_grant.
+_refresh_locks: dict[int, asyncio.Lock] = {}
+
+
+def _lock_for(user: CurrentUser) -> asyncio.Lock:
+    lock = _refresh_locks.get(user.discord_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _refresh_locks[user.discord_id] = lock
+    return lock
+
+
+async def _reload_session_row(db: Database, user: CurrentUser) -> None:
+    """Copy the latest tokens from the database row onto the user object."""
+    from app.core.db import WebSession
+
+    async with db.session_factory() as session:
+        row = await session.get(WebSession, user.session_id)
+    if row is None:
+        raise SessionExpiredError("The web session no longer exists. Log in again.")
+    user.access_token = row.access_token
+    user.refresh_token = row.refresh_token
+
+
 async def _persist_tokens(db: Database, user: CurrentUser, token_payload: dict[str, Any]) -> None:
     from app.core.db import WebSession
 
@@ -31,16 +57,20 @@ async def _persist_tokens(db: Database, user: CurrentUser, token_payload: dict[s
 
 async def refresh_session_token(oauth: DiscordOAuthClient, db: Database, user: CurrentUser) -> str:
     """Refresh the user's Discord access token. Save the new token on the session row."""
-    if not user.refresh_token:
-        raise SessionExpiredError("The session has no refresh token.")
-    try:
-        payload = await oauth.refresh_token(user.refresh_token)
-    except DiscordAPIError as exc:
-        raise SessionExpiredError("Discord rejected the refresh token. Log in again.") from exc
-    user.access_token = payload["access_token"]
-    user.refresh_token = payload.get("refresh_token", user.refresh_token)
-    await _persist_tokens(db, user, payload)
-    return user.access_token
+    async with _lock_for(user):
+        # Another request may have refreshed the token while we waited for the lock.
+        # Start from the tokens currently stored on the session row.
+        await _reload_session_row(db, user)
+        if not user.refresh_token:
+            raise SessionExpiredError("The session has no refresh token.")
+        try:
+            payload = await oauth.refresh_token(user.refresh_token)
+        except DiscordAPIError as exc:
+            raise SessionExpiredError("Discord rejected the refresh token. Log in again.") from exc
+        user.access_token = payload["access_token"]
+        user.refresh_token = payload.get("refresh_token", user.refresh_token)
+        await _persist_tokens(db, user, payload)
+        return user.access_token
 
 
 async def fetch_guilds_with_retry(oauth: DiscordOAuthClient, db: Database, user: CurrentUser) -> list[dict]:
@@ -49,5 +79,14 @@ async def fetch_guilds_with_retry(oauth: DiscordOAuthClient, db: Database, user:
         return await oauth.fetch_guilds(user.access_token)
     except DiscordAPIError:
         logger.info("Discord token rejected for user %s, refreshing", user.discord_id)
-        token = await refresh_session_token(oauth, db, user)
-        return await oauth.fetch_guilds(token)
+    async with _lock_for(user):
+        # Another request may have refreshed the token while we waited for the lock.
+        try:
+            await _reload_session_row(db, user)
+            return await oauth.fetch_guilds(user.access_token)
+        except DiscordAPIError:
+            pass
+        except SessionExpiredError:
+            raise
+    token = await refresh_session_token(oauth, db, user)
+    return await oauth.fetch_guilds(token)

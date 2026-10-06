@@ -3,11 +3,14 @@ server:
   address: 0.0.0.0
 
 lavalink:
-  plugins: []
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      snapshot: false
   server:
     password: "${LAVALINK_PASSWORD}"
     sources:
-      youtube: true
+      # The built-in source is broken against YouTube. The plugin above replaces it.
+      youtube: false
       bandcamp: true
       soundcloud: true
       twitch: true
@@ -36,6 +39,26 @@ lavalink:
     youtubePlaylistLoadLimit: 6
     gc-warnings: true
 
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    oauth:
+      # YouTube rejects anonymous stream access. OAuth signs the playback
+      # requests with a Google account. The first start prints a login URL and
+      # a device code into the logs; the refresh token is printed after login.
+      # Paste the token into YOUTUBE_REFRESH_TOKEN (.env) to skip the flow.
+      enabled: true
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN:-}"
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - TV
+      - IOS
+      - WEB
+
 logging:
   file:
     path: ./logs/
@@ -46,3 +69,5 @@ logging:
   level:
     root: INFO
     lavalink: INFO
+    # Print the OAuth login URL and the resulting refresh token.
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO

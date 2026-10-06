@@ -129,15 +129,46 @@ async def is_guild_admin(db: Database, user: CurrentUser, guild_id: int) -> bool
     return user.discord_id in admins
 
 
+# Membership check results. Key: (discord_id, guild_id), value: (expires_at, is_member).
+# The panel polls the player every few seconds. Without this cache each poll
+# would call the Discord API and burn the rate limit.
+_MEMBER_CACHE_TTL = 600.0
+_member_cache: dict[tuple[int, int], tuple[float, bool]] = {}
+
+
+def _cached_membership(user: CurrentUser, guild_id: int) -> bool | None:
+    import time
+
+    entry = _member_cache.get((user.discord_id, guild_id))
+    if entry is None:
+        return None
+    expires_at, is_member = entry
+    if expires_at < time.monotonic():
+        _member_cache.pop((user.discord_id, guild_id), None)
+        return None
+    return is_member
+
+
+def _store_membership(user: CurrentUser, guild_id: int, is_member: bool) -> None:
+    import time
+
+    _member_cache[(user.discord_id, guild_id)] = (time.monotonic() + _MEMBER_CACHE_TTL, is_member)
+
+
 async def _is_guild_member(
     user: CurrentUser, oauth: DiscordOAuthClient, bot: ComplexBot, db: Database, guild_id: int
 ) -> bool:
     """Check membership with a request to the Discord API. If the request fails, use the bot member cache."""
+    cached = _cached_membership(user, guild_id)
+    if cached is not None:
+        return cached
     try:
         from app.api.sessions import fetch_guilds_with_retry
 
         guilds = await fetch_guilds_with_retry(oauth, db, user)
-        return any(int(g["id"]) == guild_id for g in guilds)
+        is_member = any(int(g["id"]) == guild_id for g in guilds)
+        _store_membership(user, guild_id, is_member)
+        return is_member
     except Exception:  # noqa: BLE001 - API hiccup should not lock the user out; try cache below
         guild = bot.get_guild(guild_id)
         return guild is not None and guild.get_member(user.discord_id) is not None

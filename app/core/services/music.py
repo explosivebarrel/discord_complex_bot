@@ -95,6 +95,9 @@ class MusicService:
         await self.db.audit(
             "music.join", guild_id=guild_id, actor_id=requester_id, details={"channel_id": channel_id}
         )
+        # The queue may hold tracks that waited for a voice connection.
+        if not player.playing:
+            await self.play_next(guild_id)
         return player
 
     async def disconnect(self, guild_id: int) -> None:
@@ -106,7 +109,10 @@ class MusicService:
     # --- playback ---
 
     async def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        result = await wavelink.Playable.search(query)
+        try:
+            result = await wavelink.Playable.search(query)
+        except wavelink.LavalinkLoadException as exc:
+            raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
         if isinstance(result, wavelink.Playlist):
             return [self._track_dict(t) for t in result.tracks[:limit]]
         return [self._track_dict(t) for t in result[:limit]]
@@ -130,7 +136,10 @@ class MusicService:
 
         Start playback if the player is idle.
         """
-        result = await wavelink.Playable.search(query)
+        try:
+            result = await wavelink.Playable.search(query)
+        except wavelink.LavalinkLoadException as exc:
+            raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
         if isinstance(result, wavelink.Playlist):
             tracks = list(result.tracks)
             title = result.name

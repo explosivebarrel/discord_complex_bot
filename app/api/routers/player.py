@@ -93,7 +93,27 @@ async def enqueue(
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
     db: Database = Depends(get_db),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
+    if music.get_player(guild_id) is None:
+        # The bot is not in voice yet. Use the default channel from the guild
+        # settings, then the voice channel of the requester.
+        settings = await db.get_guild_settings(guild_id)
+        channel_id = settings.default_voice_channel_id
+        if channel_id is None:
+            guild = bot.get_guild(guild_id)
+            member = guild.get_member(user.discord_id) if guild else None
+            if member is not None and member.voice is not None and member.voice.channel is not None:
+                channel_id = member.voice.channel.id
+        if channel_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Connect the bot to a voice channel first, or set the default channel in settings.",
+            )
+        try:
+            await music.connect(guild_id, channel_id, user.discord_id)
+        except MusicServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         result = await music.enqueue(guild_id, body.query, user.discord_id, user.global_name)
     except MusicServiceError as exc:

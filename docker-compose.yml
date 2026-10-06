@@ -6,6 +6,8 @@ services:
     environment:
       _JAVA_OPTIONS: "-Xmx256M"
       LAVALINK_PASSWORD: ${LAVALINK_PASSWORD:?set LAVALINK_PASSWORD in .env}
+      # Google OAuth for the youtube-source plugin; empty on first start
+      YOUTUBE_REFRESH_TOKEN: ${YOUTUBE_REFRESH_TOKEN:-}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
     ports:
