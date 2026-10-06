@@ -4,7 +4,10 @@ import { api, PlayerState, TrackInfo, VoiceChannel } from "../api";
 import { useAuth } from "../useAuth";
 import { Topbar } from "../components/Topbar";
 
+const LIVE_LENGTH = 9223372036854775807;
+
 function fmt(ms: number): string {
+  if (ms >= LIVE_LENGTH) return "LIVE";
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
@@ -157,12 +160,12 @@ export function PlayerPage() {
                 ⏹ Stop
               </button>
               <label className="muted">
-                🔉 Volume {Math.round((volume ?? 100) / 10)}%
+                🔉 Volume {volume ?? 100}%
                 <input
                   type="range"
                   min={0}
-                  max={1000}
-                  value={volume ?? 100}
+                  max={200}
+                  value={Math.min(volume ?? 100, 200)}
                   onChange={(e) => setVolume(Number(e.target.value))}
                   onMouseUp={() => volume !== null && act(() => api.volume(gid, volume))}
                   onTouchEnd={() => volume !== null && act(() => api.volume(gid, volume))}
