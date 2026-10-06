@@ -125,6 +125,15 @@ class MusicCog(commands.Cog):
     # --- auto-advance ---
 
     @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload) -> None:
+        guild_id = payload.player.guild.id if payload.player is not None and payload.player.guild else None
+        self.bot.music.record_error(payload.exception or "Track exception", {"guild_id": guild_id})
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload) -> None:
+        self.bot.music.record_error("Track stuck during playback")
+
+    @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload) -> None:
         if payload.player is None or payload.player.guild is None:
             return

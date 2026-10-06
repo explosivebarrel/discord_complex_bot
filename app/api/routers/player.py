@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.api.deps import CurrentUser, get_bot, get_db, get_music, require_guild_member
 from app.core.db import Database
@@ -20,7 +20,15 @@ class JoinBody(BaseModel):
 
 
 class EnqueueBody(BaseModel):
-    query: str
+    # Either a search query or the encoded track from a previous search result.
+    query: str = ""
+    encoded: str | None = None
+
+    @model_validator(mode="after")
+    def check_query_or_encoded(self) -> EnqueueBody:
+        if not self.query and not self.encoded:
+            raise ValueError("Provide a query or an encoded track")
+        return self
 
 
 class VolumeBody(BaseModel):
@@ -115,7 +123,9 @@ async def enqueue(
         except MusicServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        result = await music.enqueue(guild_id, body.query, user.discord_id, user.global_name)
+        result = await music.enqueue(
+            guild_id, body.query, user.discord_id, user.global_name, encoded=body.encoded
+        )
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await db.audit(

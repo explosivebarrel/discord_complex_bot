@@ -68,3 +68,30 @@ async def wavelink_connect(bot: ComplexBot) -> None:
         logger.exception("Failed to connect to Lavalink at %s", node.uri)
         return
     logger.info("Connected to Lavalink node(s): %s", [n.identifier for n in nodes.values()])
+    await apply_youtube_settings(bot)
+
+
+async def apply_youtube_settings(bot: ComplexBot) -> None:
+    """Push the YouTube plugin settings stored in the database to Lavalink."""
+    import httpx
+
+    stored = await bot.db.get_system_setting("youtube_oauth")
+    if not stored:
+        return
+    scheme = "https" if bot.config.lavalink_secure else "http"
+    url = f"{scheme}://{bot.config.lavalink_host}:{bot.config.lavalink_port}/youtube"
+    body = {
+        "refreshToken": stored.get("refresh_token", "x"),
+        "skipInitialization": False,
+        "poToken": stored.get("po_token", ""),
+        "visitorData": stored.get("visitor_data", ""),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers={"Authorization": bot.config.lavalink_password}, json=body)
+        if resp.status_code == 204:
+            logger.info("Applied stored YouTube plugin settings to Lavalink")
+        else:
+            logger.warning("Lavalink rejected the YouTube settings: %s %s", resp.status_code, resp.text[:200])
+    except Exception:  # noqa: BLE001 - startup must not fail over optional settings
+        logger.exception("Failed to apply YouTube settings to Lavalink")

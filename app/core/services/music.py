@@ -49,6 +49,12 @@ class MusicService:
         self.config = config
         self.queues: dict[int, deque[QueueItem]] = {}
         self.current_items: dict[int, QueueItem] = {}
+        # Raw Lavalink payloads of recent search results, keyed by encoded track.
+        # YouTube blocks re-loading a direct video URL, so the web panel queues
+        # tracks from this cache instead of asking Lavalink to load again.
+        self.track_cache: dict[str, dict[str, Any]] = {}
+        # Last playback failure, shown on the web panel settings page.
+        self.last_error: dict[str, Any] | None = None
 
     # --- helpers ---
 
@@ -114,8 +120,12 @@ class MusicService:
         except wavelink.LavalinkLoadException as exc:
             raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
         if isinstance(result, wavelink.Playlist):
-            return [self._track_dict(t) for t in result.tracks[:limit]]
-        return [self._track_dict(t) for t in result[:limit]]
+            tracks = result.tracks[:limit]
+        else:
+            tracks = result[:limit]
+        for t in tracks:
+            self.track_cache[t.encoded] = t._raw_data  # noqa: SLF001 - reuse the payload Lavalink already returned
+        return [self._track_dict(t) for t in tracks]
 
     @staticmethod
     def _track_dict(track: wavelink.Playable) -> dict[str, Any]:
@@ -127,27 +137,39 @@ class MusicService:
             "artwork": track.artwork,
             "source": track.source,
             "identifier": track.identifier,
+            "encoded": track.encoded,
         }
 
     async def enqueue(
-        self, guild_id: int, query: str, requester_id: int, requester_name: str = ""
+        self,
+        guild_id: int,
+        query: str,
+        requester_id: int,
+        requester_name: str = "",
+        encoded: str | None = None,
     ) -> dict[str, Any]:
         """Search for `query`. Add the first track or a full playlist to the queue.
 
-        Start playback if the player is idle.
+        Start playback if the player is idle. With `encoded`, take the track
+        from the search cache and skip the Lavalink load request.
         """
-        try:
-            result = await wavelink.Playable.search(query)
-        except wavelink.LavalinkLoadException as exc:
-            raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
-        if isinstance(result, wavelink.Playlist):
-            tracks = list(result.tracks)
-            title = result.name
-        elif isinstance(result, list):
-            tracks = list(result[:1])
-            title = tracks[0].title if tracks else ""
+        cached = self.track_cache.get(encoded) if encoded else None
+        if cached is not None:
+            tracks = [wavelink.Playable(data=cached)]
+            title = tracks[0].title
         else:
-            raise MusicServiceError("Nothing found for this query.")
+            try:
+                result = await wavelink.Playable.search(query)
+            except wavelink.LavalinkLoadException as exc:
+                raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
+            if isinstance(result, wavelink.Playlist):
+                tracks = list(result.tracks)
+                title = result.name
+            elif isinstance(result, list):
+                tracks = list(result[:1])
+                title = tracks[0].title if tracks else ""
+            else:
+                raise MusicServiceError("Nothing found for this query.")
         if not tracks:
             raise MusicServiceError("Nothing found for this query.")
 
@@ -167,6 +189,15 @@ class MusicService:
             "queued": len(items),
             "title": title,
             "now_playing": now_playing,
+        }
+
+    def record_error(self, message: str, context: dict[str, Any] | None = None) -> None:
+        import datetime as _dt
+
+        self.last_error = {
+            "message": message[:500],
+            "context": context or {},
+            "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         }
 
     async def play_next(self, guild_id: int) -> wavelink.Playable | None:

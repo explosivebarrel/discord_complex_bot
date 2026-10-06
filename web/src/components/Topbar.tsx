@@ -12,7 +12,14 @@ export function Topbar({
       </div>
       {me && (
         <div className="user">
-          {me.is_superadmin && <span className="badge admin">superadmin</span>}
+          {me.is_superadmin && (
+            <>
+              <span className="badge admin">superadmin</span>
+              <a href="/settings">
+                <button className="secondary">Settings</button>
+              </a>
+            </>
+          )}
           <span>{me.global_name}</span>
           <img src={me.avatar_url} alt="avatar" />
           {onLogout && (

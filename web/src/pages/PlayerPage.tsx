@@ -56,7 +56,7 @@ export function PlayerPage() {
     );
   };
 
-  const enqueue = (q: string) => act(() => api.enqueue(gid, q));
+  const enqueue = (body: { query?: string; encoded?: string }) => act(() => api.enqueue(gid, body));
 
   if (loading) return <div className="login-page"><p className="muted">Loading…</p></div>;
 
@@ -102,7 +102,7 @@ export function PlayerPage() {
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
           />
           <button onClick={doSearch}>Search</button>
-          <button className="secondary" onClick={() => enqueue(query)}>
+          <button className="secondary" onClick={() => enqueue({ query })}>
             Queue URL / first match
           </button>
         </div>
@@ -116,7 +116,7 @@ export function PlayerPage() {
                 </span>
                 <button
                   onClick={() => {
-                    enqueue(t.uri ?? t.title);
+                    enqueue(t.encoded ? { encoded: t.encoded } : { query: t.uri ?? t.title });
                     setResults(null);
                     setQuery("");
                   }}

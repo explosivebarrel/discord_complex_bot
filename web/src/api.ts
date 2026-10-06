@@ -24,6 +24,7 @@ export interface TrackInfo {
   requested_by: string;
   position?: number;
   paused?: boolean;
+  encoded?: string;
 }
 
 export interface PlayerState {
@@ -42,6 +43,20 @@ export interface VoiceChannel {
   id: string;
   name: string;
   user_limit: number;
+}
+
+export interface Integrations {
+  discord: { ready: boolean; user: string | null; guilds: number };
+  lavalink: { host: string; connected: boolean; players: number };
+  youtube: {
+    reachable: boolean;
+    oauth_configured?: boolean;
+    refresh_token_masked?: string | null;
+    error?: string;
+    token_saved_in_db?: boolean;
+    pot_saved_in_db?: boolean;
+    last_error?: { message: string; context: Record<string, unknown>; at: string } | null;
+  };
 }
 
 export interface GuildSettings {
@@ -91,11 +106,11 @@ export const api = {
       handle<TrackInfo[]>(r),
     ),
 
-  enqueue: (guildId: string, query: string) =>
+  enqueue: (guildId: string, body: { query?: string; encoded?: string }) =>
     fetch(`/api/guilds/${guildId}/player/enqueue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify(body),
     }).then((r) => handle<{ queued: number; title: string; now_playing: boolean }>(r)),
 
   simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop") =>
@@ -138,4 +153,19 @@ export const api = {
     ),
 
   allBotGuilds: () => fetch("/api/admin/guilds").then((r) => handle<GuildBrief[]>(r)),
+
+  integrations: () => fetch("/api/admin/system/integrations").then((r) => handle<Integrations>(r)),
+
+  updateYoutubeConfig: (body: { refresh_token?: string; po_token?: string; visitor_data?: string }) =>
+    fetch("/api/admin/system/youtube", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => handle<{ oauth_configured: boolean; refresh_token_masked: string; pot_saved: boolean }>(r)),
+
+  clearYoutubePot: () =>
+    fetch("/api/admin/system/youtube/pot", { method: "DELETE" }).then((r) => handle<{ cleared: boolean }>(r)),
+
+  clearYoutubeLastError: () =>
+    fetch("/api/admin/system/youtube/last-error", { method: "DELETE" }).then((r) => handle<{ cleared: boolean }>(r)),
 };

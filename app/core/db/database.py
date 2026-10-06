@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.core.config import Config
-from app.core.db.models import AuditLog, Base, GuildAdmin, GuildSettings
+from app.core.db.models import AuditLog, Base, GuildAdmin, GuildSettings, SystemSetting
 
 
 class Database:
@@ -99,3 +99,31 @@ class Database:
                 )
             )
             await session.commit()
+
+    # --- system settings ---
+
+    async def get_system_setting(self, key: str) -> dict[str, Any] | None:
+        import json as _json
+
+        async with self.session_factory() as session:
+            row = await session.get(SystemSetting, key)
+            return _json.loads(row.value) if row is not None else None
+
+    async def set_system_setting(self, key: str, value: dict[str, Any]) -> None:
+        import json as _json
+
+        async with self.session_factory() as session:
+            row = await session.get(SystemSetting, key)
+            if row is None:
+                row = SystemSetting(key=key, value=_json.dumps(value, ensure_ascii=False))
+                session.add(row)
+            else:
+                row.value = _json.dumps(value, ensure_ascii=False)
+            await session.commit()
+
+    async def delete_system_setting(self, key: str) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(SystemSetting, key)
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
