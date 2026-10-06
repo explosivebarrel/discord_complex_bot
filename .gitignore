@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# DB / runtime
+*.db
+*.sqlite3
+data/
+
+# Env & secrets
+.env
+.env.local
+
+# Node / frontend
+node_modules/
+web/dist/
+app/static/
+
+# Alembic
+alembic/versions/__pycache__/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Code search index
+.codesearch.db*
+
+# ZCode session files
+.zcode/
+web/tsconfig.tsbuildinfo

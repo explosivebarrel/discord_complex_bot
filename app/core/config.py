@@ -1,0 +1,63 @@
+import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _split_ids(raw: str) -> list[int]:
+    return [int(part) for part in raw.replace(",", " ").split() if part.strip()]
+
+
+@dataclass(frozen=True)
+class Config:
+    discord_bot_token: str
+    discord_client_id: str
+    discord_client_secret: str
+    discord_redirect_uri: str
+    superadmin_ids: list[int]
+    session_secret: str
+    base_url: str
+    database_url: str
+    lavalink_host: str
+    lavalink_port: int
+    lavalink_password: str
+    lavalink_secure: bool
+    log_level: str
+    data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
+
+
+def load_config() -> Config:
+    load_dotenv(BASE_DIR / ".env")
+    db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
+    if "sqlite" in db_url and ":memory:" not in db_url:
+        db_path = db_url.split("///", 1)[-1]
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    return Config(
+        discord_bot_token=os.getenv("DISCORD_BOT_TOKEN", ""),
+        discord_client_id=os.getenv("DISCORD_CLIENT_ID", ""),
+        discord_client_secret=os.getenv("DISCORD_CLIENT_SECRET", ""),
+        discord_redirect_uri=os.getenv("DISCORD_REDIRECT_URI", "http://localhost:8000/api/auth/callback"),
+        superadmin_ids=_split_ids(os.getenv("SUPERADMIN_IDS", "")),
+        session_secret=os.getenv("SESSION_SECRET", "change-me"),
+        base_url=os.getenv("BASE_URL", "http://localhost:8000"),
+        database_url=db_url,
+        lavalink_host=os.getenv("LAVALINK_HOST", "localhost"),
+        lavalink_port=int(os.getenv("LAVALINK_PORT", "2333")),
+        lavalink_password=os.getenv("LAVALINK_PASSWORD", "change-me-too"),
+        lavalink_secure=os.getenv("LAVALINK_SECURE", "false").lower() == "true",
+        log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    )
+
+
+def setup_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level, logging.INFO),
+        format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+    )
+    logging.getLogger("discord").setLevel(logging.WARNING)
+    logging.getLogger("wavelink").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

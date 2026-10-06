@@ -1,0 +1,228 @@
+from __future__ import annotations
+
+import logging
+from collections import deque
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+import discord
+import wavelink
+
+from app.core.db import Database
+
+if TYPE_CHECKING:
+    from app.core.config import Config
+
+logger = logging.getLogger(__name__)
+
+VOLUME_MIN, VOLUME_MAX = 0, 1000
+
+
+@dataclass
+class QueueItem:
+    track: wavelink.Playable
+    requested_by_id: int
+    requested_by_name: str = field(default="")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.track.title,
+            "author": self.track.author,
+            "uri": self.track.uri,
+            "length": self.track.length,
+            "artwork": self.track.artwork,
+            "source": self.track.source,
+            "requested_by": self.requested_by_name,
+        }
+
+
+class MusicServiceError(Exception):
+    """User-facing music control error."""
+
+
+class MusicService:
+    """Single source of truth for music state, shared by slash commands and the web API."""
+
+    def __init__(self, bot: discord.Client, db: Database, config: Config) -> None:
+        self.bot = bot
+        self.db = db
+        self.config = config
+        self.queues: dict[int, deque[QueueItem]] = {}
+        self.current_items: dict[int, QueueItem] = {}
+
+    # --- helpers ---
+
+    def get_guild(self, guild_id: int) -> discord.Guild | None:
+        return self.bot.get_guild(guild_id)
+
+    def get_player(self, guild_id: int) -> wavelink.Player | None:
+        guild = self.get_guild(guild_id)
+        if guild is None:
+            return None
+        vc = guild.voice_client
+        return vc if isinstance(vc, wavelink.Player) else None
+
+    def _require_player(self, guild_id: int) -> wavelink.Player:
+        player = self.get_player(guild_id)
+        if player is None:
+            raise MusicServiceError("Bot is not connected to a voice channel on this server.")
+        return player
+
+    def _queue(self, guild_id: int) -> deque[QueueItem]:
+        if guild_id not in self.queues:
+            self.queues[guild_id] = deque()
+        return self.queues[guild_id]
+
+    # --- connection ---
+
+    async def connect(self, guild_id: int, channel_id: int, requester_id: int) -> wavelink.Player:
+        guild = self.get_guild(guild_id)
+        if guild is None:
+            raise MusicServiceError("Bot is not on this server.")
+        channel = guild.get_channel(channel_id)
+        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            raise MusicServiceError("Voice channel not found.")
+        existing = self.get_player(guild_id)
+        if existing is not None and existing.channel and existing.channel.id == channel_id:
+            return existing
+        if existing is not None:
+            await self.disconnect(guild_id)
+        try:
+            player: wavelink.Player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+        except discord.ClientException as exc:
+            raise MusicServiceError(f"Failed to connect: {exc}") from exc
+        await player.set_volume(100)
+        await self.db.audit(
+            "music.join", guild_id=guild_id, actor_id=requester_id, details={"channel_id": channel_id}
+        )
+        return player
+
+    async def disconnect(self, guild_id: int) -> None:
+        self.queues.pop(guild_id, None)
+        player = self.get_player(guild_id)
+        if player is not None:
+            await player.disconnect()
+
+    # --- playback ---
+
+    async def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        result = await wavelink.Playable.search(query)
+        if isinstance(result, wavelink.Playlist):
+            return [self._track_dict(t) for t in result.tracks[:limit]]
+        return [self._track_dict(t) for t in result[:limit]]
+
+    @staticmethod
+    def _track_dict(track: wavelink.Playable) -> dict[str, Any]:
+        return {
+            "title": track.title,
+            "author": track.author,
+            "uri": track.uri,
+            "length": track.length,
+            "artwork": track.artwork,
+            "source": track.source,
+            "identifier": track.identifier,
+        }
+
+    async def enqueue(
+        self, guild_id: int, query: str, requester_id: int, requester_name: str = ""
+    ) -> dict[str, Any]:
+        """Search `query`, add the first match (or whole playlist) to the queue and ensure playback."""
+        result = await wavelink.Playable.search(query)
+        if isinstance(result, wavelink.Playlist):
+            tracks = list(result.tracks)
+            title = result.name
+        elif isinstance(result, list):
+            tracks = list(result[:1])
+            title = tracks[0].title if tracks else ""
+        else:
+            raise MusicServiceError("Nothing found for this query.")
+        if not tracks:
+            raise MusicServiceError("Nothing found for this query.")
+
+        queue = self._queue(guild_id)
+        items = [QueueItem(t, requester_id, requester_name) for t in tracks]
+        player = self.get_player(guild_id)
+        now_playing = False
+        if player is not None and not player.playing and not queue:
+            first = items.pop(0)
+            queue.extend(items)
+            self.current_items[guild_id] = first
+            await player.play(first.track)
+            now_playing = True
+        else:
+            queue.extend(items)
+        return {
+            "queued": len(items),
+            "title": title,
+            "now_playing": now_playing,
+        }
+
+    async def play_next(self, guild_id: int) -> wavelink.Playable | None:
+        queue = self._queue(guild_id)
+        if not queue:
+            self.current_items.pop(guild_id, None)
+            return None
+        player = self.get_player(guild_id)
+        if player is None:
+            return None
+        item = queue.popleft()
+        self.current_items[guild_id] = item
+        await player.play(item.track)
+        return item.track
+
+    async def skip(self, guild_id: int, requester_id: int) -> bool:
+        player = self._require_player(guild_id)
+        if not player.playing:
+            return False
+        await player.stop()  # TrackEnd listener will start the next queued item
+        await self.db.audit("music.skip", guild_id=guild_id, actor_id=requester_id)
+        return True
+
+    async def stop(self, guild_id: int, requester_id: int) -> None:
+        player = self._require_player(guild_id)
+        self.queues.pop(guild_id, None)
+        self.current_items.pop(guild_id, None)
+        await player.stop()
+        await self.db.audit("music.stop", guild_id=guild_id, actor_id=requester_id)
+
+    async def set_paused(self, guild_id: int, paused: bool) -> None:
+        player = self._require_player(guild_id)
+        if player.playing:
+            await player.pause(paused)
+
+    async def set_volume(self, guild_id: int, volume: int) -> int:
+        volume = max(VOLUME_MIN, min(VOLUME_MAX, volume))
+        player = self._require_player(guild_id)
+        await player.set_volume(volume)
+        return volume
+
+    async def seek(self, guild_id: int, position_ms: int) -> None:
+        player = self._require_player(guild_id)
+        if player.playing:
+            await player.seek(max(0, position_ms))
+
+    # --- state for web UI ---
+
+    def get_state(self, guild_id: int) -> dict[str, Any]:
+        player = self.get_player(guild_id)
+        queue = self._queue(guild_id)
+        guild = self.get_guild(guild_id)
+        current = None
+        if player is not None and player.current is not None:
+            item = self.current_items.get(guild_id)
+            if item is None or item.track.identifier != player.current.identifier:
+                item = QueueItem(player.current, 0, "")
+            current = item.to_dict()
+            current["position"] = player.position
+            current["paused"] = player.paused
+        return {
+            "guild_id": guild_id,
+            "guild_name": guild.name if guild else None,
+            "connected": player is not None,
+            "channel_id": player.channel.id if player is not None and player.channel else None,
+            "channel_name": player.channel.name if player is not None and player.channel else None,
+            "volume": player.volume if player is not None else 100,
+            "playing": bool(player is not None and player.playing),
+            "current": current,
+            "queue": [item.to_dict() for item in queue],
+        }

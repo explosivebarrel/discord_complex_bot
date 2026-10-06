@@ -1,0 +1,32 @@
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: dcbot-lavalink
+    restart: unless-stopped
+    environment:
+      _JAVA_OPTIONS: "-Xmx256M"
+      LAVALINK_PASSWORD: ${LAVALINK_PASSWORD:?set LAVALINK_PASSWORD in .env}
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    ports:
+      - "2333:2333"
+
+  app:
+    build: .
+    container_name: dcbot-app
+    restart: unless-stopped
+    depends_on:
+      - lavalink
+    env_file: .env
+    environment:
+      # inside compose the bot reaches Lavalink by service name
+      LAVALINK_HOST: lavalink
+      # keep the SQLite file on the named volume, not inside the container
+      DATABASE_URL: sqlite+aiosqlite:////data/bot.db
+    volumes:
+      - bot-data:/data
+    ports:
+      - "8000:8000"
+
+volumes:
+  bot-data:
