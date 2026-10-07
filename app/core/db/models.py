@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,6 +23,9 @@ class GuildSettings(Base):
     name: Mapped[str] = mapped_column(String(128), default="")
     default_voice_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     admin_role_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of role ids
+    # When the queue drains, the bot can start a radio station by query.
+    autoplay_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    autoplay_query: Mapped[str] = mapped_column(String(128), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
 
@@ -69,3 +72,34 @@ class SystemSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, default="{}")  # JSON
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
+
+
+class PlayHistory(Base):
+    __tablename__ = "play_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    title: Mapped[str] = mapped_column(String(256), default="")
+    author: Mapped[str] = mapped_column(String(256), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(32), default="")
+    requested_by_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    requested_by_name: Mapped[str] = mapped_column(String(128), default="")
+    length_ms: Mapped[int] = mapped_column(Integer, default=0)
+    played_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, index=True)
+
+
+class FavoriteTrack(Base):
+    __tablename__ = "favorite_tracks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    title: Mapped[str] = mapped_column(String(256), default="")
+    author: Mapped[str] = mapped_column(String(256), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(32), default="")
+    length_ms: Mapped[int] = mapped_column(Integer, default=0)
+    artwork: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "uri", name="uq_favorite_user_uri"),)

@@ -7,7 +7,7 @@ export function LoginPage() {
       <Card sx={{ maxWidth: 420, width: "100%" }}>
         <CardContent sx={{ textAlign: "center", py: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
           <GraphicEq sx={{ fontSize: 48, color: "primary.main" }} />
-          <Typography variant="h5">discord_complex_bot</Typography>
+          <Typography variant="h5">Discord Council Bot</Typography>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             Music, moderation and more. Sign in with your Discord account.
           </Typography>
