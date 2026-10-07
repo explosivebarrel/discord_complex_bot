@@ -29,6 +29,7 @@ class Config:
     lavalink_port: int
     lavalink_password: str
     lavalink_secure: bool
+    yandex_music_token: str
     log_level: str
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
 
@@ -57,6 +58,7 @@ def load_config() -> Config:
         lavalink_port=int(os.getenv("LAVALINK_PORT", "2333")),
         lavalink_password=os.getenv("LAVALINK_PASSWORD", "change-me-too"),
         lavalink_secure=os.getenv("LAVALINK_SECURE", "false").lower() == "true",
+        yandex_music_token=os.getenv("YANDEX_MUSIC_TOKEN", ""),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
     )
 

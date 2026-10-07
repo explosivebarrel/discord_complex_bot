@@ -6,6 +6,8 @@ lavalink:
   plugins:
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       snapshot: false
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases" 
   server:
     password: "${LAVALINK_PASSWORD}"
     sources:
@@ -51,13 +53,29 @@ plugins:
       # a device code into the logs; the refresh token is printed after login.
       # Paste the token into YOUTUBE_REFRESH_TOKEN (.env) to skip the flow.
       enabled: true
-      refreshToken: "${YOUTUBE_REFRESH_TOKEN:-}"
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
     clients:
       - MUSIC
       - ANDROID_VR
       - TV
       - IOS
       - WEB
+
+  lavasrc:
+    providers:
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      # Flipped on by YANDEX_MUSIC_ENABLED=true in .env once a token is set.
+      # LavaSrc refuses to start with the source enabled but an empty token.
+      yandexmusic: ${YANDEX_MUSIC_ENABLED:false}
+    yandexmusic:
+      # Personal OAuth token of a Yandex Music account (Plus recommended).
+      # See the panel settings page for how to obtain it.
+      accessToken: "${YANDEX_MUSIC_TOKEN:}"
+      playlistLoadLimit: 1
+      albumLoadLimit: 1
+      artistLoadLimit: 1
 
 logging:
   file:

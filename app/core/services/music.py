@@ -115,9 +115,8 @@ class MusicService:
     # --- playback ---
 
     async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
-        search_source = (
-            wavelink.TrackSource.SoundCloud if source == "sc" else wavelink.TrackSource.YouTubeMusic
-        )
+        prefixes = {"sc": wavelink.TrackSource.SoundCloud, "ym": "ymsearch"}
+        search_source = prefixes.get(source, wavelink.TrackSource.YouTubeMusic)
         try:
             result = await wavelink.Playable.search(query, source=search_source)
         except wavelink.LavalinkLoadException as exc:

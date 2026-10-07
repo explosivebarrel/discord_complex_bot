@@ -101,6 +101,7 @@ export function PlayerPage() {
           {[
             ["yt", "YouTube Music"],
             ["sc", "SoundCloud"],
+            ["ym", "Яндекс Музыка"],
             ["radio", "📻 Radio"],
             ["archive", "Archive.org"],
           ].map(([value, label]) => (
@@ -121,7 +122,9 @@ export function PlayerPage() {
                 ? "Track name or URL (YouTube, SoundCloud, …)"
                 : searchSource === "sc"
                   ? "Search SoundCloud tracks"
-                  : searchSource === "radio"
+                  : searchSource === "ym"
+                    ? "Поиск по Яндекс.Музыке (нужен токен в настройках)"
+                    : searchSource === "radio"
                   ? "Station name or genre (jazz, rock, news…)"
                   : "Search audio on Archive.org"
             }

@@ -19,6 +19,8 @@ export function SettingsPage() {
   const [refreshToken, setRefreshToken] = useState("");
   const [poToken, setPoToken] = useState("");
   const [visitorData, setVisitorData] = useState("");
+  const [yandexToken, setYandexToken] = useState("");
+  const [saveNote, setSaveNote] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -28,6 +30,19 @@ export function SettingsPage() {
   }, []);
 
   useEffect(refresh, [refresh]);
+
+  const saveYandex = async () => {
+    setError(null);
+    setSaveNote(null);
+    try {
+      const result = await api.updateYandexToken(yandexToken);
+      setSaveNote(`${result.note} Token: ${result.token_masked}.`);
+      setYandexToken("");
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   const save = async (body: { refresh_token?: string; po_token?: string; visitor_data?: string }) => {
     setError(null);
@@ -119,6 +134,36 @@ export function SettingsPage() {
             Save token
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Yandex Music access token</h2>
+        <p className="muted">
+          Needs a Yandex account with a Plus subscription. Get the token: open{" "}
+          <a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d" target="_blank" rel="noreferrer">
+            oauth.yandex.ru/authorize
+          </a>{" "}
+          (client 23cabb…195d), log in, grant access, then copy <code>access_token</code> from the redirect URL.
+          Current state:{" "}
+          {info?.yandexmusic.configured ? `configured (${info.yandexmusic.token_masked})` : "not set"}.
+        </p>
+        <div className="row">
+          <input
+            type="text"
+            placeholder="y0_AgAAA… (paste the access token)"
+            value={yandexToken}
+            onChange={(e) => setYandexToken(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && yandexToken.trim() && saveYandex()}
+          />
+          <button disabled={!yandexToken.trim()} onClick={saveYandex}>
+            Save token
+          </button>
+        </div>
+        {saveNote && <p className="muted">{saveNote}</p>}
+        <p className="muted">
+          After saving, recreate Lavalink to apply: <code>docker compose up -d --force-recreate lavalink</code>.
+          The token lives for about 1 year.
+        </p>
       </div>
 
       <div className="card">

@@ -57,6 +57,11 @@ export interface Integrations {
     pot_saved_in_db?: boolean;
     last_error?: { message: string; context: Record<string, unknown>; at: string } | null;
   };
+  yandexmusic: {
+    configured: boolean;
+    token_masked?: string | null;
+    token_saved_in_db?: boolean;
+  };
 }
 
 export interface GuildSettings {
@@ -168,4 +173,13 @@ export const api = {
 
   clearYoutubeLastError: () =>
     fetch("/api/admin/system/youtube/last-error", { method: "DELETE" }).then((r) => handle<{ cleared: boolean }>(r)),
+
+  updateYandexToken: (accessToken: string) =>
+    fetch("/api/admin/system/yandexmusic", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken }),
+    }).then((r) =>
+      handle<{ token_masked: string; env_updated: boolean; note: string }>(r),
+    ),
 };

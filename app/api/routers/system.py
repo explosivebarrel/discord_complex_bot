@@ -20,12 +20,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/system", tags=["system"])
 
 YT_TOKEN_KEY = "youtube_oauth"
+YM_TOKEN_KEY = "yandex_music"
 
 
 class YoutubeConfigBody(BaseModel):
     refresh_token: str | None = None
     po_token: str | None = None
     visitor_data: str | None = None
+
+
+class YandexConfigBody(BaseModel):
+    access_token: str
+
+
+def _write_env_line(env_path: Any, key: str, value: str) -> bool:
+    """Update one KEY= line in the .env file. False when the file is not writable."""
+    import re
+
+    try:
+        text = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    line = f"{key}={value}"
+    if re.search(rf"(?m)^{key}=", text):
+        text = re.sub(rf"(?m)^{key}=.*$", line, text)
+    else:
+        text = text.rstrip() + f"\n{line}\n"
+    try:
+        env_path.write_text(text, encoding="utf-8")
+    except OSError:
+        return False
+    return True
 
 
 def _require_superadmin(user: CurrentUser) -> None:
@@ -61,6 +86,17 @@ async def integrations(
     youtube["pot_saved_in_db"] = bool(stored and (stored.get("po_token") and stored.get("visitor_data")))
     youtube["last_error"] = music.last_error
 
+    ym_stored = await db.get_system_setting(YM_TOKEN_KEY)
+    yandex = {
+        # The LavaSrc source has no runtime REST route. A new token applies
+        # after the Lavalink container is recreated.
+        "configured": bool(ym_stored and ym_stored.get("access_token")) or bool(config.yandex_music_token),
+        "token_masked": LavalinkAdmin.mask_token(
+            (ym_stored or {}).get("access_token") or config.yandex_music_token
+        ),
+        "token_saved_in_db": bool(ym_stored and ym_stored.get("access_token")),
+    }
+
     nodes = list(__import__("wavelink").Pool.nodes.values())
 
     return {
@@ -75,6 +111,7 @@ async def integrations(
             "players": sum(len(getattr(n, "players", {}) or {}) for n in nodes),
         },
         "youtube": youtube,
+        "yandexmusic": yandex,
         "superadmin_hint": "IDs in SUPERADMIN_IDS (.env) get this page",
     }
 
@@ -146,3 +183,33 @@ async def clear_last_error(
     _require_superadmin(user)
     music.last_error = None
     return {"cleared": True}
+
+
+@router.put("/yandexmusic")
+async def update_yandex(
+    body: YandexConfigBody,
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
+) -> dict[str, Any]:
+    """Save the Yandex Music access token in the DB and in .env.
+
+    LavaSrc reads the token on startup, so the Lavalink container must be
+    recreated to apply a new token.
+    """
+    _require_superadmin(user)
+    token = body.access_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="access_token must not be empty")
+
+    await db.set_system_setting(YM_TOKEN_KEY, {"access_token": token})
+    env_path = config.data_dir.parent / ".env"
+    env_written = _write_env_line(env_path, "YANDEX_MUSIC_TOKEN", token)
+    env_written = _write_env_line(env_path, "YANDEX_MUSIC_ENABLED", "true") and env_written
+    await db.audit("admin.update_yandexmusic", actor_id=user.discord_id, actor_kind="web")
+
+    return {
+        "token_masked": LavalinkAdmin.mask_token(token),
+        "env_updated": env_written,
+        "note": "Saved. Run `docker compose up -d --force-recreate lavalink` to apply.",
+    }
