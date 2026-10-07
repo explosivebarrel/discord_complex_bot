@@ -353,7 +353,17 @@ class MusicService:
         if cached is not None:
             items = [QueueItem(wavelink.Playable(data=cached), requester_id, requester_name, source=source)]
             title = items[0].display_title
-        elif self._is_playlist_url(query) and source in ("yt", "sc", "ym"):
+        elif self._is_playlist_url(query) and source == "ym":
+            # LavaSrc loads Yandex playlists and albums natively with ready
+            # tracks; the yt-dlp extractor only knows single track URLs. The
+            # ymsearch prefix must NOT be added: it breaks URL loads.
+            result = await self._lavalink_load_with_retry(query)
+            tracks = list(getattr(result, "tracks", None) or [])[:PLAYLIST_LIMIT]
+            if not tracks:
+                raise MusicServiceError("The playlist is empty or cannot be read.")
+            items = [QueueItem(t, requester_id, requester_name, source=source) for t in tracks]
+            title = f"{getattr(result, 'name', None) or 'Playlist'} — {len(items)} track(s)"
+        elif self._is_playlist_url(query) and source in ("yt", "sc"):
             entries = await self._resolve_playlist(query)
             if not entries:
                 raise MusicServiceError("The playlist is empty or cannot be read.")
@@ -464,13 +474,16 @@ class MusicService:
         if "soundcloud.com" in q:
             return "/sets/" in q
         if "music.yandex.ru" in q or "music.yandex.com" in q:
-            return "/playlists/" in q
+            return "/playlists/" in q or "/album/" in q
         return False
 
     async def _resolve_playlist(self, query: str) -> list[dict[str, Any]]:
         """Read a playlist page with yt-dlp and return flat track metadata."""
         out = await self._run_ytdlp(["--flat-playlist", "--no-warnings", "-J", query], label="The playlist")
         info = json.loads(out.strip())
+        # yt-dlp can print a bare null with exit code 0 on unsupported pages.
+        if not isinstance(info, dict) or info.get("_type") != "playlist":
+            raise MusicServiceError("That link is not a playlist the bot can read.")
         tracks: list[dict[str, Any]] = []
         for entry in info.get("entries") or []:
             url = entry.get("url") or entry.get("webpage_url")
@@ -591,6 +604,18 @@ class MusicService:
         await player.play(track)
         await self._record_history(guild_id, item)
         return track
+
+    async def _lavalink_load_with_retry(self, query: str):
+        """Load a URL through Lavalink without any search prefix, with
+        retries for the flaky Yandex API."""
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                return await wavelink.Playable.search(query)
+            except wavelink.LavalinkLoadException as exc:
+                last_error = exc
+                await asyncio.sleep(0.8 * (attempt + 1))
+        raise MusicServiceError("Lavalink failed to load that playlist. Try again in a moment.") from last_error
 
     async def _autoplay_station(self, guild_id: int) -> QueueItem | None:
         """The first playable radio station for the guild autoplay setting.

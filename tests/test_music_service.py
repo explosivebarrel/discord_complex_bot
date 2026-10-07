@@ -223,3 +223,46 @@ async def test_state_reports_loading_during_transition(music: MusicService) -> N
     assert state["current"]["loading"] is True
     assert state["current"]["title"] == "lazy"
     assert state["playing"] is False
+
+
+class FakePlaylist:
+    def __init__(self, name: str, tracks: list) -> None:
+        self.name = name
+        self.tracks = tracks
+
+
+async def test_ym_playlist_queues_through_lavalink(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+
+    async def fake_load(query: str):
+        assert "ymsearch:" not in query  # the prefix breaks URL loads
+        return FakePlaylist("Лучшее: КИНО", [make_track("t1"), make_track("t2"), make_track("t3")])
+
+    music._lavalink_load_with_retry = fake_load  # type: ignore[method-assign]
+    result = await music.enqueue(
+        GUILD_ID, "https://music.yandex.ru/users/yamusic-bestsongs/playlists/41075", 1, "u", source="ym"
+    )
+    # The idle player starts the first track immediately: 3 minus one playing.
+    assert result["queued"] == 2
+    assert result["now_playing"] is True
+    assert "КИНО" in result["title"]
+    assert len(music.queues[GUILD_ID]) == 2
+
+
+def test_album_url_counts_as_ym_playlist(music: MusicService) -> None:
+    assert music._is_playlist_url("https://music.yandex.ru/album/10100") is True
+    assert music._is_playlist_url("https://music.yandex.ru/users/x/playlists/41075") is True
+    assert music._is_playlist_url("https://music.yandex.ru/album/10100/track/10200") is True
+
+
+async def test_resolve_playlist_null_guard(music: MusicService) -> None:
+    # yt-dlp prints a bare null with exit code 0 on unsupported pages.
+    async def fake_run(args: list[str], attempts: int = 3, label: str = "The site") -> str:
+        return "null"
+
+    music._run_ytdlp = fake_run  # type: ignore[method-assign]
+    with pytest.raises(MusicServiceError):
+        await music._resolve_playlist("https://www.youtube.com/playlist?list=x")
