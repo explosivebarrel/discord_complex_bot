@@ -381,10 +381,12 @@ export function PlayerPage() {
 
       <PlayerBar
         state={state}
+        volume={volume ?? 100}
+        onVolumeChange={(v) => setVolume(v)}
+        onVolumeCommit={(v) => act(() => api.volume(gid, v))}
         onPauseToggle={() => act(() => api.simpleAction(gid, state?.current?.paused ? "resume" : "pause"))}
         onSkip={() => act(() => api.simpleAction(gid, "skip"))}
         onStop={() => act(() => api.simpleAction(gid, "stop"), "Stopped, queue cleared")}
-        onVolume={(v) => act(() => api.volume(gid, v))}
         onSeek={(p) => act(() => api.seek(gid, p))}
       />
       {feedback.node}

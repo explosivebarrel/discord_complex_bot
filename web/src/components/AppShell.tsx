@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { AppBar, Avatar, Box, Container, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import Settings from "@mui/icons-material/Settings";
 import Logout from "@mui/icons-material/Logout";
@@ -21,7 +22,12 @@ export function AppShell({
       <AppBar position="fixed" elevation={0} sx={{ bgcolor: "#211F26", borderBottom: "1px solid #2B2930" }}>
         <Toolbar sx={{ gap: 1.5 }}>
           <GraphicEq sx={{ color: "primary.main" }} />
-          <Typography variant="h6" sx={{ flexGrow: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <Typography
+            variant="h6"
+            component={RouterLink}
+            to="/"
+            sx={{ flexGrow: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", color: "inherit", textDecoration: "none" }}
+          >
             discord_complex_bot{title ? ` — ${title}` : ""}
           </Typography>
           {me?.is_superadmin && (

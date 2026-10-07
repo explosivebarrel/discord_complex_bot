@@ -18,17 +18,21 @@ function fmt(ms: number): string {
 
 export function PlayerBar({
   state,
+  volume,
+  onVolumeChange,
+  onVolumeCommit,
   onPauseToggle,
   onSkip,
   onStop,
-  onVolume,
   onSeek,
 }: {
   state: PlayerState | null;
+  volume: number;
+  onVolumeChange: (v: number) => void;
+  onVolumeCommit: (v: number) => void;
   onPauseToggle: () => void;
   onSkip: () => void;
   onStop: () => void;
-  onVolume: (v: number) => void;
   onSeek: (positionMs: number) => void;
 }) {
   const current = state?.current;
@@ -47,7 +51,6 @@ export function PlayerBar({
   if (!state || !current) return null;
 
   const position = isLive ? 0 : Math.min(livePos, current.length);
-  const shownVolume = state.volume;
 
   return (
     <Box
@@ -143,8 +146,9 @@ export function PlayerBar({
             size="small"
             min={0}
             max={200}
-            defaultValue={shownVolume}
-            onChangeCommitted={(_, v) => onVolume(v as number)}
+            value={Math.min(volume, 200)}
+            onChange={(_, v) => onVolumeChange(v as number)}
+            onChangeCommitted={(_, v) => onVolumeCommit(v as number)}
           />
         </Box>
       </Box>
