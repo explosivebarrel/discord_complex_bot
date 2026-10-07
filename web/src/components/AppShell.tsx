@@ -23,7 +23,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <Box sx={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       <AppBar position="fixed" elevation={0} sx={{ bgcolor: "#211F26", borderBottom: "1px solid #2B2930" }}>
         <Toolbar sx={{ gap: 1.5 }}>
           {back && (
@@ -44,7 +44,7 @@ export function AppShell({
               noWrap
               sx={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", "&:hover": { color: "primary.main" } }}
             >
-              discord_complex_bot{title ? ` — ${title}` : ""}
+              Discord Council Bot{title ? ` — ${title}` : ""}
             </Typography>
           </Box>
           <Box sx={{ flexGrow: 1 }} />

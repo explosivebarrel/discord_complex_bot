@@ -55,6 +55,22 @@ const theme = createTheme({
     MuiChip: { styleOverrides: { root: { borderRadius: 8 } } },
     MuiTextField: { defaultProps: { size: "small" } },
     MuiTooltip: { defaultProps: { arrow: true } },
+    MuiCssBaseline: {
+      styleOverrides: {
+        // Thin MD3 scrollbars: outline-variant thumb on a transparent track.
+        "*": { scrollbarWidth: "thin", scrollbarColor: "#4A4458 transparent" },
+        "*::-webkit-scrollbar": { width: 10, height: 10 },
+        "*::-webkit-scrollbar-track": { background: "transparent" },
+        "*::-webkit-scrollbar-thumb": {
+          background: "#3D3847",
+          borderRadius: 8,
+          border: "2px solid transparent",
+          backgroundClip: "padding-box",
+        },
+        "*::-webkit-scrollbar-thumb:hover": { background: "#4A4458", backgroundClip: "padding-box" },
+        "*::-webkit-scrollbar-corner": { background: "transparent" },
+      },
+    },
   },
 });
 

@@ -143,14 +143,15 @@ class MusicService:
             else "Lavalink failed to load tracks. Try again in a moment."
         ) from last_error
 
-    # --- SoundCloud via yt-dlp ---
-    # Lavaplayer's SoundCloud client_id scraping is broken, so Lavalink search
-    # returns empty results. yt-dlp handles SoundCloud fine: the backend runs
-    # it for search and stream resolution, Lavalink only plays the resolved
-    # direct mp3 URL through the plain http source. Note: some ISPs cut TLS
-    # connections to soundcloud.com by SNI, so transport failures get retried.
+    # --- SoundCloud and YouTube via yt-dlp ---
+    # Lavaplayer's SoundCloud client_id scraping is broken, and its YouTube
+    # clients get a login wall on many networks even with OAuth. yt-dlp handles
+    # both sites: the backend runs it for search and stream resolution, Lavalink
+    # only plays the resolved direct URL through the plain http source. Note:
+    # some ISPs cut TLS connections to soundcloud.com by SNI, so transport
+    # failures get retried.
 
-    async def _run_ytdlp(self, args: list[str], attempts: int = 3) -> str:
+    async def _run_ytdlp(self, args: list[str], attempts: int = 3, label: str = "The site") -> str:
         last_error = ""
         for attempt in range(attempts):
             process = await asyncio.create_subprocess_exec(
@@ -170,19 +171,20 @@ class MusicService:
             last_error = (stderr or b"").decode(errors="replace")
             if "DRM" in last_error:
                 raise MusicServiceError(
-                    "This SoundCloud track is DRM-protected and cannot be played outside the official app."
+                    "This track is DRM-protected and cannot be played outside the official app."
                 )
             if attempt + 1 < attempts:
                 await asyncio.sleep(1.0)
         raise MusicServiceError(
-            "SoundCloud is unreachable from this network right now. Try again later."
+            f"{label} is unreachable from this network right now. Try again later."
             if "SSL" in last_error or "timed out" in last_error or "Unable to download" in last_error
-            else f"SoundCloud lookup failed: {last_error.strip()[:200]}"
+            else f"{label} lookup failed: {last_error.strip()[:200]}"
         )
 
-    async def _sc_search(self, query: str, limit: int) -> list[dict[str, Any]]:
+    async def _ytdlp_search(self, query: str, limit: int, prefix: str, source: str) -> list[dict[str, Any]]:
+        label = "SoundCloud" if source == "sc" else "YouTube"
         out = await self._run_ytdlp(
-            ["--flat-playlist", "--print-json", "--no-warnings", f"scsearch{limit}:{query}"]
+            ["--flat-playlist", "--print-json", "--no-warnings", f"{prefix}{limit}:{query}"], label=label
         )
         tracks: list[dict[str, Any]] = []
         for line in out.splitlines():
@@ -198,33 +200,43 @@ class MusicService:
             tracks.append(
                 {
                     "title": entry.get("title") or "?",
-                    "author": entry.get("uploader") or "SoundCloud",
-                    "uri": entry.get("webpage_url"),
+                    "author": entry.get("uploader") or label,
+                    "uri": entry.get("webpage_url") or entry.get("url"),
                     "length": duration,
                     "artwork": thumbnails[-1].get("url") if thumbnails else None,
-                    "source": "sc",
+                    "source": source,
                     "requested_by": "",
                     "encoded": None,
                 }
             )
         return tracks
 
-    async def _sc_resolve(self, url: str) -> dict[str, Any]:
-        """Resolve a SoundCloud page URL to a direct progressive stream."""
-        out = await self._run_ytdlp(["-f", "bestaudio[protocol^=http]/bestaudio", "--no-warnings", "-J", url])
-        info = json.loads(out.strip().splitlines()[-1])
+    async def _resolve_stream(self, url: str, label: str) -> dict[str, Any]:
+        """Resolve a page URL to a direct http audio stream."""
+        out = await self._run_ytdlp(
+            ["-f", "bestaudio[protocol^=http]/bestaudio", "--no-warnings", "-J", url], label=label
+        )
+        out = out.strip()
+        try:
+            info = json.loads(out)
+        except json.JSONDecodeError:
+            info = json.loads(out.splitlines()[-1])
+        if info.get("_type") == "playlist":
+            raise MusicServiceError(f"{label} playlists are not supported. Queue a single track.")
         stream_url = info.get("url")
         if not stream_url:
-            raise MusicServiceError("No playable stream found for this SoundCloud track.")
+            raise MusicServiceError(f"No playable stream found for this {label} track.")
         if "m3u8" in str(info.get("protocol", "")) or ".m3u8" in stream_url:
             raise MusicServiceError(
-                "This track only provides an HLS stream, which requires the official SoundCloud app."
+                "This track only provides an HLS stream, which requires the official app."
             )
         return info
 
     async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
         if source == "sc":
-            return await self._sc_search(query, limit)
+            return await self._ytdlp_search(query, limit, "scsearch", "sc")
+        if source == "yt":
+            return await self._ytdlp_search(query, limit, "ytsearch", "yt")
         result = await self._search_with_retry(query, source)
         if isinstance(result, wavelink.Playlist):
             tracks = result.tracks[:limit]
@@ -265,16 +277,17 @@ class MusicService:
         if cached is not None:
             tracks = [wavelink.Playable(data=cached)]
             title = tracks[0].title
-        elif source == "sc":
-            # Resolve a direct progressive stream with yt-dlp; Lavalink plays
-            # it through the plain http source.
-            info = await self._sc_resolve(query)
+        elif source in ("sc", "yt"):
+            # Resolve a direct stream with yt-dlp; Lavalink plays it through
+            # the plain http source.
+            label = "SoundCloud" if source == "sc" else "YouTube"
+            info = await self._resolve_stream(query, label)
             loaded = await wavelink.Playable.search(info["url"])
             if isinstance(loaded, wavelink.Playlist) or not loaded:
-                raise MusicServiceError("Could not load the SoundCloud stream.")
+                raise MusicServiceError(f"Could not load the {label} stream.")
             track = loaded[0]
             track._title = info.get("title") or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
-            track._author = info.get("uploader") or track.author  # noqa: SLF001
+            track._author = info.get("uploader") or info.get("channel") or track.author  # noqa: SLF001
             if info.get("thumbnail"):
                 track._artwork = info["thumbnail"]  # noqa: SLF001
             tracks = [track]

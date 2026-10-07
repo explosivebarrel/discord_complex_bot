@@ -72,6 +72,7 @@ export function PlayerPage() {
   const [source, setSource] = useState("yt");
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [enqueueing, setEnqueueing] = useState<string | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -125,11 +126,20 @@ export function PlayerPage() {
       .finally(() => setSearching(false));
   };
 
-  const enqueue = (body: { query?: string; encoded?: string; source?: string }) =>
-    act(async () => {
-      const r = await api.enqueue(gid, body);
-      feedback.show(r.now_playing ? `Now playing: ${r.title}` : `Queued: ${r.title}`);
-    });
+  const enqueue = (key: string, body: { query?: string; encoded?: string; source?: string }) => {
+    if (enqueueing !== null) return;
+    setEnqueueing(key);
+    api
+      .enqueue(gid, body)
+      .then((r) => {
+        feedback.show(r.now_playing ? `Now playing: ${r.title}` : `Queued: ${r.title}`);
+        setResults(null);
+        setQuery("");
+        refresh();
+      })
+      .catch(guard)
+      .finally(() => setEnqueueing(null));
+  };
 
   if (loading) {
     return (
@@ -143,7 +153,11 @@ export function PlayerPage() {
 
   return (
     <AppShell me={me} back title={state?.guild_name ?? undefined}>
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
+        sx={{ alignItems: "flex-start", minHeight: { md: "calc(100dvh - 190px)" }, pb: 12 }}
+      >
         {/* Left column: search */}
         <Box sx={{ flex: { md: "1 1 58%" }, minWidth: 0, width: "100%" }}>
           <Card>
@@ -193,14 +207,18 @@ export function PlayerPage() {
               <Button
                 variant="tonal"
                 sx={{ mt: 1.5 }}
-                disabled={!query.trim()}
-                onClick={() => query.trim() && enqueue({ query, source })}
+                disabled={!query.trim() || enqueueing !== null}
+                onClick={() => query.trim() && enqueue("url", { query, source })}
               >
-                <AddQueue fontSize="small" sx={{ mr: 0.75 }} />
+                {enqueueing === "url" ? (
+                  <CircularProgress size={16} sx={{ mr: 0.75 }} />
+                ) : (
+                  <AddQueue fontSize="small" sx={{ mr: 0.75 }} />
+                )}
                 Queue URL
               </Button>
 
-              <Box sx={{ mt: 2, maxHeight: 460, overflowY: "auto", mx: -1, px: 1 }}>
+              <Box sx={{ mt: 2 }}>
                 {searching ? (
                   [0, 1, 2].map((i) => (
                     <Box key={i} sx={{ display: "flex", gap: 2, py: 1 }}>
@@ -226,10 +244,13 @@ export function PlayerPage() {
                             <Button
                               size="small"
                               variant="tonal"
+                              disabled={enqueueing !== null}
+                              startIcon={enqueueing === `t${i}` ? <CircularProgress size={14} /> : undefined}
                               onClick={() => {
-                                enqueue(t.encoded ? { encoded: t.encoded } : { query: t.uri ?? t.title, source });
-                                setResults(null);
-                                setQuery("");
+                                enqueue(
+                                  `t${i}`,
+                                  t.encoded ? { encoded: t.encoded } : { query: t.uri ?? t.title, source },
+                                );
                               }}
                             >
                               Queue
@@ -330,7 +351,7 @@ export function PlayerPage() {
                 Queue ({state?.queue.length ?? 0})
               </Typography>
               {state && state.queue.length > 0 ? (
-                <List disablePadding sx={{ maxHeight: 380, overflowY: "auto" }}>
+                <List disablePadding>
                   {state.queue.map((t, i) => (
                     <ListItem key={i} disableGutters dense>
                       <ListItemAvatar sx={{ minWidth: 36 }}>
