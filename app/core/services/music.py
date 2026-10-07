@@ -6,6 +6,7 @@ import logging
 from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import discord
 import wavelink
@@ -54,6 +55,8 @@ class MusicService:
         self.config = config
         self.queues: dict[int, deque[QueueItem]] = {}
         self.current_items: dict[int, QueueItem] = {}
+        # Repeat mode per guild: "off", "one" or "all".
+        self.repeat_modes: dict[int, str] = {}
         # Raw Lavalink payloads of recent search results, keyed by encoded track.
         # YouTube blocks re-loading a direct video URL, so the web panel queues
         # tracks from this cache instead of asking Lavalink to load again.
@@ -235,6 +238,23 @@ class MusicService:
             )
         return info
 
+    async def probe_stream(self, url: str) -> str:
+        """Check a page URL for HLS-only or DRM limits. Returns "ok", "hls",
+        "drm" or "error". The resolved stream is thrown away; the queue
+        resolves it again on enqueue."""
+        try:
+            info = await self._resolve_stream(url, "The site")
+        except MusicServiceError as exc:
+            text = str(exc)
+            if "HLS" in text:
+                return "hls"
+            if "DRM" in text:
+                return "drm"
+            return "error"
+        if "m3u8" in str(info.get("protocol", "")) or ".m3u8" in str(info.get("url", "")):
+            return "hls"
+        return "ok"
+
     async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
         if source == "sc":
             return await self._ytdlp_search(query, limit, "scsearch", "sc")
@@ -251,16 +271,33 @@ class MusicService:
 
     @staticmethod
     def _track_dict(track: wavelink.Playable) -> dict[str, Any]:
+        # LavaSrc names its source "yandexmusic"; the panel tag is "ym".
+        source = {"yandexmusic": "ym"}.get(track.source, track.source)
         return {
             "title": track.title,
             "author": track.author,
             "uri": track.uri,
             "length": track.length,
             "artwork": track.artwork,
-            "source": track.source,
+            "source": source,
             "identifier": track.identifier,
             "encoded": track.encoded,
         }
+
+    @staticmethod
+    def _detect_source(query: str, source: str) -> str:
+        """Pick the source tag from a URL. The panel tag can be stale, for
+        example a YouTube link pasted while the Yandex chip is selected."""
+        host = (urlparse(query).hostname or "").removeprefix("www.")
+        if host in ("youtube.com", "music.youtube.com", "youtu.be"):
+            return "yt"
+        if host in ("soundcloud.com", "on.soundcloud.com"):
+            return "sc"
+        if host in ("music.yandex.ru", "music.yandex.com"):
+            return "ym"
+        if host == "archive.org":
+            return "archive"
+        return source
 
     async def enqueue(
         self,
@@ -276,6 +313,7 @@ class MusicService:
         Start playback if the player is idle. With `encoded`, take the track
         from the search cache and skip the Lavalink load request.
         """
+        source = self._detect_source(query, source)
         cached = self.track_cache.get(encoded) if encoded else None
         if cached is not None:
             tracks = [wavelink.Playable(data=cached)]
@@ -345,18 +383,51 @@ class MusicService:
             "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         }
 
-    async def play_next(self, guild_id: int) -> wavelink.Playable | None:
+    async def play_next(self, guild_id: int, reason: str = "finished") -> wavelink.Playable | None:
         queue = self._queue(guild_id)
-        if not queue:
-            self.current_items.pop(guild_id, None)
-            return None
         player = self.get_player(guild_id)
         if player is None:
             return None
+        current = self.current_items.get(guild_id)
+        if reason == "finished" and self.repeat_modes.get(guild_id) == "one" and current is not None:
+            # Replay the same track; the queue stays as it is. An explicit
+            # skip ("stopped") still moves to the next track.
+            await player.play(current.track)
+            return current.track
+        if not queue:
+            if self.repeat_modes.get(guild_id) == "all" and current is not None:
+                # The round is over; start it again with the track that ended.
+                queue.append(current)
+            else:
+                self.current_items.pop(guild_id, None)
+                return None
         item = queue.popleft()
         self.current_items[guild_id] = item
         await player.play(item.track)
         return item.track
+
+    def set_repeat(self, guild_id: int, mode: str) -> str:
+        if mode not in ("off", "one", "all"):
+            raise MusicServiceError("Repeat mode must be off, one or all.")
+        self.repeat_modes[guild_id] = mode
+        return mode
+
+    def remove_queued(self, guild_id: int, index: int) -> str:
+        queue = self._queue(guild_id)
+        if index < 0 or index >= len(queue):
+            raise MusicServiceError("That queue position does not exist.")
+        item = queue[index]
+        del queue[index]
+        return item.track.title
+
+    def move_queued(self, guild_id: int, from_index: int, to_index: int) -> str:
+        queue = self._queue(guild_id)
+        if not (0 <= from_index < len(queue)) or not (0 <= to_index < len(queue)):
+            raise MusicServiceError("That queue position does not exist.")
+        item = queue[from_index]
+        del queue[from_index]
+        queue.insert(to_index, item)
+        return item.track.title
 
     async def skip(self, guild_id: int, requester_id: int) -> bool:
         player = self._require_player(guild_id)
@@ -411,6 +482,7 @@ class MusicService:
             "channel_name": player.channel.name if player is not None and player.channel else None,
             "volume": player.volume if player is not None else 100,
             "playing": bool(player is not None and player.playing),
+            "repeat": self.repeat_modes.get(guild_id, "off"),
             "current": current,
             "queue": [item.to_dict() for item in queue],
         }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import discord
 import wavelink
@@ -122,6 +122,13 @@ class MusicCog(commands.Cog):
         await self.bot.music.disconnect(interaction.guild_id or 0)
         await interaction.response.send_message("👋 Disconnected.")
 
+    @app_commands.command(name="repeat", description="Repeat the current track or the whole queue")
+    @app_commands.describe(mode="off, one (current track) or all (whole queue)")
+    @app_commands.guild_only()
+    async def repeat(self, interaction: discord.Interaction, mode: Literal["off", "one", "all"]) -> None:
+        self.bot.music.set_repeat(interaction.guild_id or 0, mode)
+        await interaction.response.send_message(f"🔁 Repeat: {mode}.")
+
     # --- auto-advance ---
 
     @commands.Cog.listener()
@@ -141,7 +148,7 @@ class MusicCog(commands.Cog):
         if payload.reason in ("replaced", "cleanup"):
             return
         try:
-            await self.bot.music.play_next(guild_id)
+            await self.bot.music.play_next(guild_id, payload.reason)
         except Exception:  # noqa: BLE001 - never crash the event loop on bad tracks
             logger.exception("Failed to play next track for guild %s", guild_id)
 

@@ -4,6 +4,8 @@ import Pause from "@mui/icons-material/Pause";
 import PlayArrow from "@mui/icons-material/PlayArrow";
 import SkipNext from "@mui/icons-material/SkipNext";
 import Stop from "@mui/icons-material/Stop";
+import Repeat from "@mui/icons-material/Repeat";
+import RepeatOne from "@mui/icons-material/RepeatOne";
 import VolumeUp from "@mui/icons-material/VolumeUp";
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import type { PlayerState } from "../api";
@@ -25,6 +27,7 @@ export function PlayerBar({
   onSkip,
   onStop,
   onSeek,
+  onRepeatCycle,
 }: {
   state: PlayerState | null;
   volume: number;
@@ -34,10 +37,12 @@ export function PlayerBar({
   onSkip: () => void;
   onStop: () => void;
   onSeek: (positionMs: number) => void;
+  onRepeatCycle: () => void;
 }) {
   const current = state?.current;
   const paused = !!current?.paused;
   const isLive = !!current && current.length >= LIVE_LENGTH;
+  const repeat = state?.repeat ?? "off";
   const [livePos, setLivePos] = useState(0);
 
   // Advance the progress bar locally between 3-second polls.
@@ -133,6 +138,14 @@ export function PlayerBar({
         <Tooltip title="Skip">
           <IconButton onClick={onSkip}>
             <SkipNext />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={`Repeat: ${repeat === "off" ? "off (click for queue)" : repeat === "all" ? "whole queue (click for one track)" : "one track (click to turn off)"}`}>
+          <IconButton
+            onClick={onRepeatCycle}
+            sx={repeat !== "off" ? { color: "primary.main" } : { color: "text.secondary" }}
+          >
+            {repeat === "one" ? <RepeatOne /> : <Repeat />}
           </IconButton>
         </Tooltip>
         <Tooltip title="Stop and clear the queue">

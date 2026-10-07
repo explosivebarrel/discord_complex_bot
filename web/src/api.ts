@@ -25,6 +25,8 @@ export interface TrackInfo {
   position?: number;
   paused?: boolean;
   encoded?: string;
+  /** "hls" or "drm" when the All-search probe found a playback limit. */
+  issue?: string | null;
 }
 
 export interface PlayerState {
@@ -35,6 +37,7 @@ export interface PlayerState {
   channel_name: string | null;
   volume: number;
   playing: boolean;
+  repeat: "off" | "one" | "all";
   current: TrackInfo | null;
   queue: TrackInfo[];
 }
@@ -120,6 +123,25 @@ export const api = {
 
   simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop") =>
     fetch(`/api/guilds/${guildId}/player/${action}`, { method: "POST" }).then((r) => handle<unknown>(r)),
+
+  repeat: (guildId: string, mode: "off" | "one" | "all") =>
+    fetch(`/api/guilds/${guildId}/player/repeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }).then((r) => handle<{ repeat: "off" | "one" | "all" }>(r)),
+
+  removeQueued: (guildId: string, index: number) =>
+    fetch(`/api/guilds/${guildId}/player/queue/${index}`, { method: "DELETE" }).then((r) =>
+      handle<{ removed: string }>(r),
+    ),
+
+  moveQueued: (guildId: string, from: number, to: number) =>
+    fetch(`/api/guilds/${guildId}/player/queue/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to }),
+    }).then((r) => handle<{ moved: string }>(r)),
 
   volume: (guildId: string, volume: number) =>
     fetch(`/api/guilds/${guildId}/player/volume`, {

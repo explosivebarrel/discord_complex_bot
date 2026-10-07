@@ -7,6 +7,7 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  IconButton,
   InputAdornment,
   List,
   ListItem,
@@ -29,6 +30,10 @@ import RadioIcon from "@mui/icons-material/Radio";
 import LibraryMusic from "@mui/icons-material/LibraryMusic";
 import YouTube from "@mui/icons-material/YouTube";
 import VolumeUp from "@mui/icons-material/VolumeUp";
+import AllInclusive from "@mui/icons-material/AllInclusive";
+import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
+import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
+import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import { api, PlayerState, TrackInfo, VoiceChannel } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -36,6 +41,7 @@ import { PlayerBar } from "../components/PlayerBar";
 import { useFeedback } from "../components/Feedback";
 
 const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
+  { id: "all", label: "All", icon: <AllInclusive fontSize="small" /> },
   { id: "yt", label: "YouTube", icon: <YouTube fontSize="small" /> },
   { id: "sc", label: "SoundCloud", icon: <CloudQueue fontSize="small" /> },
   { id: "ym", label: "Яндекс Музыка", icon: <MusicNote fontSize="small" /> },
@@ -44,6 +50,7 @@ const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
 ];
 
 const PLACEHOLDERS: Record<string, string> = {
+  all: "Search all sources",
   yt: "Track name or URL",
   sc: "Search SoundCloud tracks",
   ym: "Поиск по Яндекс.Музыке",
@@ -57,6 +64,7 @@ const SOURCE_LABELS: Record<string, string> = {
   yt: "YouTube",
   sc: "SoundCloud",
   ym: "Яндекс Музыка",
+  yandexmusic: "Яндекс Музыка",
   radio: "Radio",
   archive: "Archive.org",
   youtube: "YouTube",
@@ -149,6 +157,11 @@ export function PlayerPage() {
       })
       .catch(guard)
       .finally(() => setEnqueueing(null));
+  };
+
+  const cycleRepeat = () => {
+    const next = state?.repeat === "all" ? "one" : state?.repeat === "one" ? "off" : "all";
+    act(() => api.repeat(gid, next), `Repeat: ${next}`);
   };
 
   if (loading) {
@@ -256,20 +269,33 @@ export function PlayerPage() {
                           key={i}
                           disablePadding
                           secondaryAction={
-                            <Button
-                              size="small"
-                              variant="tonal"
-                              disabled={enqueueing !== null}
-                              startIcon={enqueueing === `t${i}` ? <CircularProgress size={14} /> : undefined}
-                              onClick={() => {
-                                enqueue(
-                                  `t${i}`,
-                                  t.encoded ? { encoded: t.encoded, source } : { query: t.uri ?? t.title, source },
-                                );
-                              }}
-                            >
-                              Queue
-                            </Button>
+                            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                              {t.issue && (
+                                <Chip
+                                  size="small"
+                                  label={t.issue.toUpperCase()}
+                                  color="error"
+                                  variant="outlined"
+                                  sx={{ height: 20, fontSize: 11 }}
+                                />
+                              )}
+                              <Button
+                                size="small"
+                                variant="tonal"
+                                disabled={enqueueing !== null}
+                                startIcon={enqueueing === `t${i}` ? <CircularProgress size={14} /> : undefined}
+                                onClick={() => {
+                                  enqueue(
+                                    `t${i}`,
+                                    t.encoded
+                                      ? { encoded: t.encoded, source: t.source ?? source }
+                                      : { query: t.uri ?? t.title, source: t.source ?? source },
+                                  );
+                                }}
+                              >
+                                Queue
+                              </Button>
+                            </Stack>
                           }
                         >
                           <ListItemAvatar>
@@ -296,7 +322,13 @@ export function PlayerPage() {
                           </ListItemAvatar>
                           <ListItemText
                             primary={t.title}
-                            secondary={`${t.author ?? ""} · ${t.length >= LIVE_LENGTH || t.length === 0 ? "LIVE" : fmt(t.length)}`}
+                            secondary={[
+                              SOURCE_LABELS[t.source ?? ""] ?? "",
+                              t.author ?? "",
+                              t.length >= LIVE_LENGTH || t.length === 0 ? "LIVE" : fmt(t.length),
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                             slotProps={{
                               primary: { noWrap: true, sx: { pr: 2 } },
                               secondary: { noWrap: true, sx: { pr: 2 } },
@@ -368,7 +400,32 @@ export function PlayerPage() {
               {state && state.queue.length > 0 ? (
                 <List disablePadding>
                   {state.queue.map((t, i) => (
-                    <ListItem key={i} disableGutters dense>
+                    <ListItem
+                      key={i}
+                      disableGutters
+                      dense
+                      secondaryAction={
+                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                          <IconButton
+                            size="small"
+                            disabled={i === 0}
+                            onClick={() => act(() => api.moveQueued(gid, i, i - 1))}
+                          >
+                            <KeyboardArrowUp fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            disabled={i === state.queue.length - 1}
+                            onClick={() => act(() => api.moveQueued(gid, i, i + 1))}
+                          >
+                            <KeyboardArrowDown fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => act(() => api.removeQueued(gid, i))}>
+                            <DeleteOutlined fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      }
+                    >
                       <ListItemAvatar sx={{ minWidth: 36 }}>
                         <Typography variant="body2" sx={{ color: "text.secondary", textAlign: "center" }}>
                           {i + 1}
@@ -424,6 +481,7 @@ export function PlayerPage() {
         onSkip={() => act(() => api.simpleAction(gid, "skip"))}
         onStop={() => act(() => api.simpleAction(gid, "stop"), "Stopped, queue cleared")}
         onSeek={(p) => act(() => api.seek(gid, p))}
+        onRepeatCycle={cycleRepeat}
       />
       {feedback.node}
     </AppShell>

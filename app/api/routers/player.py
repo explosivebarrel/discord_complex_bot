@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import CurrentUser, get_bot, get_db, get_music, require_guild_member
 from app.core.db import Database
@@ -39,6 +40,15 @@ class VolumeBody(BaseModel):
 
 class SeekBody(BaseModel):
     position: int  # milliseconds
+
+
+class RepeatBody(BaseModel):
+    mode: str  # off | one | all
+
+
+class MoveBody(BaseModel):
+    from_index: int = Field(alias="from")
+    to_index: int = Field(alias="to")
 
 
 @router.get("/state")
@@ -104,6 +114,28 @@ async def search(
             return await archive_search(q)
         except ExternalSearchError as exc:
             raise HTTPException(status_code=502, detail=f"Archive search failed: {exc}") from exc
+    if source == "all":
+        # One broken source must not fail the whole search.
+        found = await asyncio.gather(
+            music.search(q, limit=5, source="yt"),
+            music.search(q, limit=4, source="sc"),
+            music.search(q, limit=4, source="ym"),
+            radio_search(q, limit=3),
+            archive_search(q, limit=3),
+            return_exceptions=True,
+        )
+        yt_res, sc_res, ym_res, radio_res, arch_res = (r if isinstance(r, list) else [] for r in found)
+        # Only yt/sc go through yt-dlp at play time; probe them so the panel
+        # can mark HLS-only and DRM tracks before the user queues them.
+        to_probe = [r for r in (*yt_res, *sc_res) if r.get("uri")]
+        probes = await asyncio.gather(*(music.probe_stream(r["uri"]) for r in to_probe))
+        for row, verdict in zip(to_probe, probes):
+            if verdict in ("hls", "drm"):
+                row["issue"] = verdict
+        merged = [*yt_res, *sc_res, *ym_res, *radio_res, *arch_res]
+        if not merged:
+            raise HTTPException(status_code=502, detail="All sources failed. Try again in a moment.")
+        return merged
     return await music.search(q, source=source)
 
 
@@ -231,3 +263,56 @@ async def seek(
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"position": body.position}
+
+
+@router.post("/repeat")
+async def repeat(
+    guild_id: int,
+    body: RepeatBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+) -> dict[str, Any]:
+    try:
+        mode = music.set_repeat(guild_id, body.mode)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"repeat": mode}
+
+
+@router.delete("/queue/{index}")
+async def remove_queued(
+    guild_id: int,
+    index: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = music.remove_queued(guild_id, index)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.audit(
+        "music.queue_remove", guild_id=guild_id, actor_id=user.discord_id, details={"index": index, "title": title}
+    )
+    return {"removed": title}
+
+
+@router.post("/queue/move")
+async def move_queued(
+    guild_id: int,
+    body: MoveBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = music.move_queued(guild_id, body.from_index, body.to_index)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.audit(
+        "music.queue_move",
+        guild_id=guild_id,
+        actor_id=user.discord_id,
+        details={"from": body.from_index, "to": body.to_index, "title": title},
+    )
+    return {"moved": title}
