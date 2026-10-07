@@ -53,6 +53,16 @@ const PLACEHOLDERS: Record<string, string> = {
 
 const LIVE_LENGTH = 9223372036854775807;
 
+const SOURCE_LABELS: Record<string, string> = {
+  yt: "YouTube",
+  sc: "SoundCloud",
+  ym: "Яндекс Музыка",
+  radio: "Radio",
+  archive: "Archive.org",
+  youtube: "YouTube",
+  soundcloud: "SoundCloud",
+};
+
 function fmt(ms: number): string {
   if (ms >= LIVE_LENGTH) return "LIVE";
   const s = Math.floor(ms / 1000);
@@ -156,7 +166,12 @@ export function PlayerPage() {
       <Stack
         direction={{ xs: "column", md: "row" }}
         spacing={2}
-        sx={{ alignItems: "flex-start", minHeight: { md: "calc(100dvh - 190px)" }, pb: 12 }}
+        sx={{
+          alignItems: "flex-start",
+          minHeight: { md: "calc(100dvh - 190px)" },
+          // Must exceed the floating player bar (about 128 px) plus a gap.
+          pb: { xs: 22, sm: 18 },
+        }}
       >
         {/* Left column: search */}
         <Box sx={{ flex: { md: "1 1 58%" }, minWidth: 0, width: "100%" }}>
@@ -249,7 +264,7 @@ export function PlayerPage() {
                               onClick={() => {
                                 enqueue(
                                   `t${i}`,
-                                  t.encoded ? { encoded: t.encoded } : { query: t.uri ?? t.title, source },
+                                  t.encoded ? { encoded: t.encoded, source } : { query: t.uri ?? t.title, source },
                                 );
                               }}
                             >
@@ -361,7 +376,7 @@ export function PlayerPage() {
                       </ListItemAvatar>
                       <ListItemText
                         primary={t.title}
-                        secondary={t.requested_by}
+                        secondary={[SOURCE_LABELS[t.source ?? ""] ?? "", t.requested_by].filter(Boolean).join(" · ")}
                         slotProps={{
                           primary: { noWrap: true },
                           secondary: { noWrap: true },

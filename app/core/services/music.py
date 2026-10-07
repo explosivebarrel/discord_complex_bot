@@ -25,6 +25,9 @@ class QueueItem:
     track: wavelink.Playable
     requested_by_id: int
     requested_by_name: str = field(default="")
+    # Panel source tag (yt, sc, ym, ...), more precise than track.source,
+    # which only says "http" for direct streams.
+    source: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,7 +36,7 @@ class QueueItem:
             "uri": self.track.uri,
             "length": self.track.length,
             "artwork": self.track.artwork,
-            "source": self.track.source,
+            "source": self.source or self.track.source,
             "requested_by": self.requested_by_name,
         }
 
@@ -279,13 +282,23 @@ class MusicService:
             title = tracks[0].title
         elif source in ("sc", "yt"):
             # Resolve a direct stream with yt-dlp; Lavalink plays it through
-            # the plain http source.
+            # the plain http source. A fresh resolve now and then fails to
+            # load in Lavalink, so retry once with a new URL.
             label = "SoundCloud" if source == "sc" else "YouTube"
-            info = await self._resolve_stream(query, label)
-            loaded = await wavelink.Playable.search(info["url"])
-            if isinstance(loaded, wavelink.Playlist) or not loaded:
-                raise MusicServiceError(f"Could not load the {label} stream.")
-            track = loaded[0]
+            track = None
+            for attempt in range(2):
+                info = await self._resolve_stream(query, label)
+                try:
+                    loaded = await wavelink.Playable.search(info["url"])
+                except wavelink.LavalinkLoadException:
+                    loaded = None
+                if loaded and not isinstance(loaded, wavelink.Playlist):
+                    track = loaded[0]
+                    break
+                if attempt + 1 < 2:
+                    await asyncio.sleep(1.0)
+            if track is None:
+                raise MusicServiceError(f"Could not load the {label} stream. Try again in a moment.")
             track._title = info.get("title") or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
             track._author = info.get("uploader") or info.get("channel") or track.author  # noqa: SLF001
             if info.get("thumbnail"):
@@ -306,7 +319,7 @@ class MusicService:
             raise MusicServiceError("Nothing found for this query.")
 
         queue = self._queue(guild_id)
-        items = [QueueItem(t, requester_id, requester_name) for t in tracks]
+        items = [QueueItem(t, requester_id, requester_name, source=source) for t in tracks]
         player = self.get_player(guild_id)
         now_playing = False
         if player is not None and not player.playing and not queue:
