@@ -525,11 +525,40 @@ export function PlayerPage() {
             </CardContent>
           </Card>
 
+          {state?.connected && (
+            <Card>
+              <CardContent>
+                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                  <VolumeUp sx={{ color: "text.secondary" }} />
+                  <Slider
+                    size="small"
+                    min={0}
+                    max={200}
+                    value={volume ?? 100}
+                    onChange={(_event, v) => setVolume(v as number)}
+                    onChangeCommitted={(_event, v) => act(() => api.volume(gid, v as number))}
+                    valueLabelDisplay="auto"
+                    valueLabelFormat={(v) => `${v}%`}
+                  />
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Queue ({state?.queue.length ?? 0})
-              </Typography>
+              <Stack direction="row" sx={{ alignItems: "center", mb: 1 }}>
+                <Typography variant="h6" sx={{ flex: 1 }}>
+                  Queue ({state?.queue.length ?? 0})
+                </Typography>
+                <Button
+                  size="small"
+                  variant="tonal"
+                  disabled={!state?.queue.length}
+                  onClick={() => act(() => api.clearQueue(gid), "Queue cleared")}
+                >
+                  Clear
+                </Button>
+              </Stack>
               {state && state.queue.length > 0 ? (
                 <List disablePadding>
                   {state.queue.map((t, i) => (
@@ -600,25 +629,6 @@ export function PlayerPage() {
             </CardContent>
           </Card>
 
-          {state?.connected && (
-            <Card>
-              <CardContent>
-                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                  <VolumeUp sx={{ color: "text.secondary" }} />
-                  <Slider
-                    size="small"
-                    min={0}
-                    max={200}
-                    value={volume ?? 100}
-                    onChange={(_event, v) => setVolume(v as number)}
-                    onChangeCommitted={(_event, v) => act(() => api.volume(gid, v as number))}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(v) => `${v}%`}
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
-          )}
         </Stack>
       </Stack>
 

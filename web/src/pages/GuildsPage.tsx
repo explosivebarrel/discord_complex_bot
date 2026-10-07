@@ -94,22 +94,22 @@ export function GuildsPage() {
                   </Typography>
                 </Box>
                 {g.is_admin && <Chip size="small" label="admin" color="primary" sx={{ alignSelf: "flex-start" }} />}
-                <Box sx={{ mt: "auto", display: "flex", gap: 1 }}>
+                <Box sx={{ mt: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
                   <Button href={`/guild/${g.id}`} variant="contained" size="small">
                     Open player
                   </Button>
                   {(g.is_admin || g.is_superadmin) && (
-                    <>
-                      <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" startIcon={<Settings />}>
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Settings />}>
                         Manage
                       </Button>
-                      <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" startIcon={<BarChart />}>
+                      <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<BarChart />}>
                         Stats
                       </Button>
-                      <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" startIcon={<PostAdd />}>
+                      <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<PostAdd />}>
                         Post
                       </Button>
-                    </>
+                    </Box>
                   )}
                 </Box>
               </CardContent>

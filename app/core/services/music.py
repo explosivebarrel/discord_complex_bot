@@ -656,6 +656,12 @@ class MusicService:
         self.repeat_modes[guild_id] = mode
         return mode
 
+    def clear_queue(self, guild_id: int) -> int:
+        queue = self._queue(guild_id)
+        count = len(queue)
+        queue.clear()
+        return count
+
     def remove_queued(self, guild_id: int, index: int) -> str:
         queue = self._queue(guild_id)
         if index < 0 or index >= len(queue):

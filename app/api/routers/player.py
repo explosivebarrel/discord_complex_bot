@@ -301,6 +301,18 @@ async def repeat(
     return {"repeat": mode}
 
 
+@router.post("/queue/clear")
+async def clear_queue(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    cleared = music.clear_queue(guild_id)
+    await db.audit("music.queue_clear", guild_id=guild_id, actor_id=user.discord_id, details={"cleared": cleared})
+    return {"cleared": cleared}
+
+
 @router.delete("/queue/{index}")
 async def remove_queued(
     guild_id: int,

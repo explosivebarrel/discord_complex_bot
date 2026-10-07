@@ -203,6 +203,11 @@ export const api = {
   removeFavorite: (id: number) =>
     fetch(`/api/favorites/${id}`, { method: "DELETE" }).then((r) => handle<{ removed: boolean }>(r)),
 
+  clearQueue: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/queue/clear`, { method: "POST" }).then((r) =>
+      handle<{ cleared: number }>(r),
+    ),
+
   removeQueued: (guildId: string, index: number) =>
     fetch(`/api/guilds/${guildId}/player/queue/${index}`, { method: "DELETE" }).then((r) =>
       handle<{ removed: string }>(r),
