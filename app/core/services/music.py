@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections import deque
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -12,6 +13,7 @@ import discord
 import wavelink
 
 from app.core.db import Database
+from app.core.services.library import library_stream_url
 
 if TYPE_CHECKING:
     from app.core.config import Config
@@ -370,6 +372,22 @@ class MusicService:
                 for entry in entries
             ]
             title = f"Playlist - {len(items)} track(s)"
+        elif source == "local":
+            # Pending item; the signed stream URL is built at play time.
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=query,
+                    title=str(meta.get("title") or Path(query).name),
+                    author="local",
+                    length=int(meta.get("length_ms") or 0),
+                    artwork=None,
+                )
+            ]
+            title = items[0].display_title
         elif source in ("yt", "sc") and meta.get("title"):
             # The panel already knows the track metadata; queue lazily.
             items = [
@@ -473,6 +491,14 @@ class MusicService:
         """Turn a pending item into a playable track right before playing."""
         if item.track is not None:
             return item.track
+        if item.source == "local":
+            url = library_stream_url(self.config, item.pending_url)
+            loaded = await wavelink.Playable.search(url)
+            if isinstance(loaded, wavelink.Playlist) or not loaded:
+                raise MusicServiceError("Could not load the library file.")
+            track = loaded[0]
+            track._title = item.title or track.title  # noqa: SLF001 - Lavalink only sees the URL
+            return track
         if item.source in ("yt", "sc"):
             label = "SoundCloud" if item.source == "sc" else "YouTube"
             track = None

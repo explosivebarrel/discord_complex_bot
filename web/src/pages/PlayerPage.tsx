@@ -28,6 +28,7 @@ import MusicNote from "@mui/icons-material/MusicNote";
 import CloudQueue from "@mui/icons-material/CloudQueue";
 import RadioIcon from "@mui/icons-material/Radio";
 import LibraryMusic from "@mui/icons-material/LibraryMusic";
+import Folder from "@mui/icons-material/Folder";
 import YouTube from "@mui/icons-material/YouTube";
 import VolumeUp from "@mui/icons-material/VolumeUp";
 import AllInclusive from "@mui/icons-material/AllInclusive";
@@ -50,6 +51,7 @@ const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
   { id: "ym", label: "Яндекс Музыка", icon: <MusicNote fontSize="small" /> },
   { id: "radio", label: "Radio", icon: <RadioIcon fontSize="small" /> },
   { id: "archive", label: "Archive.org", icon: <LibraryMusic fontSize="small" /> },
+  { id: "local", label: "Local", icon: <Folder fontSize="small" /> },
 ];
 
 const PLACEHOLDERS: Record<string, string> = {
@@ -59,6 +61,7 @@ const PLACEHOLDERS: Record<string, string> = {
   ym: "Поиск по Яндекс.Музыке",
   radio: "Station name or genre (jazz, rock, news…)",
   archive: "Search audio on Archive.org",
+  local: "Search files in the server library (data/music)",
 };
 
 const LIVE_LENGTH = 9223372036854775807;
@@ -401,7 +404,7 @@ export function PlayerPage() {
                             secondary={[
                               SOURCE_LABELS[t.source ?? ""] ?? "",
                               t.author ?? "",
-                              t.length >= LIVE_LENGTH || t.length === 0 ? "LIVE" : fmt(t.length),
+                              t.length > 0 ? fmt(t.length) : t.source === "local" ? "file" : "LIVE",
                             ]
                               .filter(Boolean)
                               .join(" · ")}

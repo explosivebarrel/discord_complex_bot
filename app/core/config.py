@@ -32,10 +32,14 @@ class Config:
     yandex_music_token: str
     log_level: str
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
+    music_library_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "music")
+    internal_base_url: str = "http://localhost:8000"
 
 
 def load_config() -> Config:
     load_dotenv(BASE_DIR / ".env")
+    base_url_value = os.getenv("BASE_URL", "http://localhost:8000")
+    data_dir_value = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
     db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
     if "sqlite" in db_url and ":memory:" not in db_url:
         # A relative sqlite path must not depend on the working directory.
@@ -52,7 +56,7 @@ def load_config() -> Config:
         discord_redirect_uri=os.getenv("DISCORD_REDIRECT_URI", "http://localhost:8000/api/auth/callback"),
         superadmin_ids=_split_ids(os.getenv("SUPERADMIN_IDS", "")),
         session_secret=os.getenv("SESSION_SECRET", "change-me"),
-        base_url=os.getenv("BASE_URL", "http://localhost:8000"),
+        base_url=base_url_value,
         database_url=db_url,
         lavalink_host=os.getenv("LAVALINK_HOST", "localhost"),
         lavalink_port=int(os.getenv("LAVALINK_PORT", "2333")),
@@ -60,6 +64,8 @@ def load_config() -> Config:
         lavalink_secure=os.getenv("LAVALINK_SECURE", "false").lower() == "true",
         yandex_music_token=os.getenv("YANDEX_MUSIC_TOKEN", ""),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        music_library_dir=Path(os.getenv("MUSIC_LIBRARY_DIR", str(data_dir_value / "music"))),
+        internal_base_url=os.getenv("INTERNAL_BASE_URL", base_url_value),
     )
 
 

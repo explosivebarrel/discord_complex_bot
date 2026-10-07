@@ -27,8 +27,13 @@ services:
       LAVALINK_HOST: lavalink
       # Keep the SQLite file on the named volume. Do not put it inside the container.
       DATABASE_URL: sqlite+aiosqlite:////data/bot.db
+      # Lavalink fetches local library files from the app service.
+      INTERNAL_BASE_URL: http://app:8000
+      MUSIC_LIBRARY_DIR: /data/music
     volumes:
       - bot-data:/data
+      # Local music library; drop files into data/music on the host.
+      - ./data/music:/data/music
       # The panel edits the Yandex token here; lavalink reads it on recreate.
       - ./.env:/srv/.env
     ports:

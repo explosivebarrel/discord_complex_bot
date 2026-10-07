@@ -6,9 +6,11 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import CurrentUser, get_bot, get_db, get_music, require_guild_member
+from app.api.deps import CurrentUser, get_bot, get_config, get_db, get_music, require_guild_member
+from app.core.config import Config
 from app.core.db import Database
 from app.core.services.extern_search import ExternalSearchError, archive_search, radio_search
+from app.core.services.library import search_library
 from app.core.services.music import MusicService, MusicServiceError
 
 if TYPE_CHECKING:
@@ -108,6 +110,7 @@ async def search(
     source: str = "yt",
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
+    config: Config = Depends(get_config),
 ) -> list[dict[str, Any]]:
     if source == "radio":
         try:
@@ -119,6 +122,8 @@ async def search(
             return await archive_search(q)
         except ExternalSearchError as exc:
             raise HTTPException(status_code=502, detail=f"Archive search failed: {exc}") from exc
+    if source == "local":
+        return search_library(config, q)
     if source == "all":
         # One broken source must not fail the whole search.
         found = await asyncio.gather(
