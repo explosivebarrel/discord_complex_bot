@@ -190,6 +190,16 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => handle<{ id: number }>(r)),
 
+  postChannels: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/posts/channels`).then((r) => handle<PostChannel[]>(r)),
+
+  createPost: (guildId: string, body: { channel_id: string; text: string; title?: string }) =>
+    fetch(`/api/guilds/${guildId}/posts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => handle<{ result: string }>(r)),
+
   removeFavorite: (id: number) =>
     fetch(`/api/favorites/${id}`, { method: "DELETE" }).then((r) => handle<{ removed: boolean }>(r)),
 

@@ -12,6 +12,7 @@ import { PlayerPage } from "./pages/PlayerPage";
 import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
+import { PostsPage } from "./pages/PostsPage";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -24,6 +25,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="/guild/:guildId" element={<PlayerPage />} />
           <Route path="/guild/:guildId/admin" element={<AdminPage />} />
           <Route path="/guild/:guildId/stats" element={<StatsPage />} />
+          <Route path="/guild/:guildId/posts" element={<PostsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </BrowserRouter>

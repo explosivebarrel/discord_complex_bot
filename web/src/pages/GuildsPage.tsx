@@ -3,6 +3,7 @@ import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Typography } from
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import Settings from "@mui/icons-material/Settings";
 import BarChart from "@mui/icons-material/BarChart";
+import PostAdd from "@mui/icons-material/PostAdd";
 import { api, GuildBrief } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -104,6 +105,9 @@ export function GuildsPage() {
                       </Button>
                       <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" startIcon={<BarChart />}>
                         Stats
+                      </Button>
+                      <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" startIcon={<PostAdd />}>
+                        Post
                       </Button>
                     </>
                   )}

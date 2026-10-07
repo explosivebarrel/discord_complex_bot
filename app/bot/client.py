@@ -32,7 +32,7 @@ class ComplexBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await self.db.create_all()
-        for ext in ("app.bot.cogs.music", "app.bot.cogs.moderation", "app.bot.cogs.owner"):
+        for ext in ("app.bot.cogs.music", "app.bot.cogs.moderation", "app.bot.cogs.owner", "app.bot.cogs.posts"):
             await self.load_extension(ext)
         await self.tree.sync()
         logger.info("Slash commands synced")
