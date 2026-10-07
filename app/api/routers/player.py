@@ -26,6 +26,11 @@ class EnqueueBody(BaseModel):
     query: str = ""
     encoded: str | None = None
     source: str = "yt"
+    # Page metadata for pending (lazy) queue items; optional.
+    title: str | None = None
+    author: str | None = None
+    length_ms: int | None = None
+    artwork: str | None = None
 
     @model_validator(mode="after")
     def check_query_or_encoded(self) -> EnqueueBody:
@@ -168,8 +173,20 @@ async def enqueue(
         except MusicServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
+        meta = {
+            "title": body.title,
+            "author": body.author,
+            "length_ms": body.length_ms,
+            "artwork": body.artwork,
+        }
         result = await music.enqueue(
-            guild_id, body.query, user.discord_id, user.global_name, encoded=body.encoded, source=body.source
+            guild_id,
+            body.query,
+            user.discord_id,
+            user.global_name,
+            encoded=body.encoded,
+            source=body.source,
+            meta=meta,
         )
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

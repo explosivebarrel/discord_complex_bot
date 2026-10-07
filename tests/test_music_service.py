@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from collections import deque
 
 from app.core.services.music import MusicServiceError, QueueItem
 
@@ -107,3 +108,49 @@ async def test_play_next_records_history(music: MusicService, db) -> None:
     assert len(history) == 1
     assert history[0]["title"] == "a"
     assert history[0]["requested_by"] == "tester"
+
+
+async def test_pending_item_resolves_at_play(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    item = QueueItem(
+        track=None,
+        requested_by_id=1,
+        requested_by_name="u",
+        source="yt",
+        pending_url="https://www.youtube.com/watch?v=x",
+        title="lazy song",
+        author="artist",
+        length=5_000,
+    )
+    music.queues[GUILD_ID] = deque([item])
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    track = await music.play_next(GUILD_ID, "finished")
+    assert track is not None and track.title == "lazy song"
+    assert player.played == ["lazy song"]
+    assert item.track is not None  # the pending item became resolved
+
+
+async def test_broken_pending_skips_to_next(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    bad = QueueItem(track=None, requested_by_id=1, requested_by_name="u", source="yt",
+                    pending_url="https://x/1", title="broken")
+    good = QueueItem(track=None, requested_by_id=1, requested_by_name="u", source="yt",
+                     pending_url="https://x/2", title="good")
+    music.queues[GUILD_ID] = deque([bad, good])
+
+    async def fake_resolve(it: QueueItem):
+        if it.title == "broken":
+            raise MusicServiceError("Could not load the YouTube stream.")
+        return make_track(it.title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    track = await music.play_next(GUILD_ID, "finished")
+    assert track is not None and track.title == "good"
+    assert player.played == ["good"]
+    assert music.last_error is not None and "broken" in music.last_error["context"]["title"]

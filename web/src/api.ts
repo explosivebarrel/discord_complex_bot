@@ -146,7 +146,18 @@ export const api = {
       handle<TrackInfo[]>(r),
     ),
 
-  enqueue: (guildId: string, body: { query?: string; encoded?: string; source?: string }) =>
+  enqueue: (
+    guildId: string,
+    body: {
+      query?: string;
+      encoded?: string;
+      source?: string;
+      title?: string;
+      author?: string;
+      length_ms?: number;
+      artwork?: string | null;
+    },
+  ) =>
     fetch(`/api/guilds/${guildId}/player/enqueue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

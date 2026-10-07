@@ -19,25 +19,51 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 VOLUME_MIN, VOLUME_MAX = 0, 1000
+PLAYLIST_LIMIT = 100
 
 
 @dataclass
 class QueueItem:
-    track: wavelink.Playable
+    """One queued entry.
+
+    A pending item has no track yet: it keeps the page URL and metadata
+    and resolves the direct stream right before playback (playlists can
+    add a hundred of these in an instant). A resolved item carries the
+    ready Playable.
+    """
+
+    track: Any | None
     requested_by_id: int
     requested_by_name: str = field(default="")
-    # Panel source tag (yt, sc, ym, ...), more precise than track.source,
-    # which only says "http" for direct streams.
     source: str = ""
+    pending_url: str = ""
+    title: str = ""
+    author: str = ""
+    length: int = 0
+    artwork: str | None = None
+
+    @property
+    def display_title(self) -> str:
+        return self.title if self.track is None else self.track.title
 
     def to_dict(self) -> dict[str, Any]:
+        if self.track is not None:
+            return {
+                "title": self.track.title,
+                "author": self.track.author,
+                "uri": self.track.uri,
+                "length": self.track.length,
+                "artwork": self.track.artwork,
+                "source": self.source or self.track.source,
+                "requested_by": self.requested_by_name,
+            }
         return {
-            "title": self.track.title,
-            "author": self.track.author,
-            "uri": self.track.uri,
-            "length": self.track.length,
-            "artwork": self.track.artwork,
-            "source": self.source or self.track.source,
+            "title": self.title or self.pending_url,
+            "author": self.author,
+            "uri": self.pending_url,
+            "length": self.length,
+            "artwork": self.artwork,
+            "source": self.source,
             "requested_by": self.requested_by_name,
         }
 
@@ -307,25 +333,153 @@ class MusicService:
         requester_name: str = "",
         encoded: str | None = None,
         source: str = "yt",
+        meta: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Search for `query`. Add the first track or a full playlist to the queue.
+        """Add a search query, a track URL or a whole playlist to the queue.
 
-        Start playback if the player is idle. With `encoded`, take the track
-        from the search cache and skip the Lavalink load request.
+        yt/sc tracks from the panel arrive with metadata and queue as
+        pending items; the direct stream resolves right before playback.
+        Start playback if the player is idle.
         """
         source = self._detect_source(query, source)
+        meta = meta or {}
+        items: list[QueueItem] = []
+        title = ""
+
         cached = self.track_cache.get(encoded) if encoded else None
         if cached is not None:
-            tracks = [wavelink.Playable(data=cached)]
-            title = tracks[0].title
-        elif source in ("sc", "yt"):
-            # Resolve a direct stream with yt-dlp; Lavalink plays it through
-            # the plain http source. A fresh resolve now and then fails to
-            # load in Lavalink, so retry once with a new URL.
-            label = "SoundCloud" if source == "sc" else "YouTube"
+            items = [QueueItem(wavelink.Playable(data=cached), requester_id, requester_name, source=source)]
+            title = items[0].display_title
+        elif self._is_playlist_url(query) and source in ("yt", "sc", "ym"):
+            entries = await self._resolve_playlist(query)
+            if not entries:
+                raise MusicServiceError("The playlist is empty or cannot be read.")
+            entries = entries[:PLAYLIST_LIMIT]
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=entry["url"],
+                    title=entry["title"],
+                    author=entry["author"],
+                    length=entry["duration"],
+                    artwork=entry["artwork"],
+                )
+                for entry in entries
+            ]
+            title = f"Playlist - {len(items)} track(s)"
+        elif source in ("yt", "sc") and meta.get("title"):
+            # The panel already knows the track metadata; queue lazily.
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=query,
+                    title=str(meta.get("title") or ""),
+                    author=str(meta.get("author") or ""),
+                    length=int(meta.get("length_ms") or 0),
+                    artwork=meta.get("artwork"),
+                )
+            ]
+            title = items[0].display_title
+        elif source in ("yt", "sc"):
+            # No metadata (slash command, raw URL): read the page now, so the
+            # queue shows a proper title.
+            info = await self._resolve_stream(query, "SoundCloud" if source == "sc" else "YouTube")
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=info.get("webpage_url") or query,
+                    title=str(info.get("title") or "?"),
+                    author=str(info.get("uploader") or info.get("channel") or ""),
+                    length=int(info.get("duration") or 0) * 1000,
+                    artwork=info.get("thumbnail"),
+                )
+            ]
+            title = items[0].display_title
+        else:
+            result = await self._search_with_retry(query, source)
+            if isinstance(result, wavelink.Playlist):
+                tracks = list(result.tracks)
+                title = result.name
+            elif isinstance(result, list):
+                tracks = list(result[:1])
+                title = tracks[0].title if tracks else ""
+            else:
+                raise MusicServiceError("Nothing found for this query.")
+            items = [QueueItem(t, requester_id, requester_name, source=source) for t in tracks]
+        if not items:
+            raise MusicServiceError("Nothing found for this query.")
+
+        queue = self._queue(guild_id)
+        player = self.get_player(guild_id)
+        now_playing = False
+        if player is not None and not player.playing and not queue:
+            first = items.pop(0)
+            queue.extend(items)
+            self.current_items[guild_id] = first
+            await self._play_item(guild_id, first)
+            now_playing = True
+        else:
+            queue.extend(items)
+        return {
+            "queued": len(items),
+            "title": title,
+            "now_playing": now_playing,
+        }
+
+    @staticmethod
+    def _is_playlist_url(query: str) -> bool:
+        q = query.lower()
+        if "youtube.com/playlist" in q or "music.youtube.com/playlist" in q:
+            return True
+        if "youtube.com/watch" in q or "youtu.be/" in q:
+            return "list=" in q
+        if "soundcloud.com" in q:
+            return "/sets/" in q
+        if "music.yandex.ru" in q or "music.yandex.com" in q:
+            return "/playlists/" in q
+        return False
+
+    async def _resolve_playlist(self, query: str) -> list[dict[str, Any]]:
+        """Read a playlist page with yt-dlp and return flat track metadata."""
+        out = await self._run_ytdlp(["--flat-playlist", "--no-warnings", "-J", query], label="The playlist")
+        info = json.loads(out.strip())
+        tracks: list[dict[str, Any]] = []
+        for entry in info.get("entries") or []:
+            url = entry.get("url") or entry.get("webpage_url")
+            if not url:
+                continue
+            thumbnails = entry.get("thumbnails") or []
+            tracks.append(
+                {
+                    "title": entry.get("title") or "?",
+                    "author": entry.get("uploader") or entry.get("channel") or "",
+                    "url": url,
+                    "duration": int((entry.get("duration") or 0) * 1000),
+                    "artwork": thumbnails[-1].get("url") if thumbnails else None,
+                }
+            )
+        return tracks
+
+    async def _resolve_item(self, item: QueueItem) -> wavelink.Playable:
+        """Turn a pending item into a playable track right before playing."""
+        if item.track is not None:
+            return item.track
+        if item.source in ("yt", "sc"):
+            label = "SoundCloud" if item.source == "sc" else "YouTube"
             track = None
+            info: dict[str, Any] = {}
+            # A fresh resolve now and then fails to load; retry once.
             for attempt in range(2):
-                info = await self._resolve_stream(query, label)
+                info = await self._resolve_stream(item.pending_url, label)
                 try:
                     loaded = await wavelink.Playable.search(info["url"])
                 except wavelink.LavalinkLoadException:
@@ -337,42 +491,26 @@ class MusicService:
                     await asyncio.sleep(1.0)
             if track is None:
                 raise MusicServiceError(f"Could not load the {label} stream. Try again in a moment.")
-            track._title = info.get("title") or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
-            track._author = info.get("uploader") or info.get("channel") or track.author  # noqa: SLF001
+            track._title = str(info.get("title") or item.title or track.title)  # noqa: SLF001 - Lavalink only sees the CDN filename
+            track._author = str(info.get("uploader") or info.get("channel") or item.author or track.author)  # noqa: SLF001
             if info.get("thumbnail"):
                 track._artwork = info["thumbnail"]  # noqa: SLF001
-            tracks = [track]
-            title = str(track)
-        else:
-            result = await self._search_with_retry(query, source)
-            if isinstance(result, wavelink.Playlist):
-                tracks = list(result.tracks)
-                title = result.name
-            elif isinstance(result, list):
-                tracks = list(result[:1])
-                title = tracks[0].title if tracks else ""
-            else:
-                raise MusicServiceError("Nothing found for this query.")
-        if not tracks:
-            raise MusicServiceError("Nothing found for this query.")
+            elif item.artwork:
+                track._artwork = item.artwork  # noqa: SLF001
+            return track
+        loaded = await wavelink.Playable.search(item.pending_url)
+        if isinstance(loaded, wavelink.Playlist) or not loaded:
+            raise MusicServiceError("Could not load the stream.")
+        return loaded[0]
 
-        queue = self._queue(guild_id)
-        items = [QueueItem(t, requester_id, requester_name, source=source) for t in tracks]
+    async def _play_item(self, guild_id: int, item: QueueItem) -> None:
         player = self.get_player(guild_id)
-        now_playing = False
-        if player is not None and not player.playing and not queue:
-            first = items.pop(0)
-            queue.extend(items)
-            self.current_items[guild_id] = first
-            await player.play(first.track)
-            now_playing = True
-        else:
-            queue.extend(items)
-        return {
-            "queued": len(items),
-            "title": title,
-            "now_playing": now_playing,
-        }
+        if player is None:
+            raise MusicServiceError("Bot is not connected to a voice channel.")
+        track = await self._resolve_item(item)
+        item.track = track
+        await player.play(track)
+        await self._record_history(guild_id, item)
 
     def record_error(self, message: str, context: dict[str, Any] | None = None) -> None:
         import datetime as _dt
@@ -403,9 +541,16 @@ class MusicService:
             return None
         item = queue.popleft()
         self.current_items[guild_id] = item
-        await player.play(item.track)
+        try:
+            track = await self._resolve_item(item)
+        except MusicServiceError as exc:
+            # A dead entry must not stop the queue; report it and move on.
+            self.record_error(str(exc), {"guild_id": guild_id, "title": item.display_title})
+            return await self.play_next(guild_id, reason)
+        item.track = track
+        await player.play(track)
         await self._record_history(guild_id, item)
-        return item.track
+        return track
 
     async def _record_history(self, guild_id: int, item: QueueItem) -> None:
         # One row per play start. Stats must never break playback.
@@ -435,7 +580,7 @@ class MusicService:
             raise MusicServiceError("That queue position does not exist.")
         item = queue[index]
         del queue[index]
-        return item.track.title
+        return item.display_title
 
     def move_queued(self, guild_id: int, from_index: int, to_index: int) -> str:
         queue = self._queue(guild_id)
@@ -444,7 +589,7 @@ class MusicService:
         item = queue[from_index]
         del queue[from_index]
         queue.insert(to_index, item)
-        return item.track.title
+        return item.display_title
 
     async def skip(self, guild_id: int, requester_id: int) -> bool:
         player = self._require_player(guild_id)
