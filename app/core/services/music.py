@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -114,13 +115,35 @@ class MusicService:
 
     # --- playback ---
 
-    async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
+    @staticmethod
+    def _search_source(source: str) -> Any:
         prefixes = {"sc": wavelink.TrackSource.SoundCloud, "ym": "ymsearch"}
-        search_source = prefixes.get(source, wavelink.TrackSource.YouTubeMusic)
-        try:
-            result = await wavelink.Playable.search(query, source=search_source)
-        except wavelink.LavalinkLoadException as exc:
-            raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
+        return prefixes.get(source, wavelink.TrackSource.YouTubeMusic)
+
+    async def _search_with_retry(self, query: str, source: str):
+        """Run a Lavalink search and retry once for the flaky Yandex API.
+
+        api.music.yandex.net intermittently answers with a read timeout on
+        pooled connections; a fresh attempt succeeds.
+        """
+        search_source = self._search_source(source)
+        attempts = 3 if source == "ym" else 1
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return await wavelink.Playable.search(query, source=search_source)
+            except wavelink.LavalinkLoadException as exc:
+                last_error = exc
+                if attempt + 1 < attempts:
+                    await asyncio.sleep(0.8 * (attempt + 1))
+        raise MusicServiceError(
+            "The Yandex Music API timed out. Try again in a moment."
+            if source == "ym"
+            else "Lavalink failed to load tracks. Try again in a moment."
+        ) from last_error
+
+    async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
+        result = await self._search_with_retry(query, source)
         if isinstance(result, wavelink.Playlist):
             tracks = result.tracks[:limit]
         else:
@@ -149,6 +172,7 @@ class MusicService:
         requester_id: int,
         requester_name: str = "",
         encoded: str | None = None,
+        source: str = "yt",
     ) -> dict[str, Any]:
         """Search for `query`. Add the first track or a full playlist to the queue.
 
@@ -160,10 +184,7 @@ class MusicService:
             tracks = [wavelink.Playable(data=cached)]
             title = tracks[0].title
         else:
-            try:
-                result = await wavelink.Playable.search(query)
-            except wavelink.LavalinkLoadException as exc:
-                raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
+            result = await self._search_with_retry(query, source)
             if isinstance(result, wavelink.Playlist):
                 tracks = list(result.tracks)
                 title = result.name

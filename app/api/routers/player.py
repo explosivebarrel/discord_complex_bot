@@ -24,6 +24,7 @@ class EnqueueBody(BaseModel):
     # Either a search query or the encoded track from a previous search result.
     query: str = ""
     encoded: str | None = None
+    source: str = "yt"
 
     @model_validator(mode="after")
     def check_query_or_encoded(self) -> EnqueueBody:
@@ -136,7 +137,7 @@ async def enqueue(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         result = await music.enqueue(
-            guild_id, body.query, user.discord_id, user.global_name, encoded=body.encoded
+            guild_id, body.query, user.discord_id, user.global_name, encoded=body.encoded, source=body.source
         )
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

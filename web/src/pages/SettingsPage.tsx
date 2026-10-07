@@ -1,196 +1,270 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import CheckCircle from "@mui/icons-material/CheckCircle";
+import Cancel from "@mui/icons-material/Cancel";
+import ErrorOutline from "@mui/icons-material/Error";
 import { api, Integrations } from "../api";
 import { useAuth } from "../useAuth";
-import { Topbar } from "../components/Topbar";
+import { AppShell } from "../components/AppShell";
+import { useFeedback } from "../components/Feedback";
 
-function Status({ ok, label }: { ok: boolean; label: string }) {
+function StatusRow({ ok, text }: { ok: boolean; text: string }) {
   return (
-    <span className="muted">
-      {ok ? "🟢" : "🔴"} {label}
-    </span>
+    <ListItem disableGutters dense>
+      <ListItemIcon sx={{ minWidth: 34 }}>
+        {ok ? <CheckCircle sx={{ color: "success.main" }} /> : <Cancel sx={{ color: "error.main" }} />}
+      </ListItemIcon>
+      <ListItemText primary={text} slotProps={{ primary: { variant: "body2" } }} />
+    </ListItem>
   );
 }
 
 export function SettingsPage() {
   const { me, loading } = useAuth();
+  const feedback = useFeedback();
   const [info, setInfo] = useState<Integrations | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState("");
   const [poToken, setPoToken] = useState("");
   const [visitorData, setVisitorData] = useState("");
   const [yandexToken, setYandexToken] = useState("");
-  const [saveNote, setSaveNote] = useState<string | null>(null);
+
+  const guard = (e: Error) => {
+    if (e.message !== "unauthorized") setError(e.message);
+  };
 
   const refresh = useCallback(() => {
     api
       .integrations()
       .then(setInfo)
-      .catch((e: Error) => setError(e.message));
+      .catch(guard);
   }, []);
 
   useEffect(refresh, [refresh]);
 
-  const saveYandex = async () => {
-    setError(null);
-    setSaveNote(null);
-    try {
-      const result = await api.updateYandexToken(yandexToken);
-      setSaveNote(`${result.note} Token: ${result.token_masked}.`);
-      setYandexToken("");
-      refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+  const yt = info?.youtube;
+  const ym = info?.yandexmusic;
 
-  const save = async (body: { refresh_token?: string; po_token?: string; visitor_data?: string }) => {
-    setError(null);
-    setMessage(null);
-    try {
-      const result = await api.updateYoutubeConfig(body);
-      setMessage(
-        `Saved. OAuth: ${result.oauth_configured ? "configured" : "not configured"} (${result.refresh_token_masked}). POT: ${
-          result.pot_saved ? "saved" : "not set"
-        }.`,
-      );
-      setRefreshToken("");
-      setPoToken("");
-      setVisitorData("");
-      refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  if (loading) return <div className="login-page"><p className="muted">Loading…</p></div>;
+  if (loading) {
+    return (
+      <AppShell me={me} title="Settings">
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          Loading…
+        </Typography>
+      </AppShell>
+    );
+  }
   if (me && !me.is_superadmin) {
     return (
-      <div className="container">
-        <Topbar me={me} />
-        <p className="error">Super-admin only. Add your Discord ID to SUPERADMIN_IDS in .env.</p>
-      </div>
+      <AppShell me={me} title="Settings">
+        <Typography variant="body2" sx={{ color: "error.main" }}>
+          Super-admin only. Add your Discord ID to SUPERADMIN_IDS in .env.
+        </Typography>
+      </AppShell>
     );
   }
 
-  const yt = info?.youtube;
-
   return (
-    <div className="container">
-      <Topbar me={me} onLogout={() => api.logout().then(() => window.location.reload())} />
-      <h2>System settings</h2>
-      {error && <p className="error">{error}</p>}
-      {message && <p className="muted">{message}</p>}
+    <AppShell me={me} title="Settings">
+      <Typography variant="h5" sx={{ mb: 2 }}>
+        System settings
+      </Typography>
+      {error && (
+        <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
+          {error}
+        </Typography>
+      )}
 
-      <div className="card">
-        <h2>Integrations</h2>
-        {info ? (
-          <div className="channel-list">
-            <Status ok={info.discord.ready} label={`Discord bot: ${info.discord.user ?? "?"} · ${info.discord.guilds} guild(s)`} />
-            <Status
-              ok={info.lavalink.connected}
-              label={`Lavalink ${info.lavalink.host}: ${info.lavalink.connected ? "connected" : "offline"} · ${info.lavalink.players} player(s)`}
-            />
-            <Status
-              ok={!!yt?.reachable}
-              label={`YouTube plugin REST: ${yt?.reachable ? "reachable" : yt?.error ?? "unreachable"}`}
-            />
-            <Status
-              ok={!!yt?.oauth_configured}
-              label={`YouTube OAuth: ${yt?.oauth_configured ? yt.refresh_token_masked ?? "configured" : "not configured"}`}
-            />
-          </div>
-        ) : (
-          <p className="muted">Loading…</p>
-        )}
-        {yt?.last_error && (
-          <div>
-            <p className="error">
-              Last playback error ({new Date(yt.last_error.at).toLocaleString()}): {yt.last_error.message}
-            </p>
-            <button className="secondary" onClick={() => api.clearYoutubeLastError().then(refresh)}>
-              Clear error
-            </button>
-          </div>
-        )}
-      </div>
+      <Stack spacing={2} sx={{ maxWidth: 760 }}>
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Integrations
+            </Typography>
+            {info ? (
+              <List disablePadding>
+                <StatusRow
+                  ok={info.discord.ready}
+                  text={`Discord bot: ${info.discord.user ?? "?"} · ${info.discord.guilds} guild(s)`}
+                />
+                <StatusRow
+                  ok={info.lavalink.connected}
+                  text={`Lavalink ${info.lavalink.host}: ${info.lavalink.connected ? "connected" : "offline"} · ${info.lavalink.players} player(s)`}
+                />
+                <StatusRow
+                  ok={!!yt?.oauth_configured}
+                  text={`YouTube OAuth: ${yt?.refresh_token_masked ?? "not configured"}`}
+                />
+                <StatusRow
+                  ok={!!ym?.configured}
+                  text={`Yandex Music: ${ym?.token_masked ?? "not configured"}`}
+                />
+              </List>
+            ) : (
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                Loading…
+              </Typography>
+            )}
+            {yt?.last_error && (
+              <Box sx={{ mt: 1.5, display: "flex", alignItems: "center", gap: 1 }}>
+                <ErrorOutline sx={{ color: "error.main" }} />
+                <Typography variant="body2" sx={{ color: "error.main", flex: 1, minWidth: 0 }} noWrap>
+                  {yt.last_error.message}
+                </Typography>
+                <Button size="small" onClick={() => api.clearYoutubeLastError().then(refresh).catch(guard)}>
+                  Clear
+                </Button>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
 
-      <div className="card">
-        <h2>YouTube OAuth refresh token</h2>
-        <p className="muted">
-          Playback needs a Google account token (device flow). Current state:{" "}
-          {yt?.token_saved_in_db ? "saved in the database" : "only from .env / not set"}. To get a token: run
-          Lavalink without a token, open the login URL from its logs (docker logs dcbot-lavalink) at
-          google.com/device, then copy the printed refresh token here.
-        </p>
-        <div className="row">
-          <input
-            type="text"
-            placeholder="1//0… (paste a new refresh token, leave empty to keep)"
-            value={refreshToken}
-            onChange={(e) => setRefreshToken(e.target.value)}
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              YouTube OAuth refresh token
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+              Playback needs a Google account token. Run Lavalink without a token, open the login URL from its logs
+              (docker logs dcbot-lavalink) at google.com/device, then paste the printed refresh token here.
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <TextField
+                fullWidth
+                placeholder="1//0… (paste a new refresh token, leave empty to keep)"
+                value={refreshToken}
+                onChange={(e) => setRefreshToken(e.target.value)}
+              />
+              <Button
+                variant="contained"
+                disabled={!refreshToken.trim()}
+                onClick={() =>
+                  api
+                    .updateYoutubeConfig({ refresh_token: refreshToken })
+                    .then((r) => {
+                      feedback.show(`Saved. OAuth: ${r.refresh_token_masked}`);
+                      setRefreshToken("");
+                      refresh();
+                    })
+                    .catch(guard)
+                }
+              >
+                Save
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Yandex Music access token
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
+              Needs a Yandex account with Plus. Open{" "}
+              <a
+                href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#D0BCFF" }}
+              >
+                oauth.yandex.ru/authorize
+              </a>
+              , log in, grant access, then copy <code>access_token</code> from the redirect URL (it flashes by).
+              Current: {ym?.configured ? ym.token_masked : "not set"}.
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <TextField
+                fullWidth
+                placeholder="y0_AgAAA… paste the access token"
+                value={yandexToken}
+                onChange={(e) => setYandexToken(e.target.value)}
+              />
+              <Button
+                variant="contained"
+                disabled={!yandexToken.trim()}
+                onClick={() =>
+                  api
+                    .updateYandexToken(yandexToken)
+                    .then((r) => {
+                      feedback.show(r.note);
+                      setYandexToken("");
+                      refresh();
+                    })
+                    .catch(guard)
+                }
+              >
+                Save
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              YouTube POT (proof of origin)
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+              Optional anti-bot tokens for the WEB clients (youtube-trusted-session-generator). Applied without a
+              restart. {yt?.pot_saved_in_db ? "A pair is saved." : ""}
+            </Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <TextField
+                fullWidth
+                placeholder="poToken"
+                value={poToken}
+                onChange={(e) => setPoToken(e.target.value)}
+              />
+              <TextField
+                fullWidth
+                placeholder="visitorData"
+                value={visitorData}
+                onChange={(e) => setVisitorData(e.target.value)}
+              />
+              <Button
+                variant="contained"
+                disabled={!poToken.trim() || !visitorData.trim()}
+                onClick={() =>
+                  api
+                    .updateYoutubeConfig({ po_token: poToken, visitor_data: visitorData })
+                    .then(() => {
+                      feedback.show("POT saved");
+                      setPoToken("");
+                      setVisitorData("");
+                      refresh();
+                    })
+                    .catch(guard)
+                }
+              >
+                Save
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Box>
+          <Chip
+            size="small"
+            label="Super-admin page: IDs in SUPERADMIN_IDS (.env)"
+            sx={{ color: "text.secondary" }}
           />
-          <button disabled={!refreshToken.trim()} onClick={() => save({ refresh_token: refreshToken })}>
-            Save token
-          </button>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Yandex Music access token</h2>
-        <p className="muted">
-          Needs a Yandex account with a Plus subscription. Get the token: open{" "}
-          <a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d" target="_blank" rel="noreferrer">
-            oauth.yandex.ru/authorize
-          </a>{" "}
-          (client 23cabb…195d), log in, grant access, then copy <code>access_token</code> from the redirect URL.
-          Current state:{" "}
-          {info?.yandexmusic.configured ? `configured (${info.yandexmusic.token_masked})` : "not set"}.
-        </p>
-        <div className="row">
-          <input
-            type="text"
-            placeholder="y0_AgAAA… (paste the access token)"
-            value={yandexToken}
-            onChange={(e) => setYandexToken(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && yandexToken.trim() && saveYandex()}
-          />
-          <button disabled={!yandexToken.trim()} onClick={saveYandex}>
-            Save token
-          </button>
-        </div>
-        {saveNote && <p className="muted">{saveNote}</p>}
-        <p className="muted">
-          After saving, recreate Lavalink to apply: <code>docker compose up -d --force-recreate lavalink</code>.
-          The token lives for about 1 year.
-        </p>
-      </div>
-
-      <div className="card">
-        <h2>YouTube POT (proof of origin)</h2>
-        <p className="muted">
-          Optional anti-bot tokens for the WEB clients. Generate both values with
-          youtube-trusted-session-generator and paste them here. They are applied without a restart.
-          {yt?.pot_saved_in_db ? " A pair is saved." : ""}
-        </p>
-        <div className="row">
-          <input type="text" placeholder="poToken" value={poToken} onChange={(e) => setPoToken(e.target.value)} />
-        </div>
-        <div className="row">
-          <input
-            type="text"
-            placeholder="visitorData"
-            value={visitorData}
-            onChange={(e) => setVisitorData(e.target.value)}
-          />
-          <button
-            disabled={!poToken.trim() || !visitorData.trim()}
-            onClick={() => save({ po_token: poToken, visitor_data: visitorData })}
-          >
-            Save POT
-          </button>
-        </div>
-      </div>
-    </div>
+        </Box>
+      </Stack>
+      {feedback.node}
+    </AppShell>
   );
 }

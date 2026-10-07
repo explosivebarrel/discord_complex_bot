@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Typography } from "@mui/material";
+import GraphicEq from "@mui/icons-material/GraphicEq";
+import Settings from "@mui/icons-material/Settings";
 import { api, GuildBrief } from "../api";
 import { useAuth } from "../useAuth";
-import { Topbar } from "../components/Topbar";
+import { AppShell } from "../components/AppShell";
 
 export function GuildsPage() {
   const { me, loading } = useAuth();
@@ -15,56 +18,95 @@ export function GuildsPage() {
       .catch((e: Error) => setGuildsError(e.message));
   }
 
+  const shell = (children: React.ReactNode) => (
+    <AppShell me={me} onLogout={() => api.logout().then(() => window.location.reload())}>
+      {children}
+    </AppShell>
+  );
+
   if (loading) {
-    return (
-      <div className="login-page">
-        <p className="muted">Loading…</p>
-      </div>
+    return shell(
+      <Grid container spacing={2}>
+        {[0, 1, 2].map((i) => (
+          <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }}>
+            <Card>
+              <CardContent>
+                <Skeleton width="60%" />
+                <Skeleton width="40%" />
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>,
     );
   }
   if (!me) {
-    return <LoginPageRedirect />;
+    return shell(
+      <Box sx={{ textAlign: "center", py: 8 }}>
+        <Typography variant="body1" sx={{ color: "text.secondary", mb: 2 }}>
+          Please log in with Discord to continue.
+        </Typography>
+        <Button href="/api/auth/login" variant="contained" size="large">
+          Login with Discord
+        </Button>
+      </Box>,
+    );
   }
 
-  return (
-    <div className="container">
-      <Topbar me={me} onLogout={() => api.logout().then(() => window.location.reload())} />
-      <h2>Your servers</h2>
-      {guildsError && <p className="error">{guildsError}</p>}
-      {guilds && guilds.length === 0 && (
-        <p className="muted">
-          The bot is not on any of your servers yet. Invite it first: the link is in the project README.
-        </p>
+  return shell(
+    <Box>
+      <Typography variant="h5" sx={{ mb: 2 }}>
+        Your servers
+      </Typography>
+      {guildsError && (
+        <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
+          {guildsError}
+        </Typography>
       )}
-      {guilds?.map((g) => (
-        <div className="card" key={g.id}>
-          <h2>
-            <a href={`/guild/${g.id}`}>{g.name}</a>
-            {g.is_admin && <span className="badge admin">admin</span>}
-          </h2>
-          <div className="row">
-            <a href={`/guild/${g.id}`}>
-              <button>Open player</button>
-            </a>
-            {(g.is_admin || g.is_superadmin) && (
-              <a href={`/guild/${g.id}/admin`}>
-                <button className="secondary">Manage</button>
-              </a>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LoginPageRedirect() {
-  return (
-    <div className="login-page">
-      <p className="muted">Please log in.</p>
-      <a href="/api/auth/login">
-        <button>Login with Discord</button>
-      </a>
-    </div>
+      {guilds && guilds.length === 0 && (
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          The bot is not on any of your servers yet. Invite it first: the link is in the project README.
+        </Typography>
+      )}
+      <Grid container spacing={2}>
+        {guilds?.map((g) => (
+          <Grid key={g.id} size={{ xs: 12, sm: 6, md: 4 }}>
+            <Card sx={{ height: "100%" }}>
+              <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, height: "100%" }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "12px",
+                      bgcolor: "#2B2930",
+                      display: "grid",
+                      placeItems: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <GraphicEq sx={{ color: "primary.main" }} />
+                  </Box>
+                  <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                    {g.name}
+                  </Typography>
+                </Box>
+                {g.is_admin && <Chip size="small" label="admin" color="primary" sx={{ alignSelf: "flex-start" }} />}
+                <Box sx={{ mt: "auto", display: "flex", gap: 1 }}>
+                  <Button href={`/guild/${g.id}`} variant="contained" size="small">
+                    Open player
+                  </Button>
+                  {(g.is_admin || g.is_superadmin) && (
+                    <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" startIcon={<Settings />}>
+                      Manage
+                    </Button>
+                  )}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    </Box>,
   );
 }

@@ -89,3 +89,5 @@ logging:
     lavalink: INFO
     # Print the OAuth login URL and the resulting refresh token.
     dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
+    # Yandex Music search is flaky; DEBUG shows the real HTTP cause.
+    com.github.topi314.lavasrc: DEBUG

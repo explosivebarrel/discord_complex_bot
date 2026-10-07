@@ -1,108 +1,184 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import {
+  Button,
+  Card,
+  CardContent,
+  IconButton,
+  List,
+  ListItem,
+  ListItemText,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import Delete from "@mui/icons-material/Delete";
 import { api, GuildSettings } from "../api";
 import { useAuth } from "../useAuth";
-import { Topbar } from "../components/Topbar";
+import { AppShell } from "../components/AppShell";
+import { useFeedback } from "../components/Feedback";
 
 export function AdminPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const gid = guildId ?? "";
   const { me, loading } = useAuth();
+  const feedback = useFeedback();
   const [settings, setSettings] = useState<GuildSettings | null>(null);
+  const [channels, setChannels] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newAdmin, setNewAdmin] = useState("");
+
+  const guard = (e: Error) => feedback.show(e.message, "error");
 
   const refresh = useCallback(() => {
     api
       .guildSettings(gid)
       .then(setSettings)
       .catch((e: Error) => setError(e.message));
+    api
+      .voiceChannels(gid)
+      .then(setChannels)
+      .catch(() => setChannels([]));
   }, [gid]);
 
   useEffect(refresh, [refresh]);
 
-  if (loading) return <div className="login-page"><p className="muted">Loading…</p></div>;
+  if (loading) {
+    return (
+      <AppShell me={me} title="Manage">
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          Loading…
+        </Typography>
+      </AppShell>
+    );
+  }
 
   return (
-    <div className="container">
-      <Topbar me={me} onLogout={() => api.logout().then(() => window.location.reload())} />
-      <h2>Manage: {settings?.guild.name ?? gid}</h2>
-      {error && <p className="error">{error}</p>}
-      {!error && !settings && <p className="muted">Loading settings…</p>}
-
+    <AppShell me={me} title={settings?.guild.name ?? "Manage"}>
+      <Typography variant="h5" sx={{ mb: 2 }}>
+        Manage server
+      </Typography>
+      {error && (
+        <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
+          {error}
+        </Typography>
+      )}
       {settings && (
-        <>
-          <div className="card">
-            <h2>Default voice channel</h2>
-            <div className="row">
-              <input
-                type="number"
-                placeholder="Voice channel ID (optional)"
-                value={settings.default_voice_channel_id ?? ""}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    default_voice_channel_id: e.target.value ? Number(e.target.value) : null,
-                  })
-                }
-              />
-              <button
-                onClick={() =>
-                  api
-                    .updateGuildSettings(gid, settings.default_voice_channel_id)
-                    .then(setSettings)
-                    .catch((e: Error) => setError(e.message))
-                }
-              >
-                Save
-              </button>
-            </div>
-            <p className="muted">Channel id: enable Developer Mode in Discord → right-click channel → Copy ID.</p>
-          </div>
-
-          <div className="card">
-            <h2>Server admins (web panel)</h2>
-            <div className="row tag-input">
-              <input
-                type="text"
-                placeholder="Discord user ID"
-                value={newAdmin}
-                onChange={(e) => setNewAdmin(e.target.value)}
-              />
-              <button
-                onClick={() =>
-                  api
-                    .addGuildAdmin(gid, newAdmin)
-                    .then((r) => {
-                      setSettings({ ...settings, admins: r.admins });
-                      setNewAdmin("");
+        <Stack spacing={2} sx={{ maxWidth: 720 }}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Default voice channel
+              </Typography>
+              <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+                Used when a track is queued from the panel while the bot is not connected.
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <Select
+                  fullWidth
+                  size="small"
+                  displayEmpty
+                  value={settings.default_voice_channel_id != null ? String(settings.default_voice_channel_id) : ""}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      default_voice_channel_id: e.target.value ? Number(e.target.value) : null,
                     })
-                    .catch((e: Error) => setError(e.message))
-                }
-              >
-                Add
-              </button>
-            </div>
-            {settings.admins.length === 0 && <p className="muted">No extra admins yet.</p>}
-            {settings.admins.map((a) => (
-              <div className="queue-item" key={a}>
-                <span>{a}</span>
-                <button
-                  className="danger"
-                  onClick={() =>
-                    api
-                      .removeGuildAdmin(gid, a)
-                      .then((r) => setSettings({ ...settings, admins: r.admins }))
-                      .catch((e: Error) => setError(e.message))
                   }
                 >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
+                  <MenuItem value="">
+                    <em>Not set</em>
+                  </MenuItem>
+                  {channels.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      🔊 {c.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <Button
+                  variant="contained"
+                  onClick={() =>
+                    api
+                      .updateGuildSettings(gid, settings.default_voice_channel_id)
+                      .then((s) => {
+                        setSettings(s);
+                        feedback.show("Settings saved");
+                      })
+                      .catch(guard)
+                  }
+                >
+                  Save
+                </Button>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Server admins (web panel)
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Discord user ID"
+                  value={newAdmin}
+                  onChange={(e) => setNewAdmin(e.target.value)}
+                />
+                <Button
+                  variant="tonal"
+                  disabled={!newAdmin.trim()}
+                  onClick={() =>
+                    api
+                      .addGuildAdmin(gid, newAdmin)
+                      .then((r) => {
+                        setSettings({ ...settings, admins: r.admins });
+                        setNewAdmin("");
+                        feedback.show("Admin added");
+                      })
+                      .catch(guard)
+                  }
+                >
+                  Add
+                </Button>
+              </Stack>
+              {settings.admins.length === 0 ? (
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                  No extra admins yet.
+                </Typography>
+              ) : (
+                <List disablePadding>
+                  {settings.admins.map((a) => (
+                    <ListItem
+                      key={a}
+                      disableGutters
+                      secondaryAction={
+                        <IconButton
+                          edge="end"
+                          onClick={() =>
+                            api
+                              .removeGuildAdmin(gid, a)
+                              .then((r) => setSettings({ ...settings, admins: r.admins }))
+                              .catch(guard)
+                          }
+                        >
+                          <Delete />
+                        </IconButton>
+                      }
+                    >
+                      <ListItemText primary={a} />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </CardContent>
+          </Card>
+        </Stack>
       )}
-    </div>
+      {feedback.node}
+    </AppShell>
   );
 }
