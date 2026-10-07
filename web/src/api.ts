@@ -174,6 +174,25 @@ export const api = {
       body: JSON.stringify({ mode }),
     }).then((r) => handle<{ repeat: "off" | "one" | "all" }>(r)),
 
+  favorites: () => fetch("/api/favorites").then((r) => handle<FavoriteTrackInfo[]>(r)),
+
+  addFavorite: (body: {
+    title: string;
+    author?: string;
+    uri: string;
+    source?: string;
+    length_ms?: number;
+    artwork?: string | null;
+  }) =>
+    fetch("/api/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => handle<{ id: number }>(r)),
+
+  removeFavorite: (id: number) =>
+    fetch(`/api/favorites/${id}`, { method: "DELETE" }).then((r) => handle<{ removed: boolean }>(r)),
+
   removeQueued: (guildId: string, index: number) =>
     fetch(`/api/guilds/${guildId}/player/queue/${index}`, { method: "DELETE" }).then((r) =>
       handle<{ removed: string }>(r),

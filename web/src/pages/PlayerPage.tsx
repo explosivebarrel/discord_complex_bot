@@ -33,8 +33,11 @@ import VolumeUp from "@mui/icons-material/VolumeUp";
 import AllInclusive from "@mui/icons-material/AllInclusive";
 import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
+import Favorite from "@mui/icons-material/Favorite";
+import FavoriteBorder from "@mui/icons-material/FavoriteBorder";
+import PlayArrow from "@mui/icons-material/PlayArrow";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
-import { api, PlayerState, TrackInfo, VoiceChannel } from "../api";
+import { api, FavoriteTrackInfo, PlayerState, TrackInfo, VoiceChannel } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { PlayerBar } from "../components/PlayerBar";
@@ -59,6 +62,8 @@ const PLACEHOLDERS: Record<string, string> = {
 };
 
 const LIVE_LENGTH = 9223372036854775807;
+
+const RADIO_PRESETS = ["lofi", "jazz", "rock", "classical", "news", "dance", "chill"];
 
 const SOURCE_LABELS: Record<string, string> = {
   yt: "YouTube",
@@ -92,6 +97,7 @@ export function PlayerPage() {
   const [searching, setSearching] = useState(false);
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
+  const [favorites, setFavorites] = useState<FavoriteTrackInfo[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -106,6 +112,39 @@ export function PlayerPage() {
         if (e.message !== "unauthorized") feedback.show(e.message, "error");
       });
   }, [gid]);
+
+  const loadFavorites = useCallback(() => {
+    api
+      .favorites()
+      .then(setFavorites)
+      .catch(() => setFavorites([]));
+  }, []);
+
+  useEffect(() => {
+    loadFavorites();
+  }, [loadFavorites]);
+
+  const toggleFavorite = (t: TrackInfo) => {
+    const existing = favorites.find((f) => f.uri === t.uri);
+    if (existing) {
+      api
+        .removeFavorite(existing.id)
+        .then(() => loadFavorites())
+        .catch(guard);
+      return;
+    }
+    api
+      .addFavorite({
+        title: t.title,
+        author: t.author ?? undefined,
+        uri: t.uri ?? "",
+        source: t.source ?? undefined,
+        length_ms: t.length,
+        artwork: t.artwork,
+      })
+      .then(() => loadFavorites())
+      .catch(guard);
+  };
 
   useEffect(() => {
     refresh();
@@ -210,6 +249,27 @@ export function PlayerPage() {
                   />
                 ))}
               </Stack>
+              {source === "radio" && (
+                <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", mb: 1.5, rowGap: 1 }}>
+                  {RADIO_PRESETS.map((preset) => (
+                    <Chip
+                      key={preset}
+                      label={preset}
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        setQuery(preset);
+                        setSearching(true);
+                        api
+                          .search(gid, preset, "radio")
+                          .then((r) => setResults(r))
+                          .catch(guard)
+                          .finally(() => setSearching(false));
+                      }}
+                    />
+                  ))}
+                </Stack>
+              )}
               <TextField
                 fullWidth
                 placeholder={PLACEHOLDERS[source]}
@@ -271,6 +331,21 @@ export function PlayerPage() {
                           disablePadding
                           secondaryAction={
                             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                              <IconButton
+                                size="small"
+                                onClick={() => toggleFavorite(t)}
+                                sx={
+                                  favorites.some((f) => f.uri === t.uri)
+                                    ? { color: "primary.main" }
+                                    : { color: "text.secondary" }
+                                }
+                              >
+                                {favorites.some((f) => f.uri === t.uri) ? (
+                                  <Favorite fontSize="small" />
+                                ) : (
+                                  <FavoriteBorder fontSize="small" />
+                                )}
+                              </IconButton>
                               {t.issue && (
                                 <Chip
                                   size="small"
@@ -343,6 +418,60 @@ export function PlayerPage() {
               </Box>
             </CardContent>
           </Card>
+          {favorites.length > 0 && (
+            <Card sx={{ mt: 2 }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Favorites ({favorites.length})
+                </Typography>
+                <List disablePadding>
+                  {favorites.slice(0, 10).map((f) => (
+                    <ListItem
+                      key={f.id}
+                      disableGutters
+                      dense
+                      secondaryAction={
+                        <Stack direction="row" spacing={0.5}>
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              enqueue(`f${f.id}`, {
+                                query: f.uri,
+                                source: f.source || "yt",
+                                title: f.title,
+                                author: f.author,
+                                length_ms: f.length_ms,
+                                artwork: f.artwork,
+                              })
+                            }
+                          >
+                            <PlayArrow fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => api.removeFavorite(f.id).then(loadFavorites).catch(guard)}
+                          >
+                            <Favorite fontSize="small" sx={{ color: "primary.main" }} />
+                          </IconButton>
+                        </Stack>
+                      }
+                    >
+                      <ListItemText
+                        primary={f.title}
+                        secondary={[SOURCE_LABELS[f.source] ?? "", f.author].filter(Boolean).join(" · ")}
+                        slotProps={{ primary: { noWrap: true, sx: { pr: 2 } }, secondary: { noWrap: true, sx: { pr: 2 } } }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+                {favorites.length > 10 && (
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    And {favorites.length - 10} more.
+                  </Typography>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </Box>
 
         {/* Right column: voice + queue + volume */}

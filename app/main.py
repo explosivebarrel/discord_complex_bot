@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.deps import cleanup_expired_sessions
 from app.api.discord_oauth import DiscordOAuthClient
-from app.api.routers import admin, auth, player, system
+from app.api.routers import admin, auth, favorites, player, posts, system
 from app.bot.client import ComplexBot
 from app.core.config import load_config, setup_logging, validate_config
 from app.core.db import Database
@@ -73,6 +73,8 @@ def create_app() -> FastAPI:
     app.include_router(player.router)
     app.include_router(admin.router)
     app.include_router(system.router)
+    app.include_router(favorites.router)
+    app.include_router(posts.router)
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:
