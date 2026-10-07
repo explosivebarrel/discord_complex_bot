@@ -80,11 +80,11 @@ export function AdminPage() {
                   fullWidth
                   size="small"
                   displayEmpty
-                  value={settings.default_voice_channel_id != null ? String(settings.default_voice_channel_id) : ""}
+                  value={settings.default_voice_channel_id ?? ""}
                   onChange={(e) =>
                     setSettings({
                       ...settings,
-                      default_voice_channel_id: e.target.value ? Number(e.target.value) : null,
+                      default_voice_channel_id: e.target.value || null,
                     })
                   }
                 >

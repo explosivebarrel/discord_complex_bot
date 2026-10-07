@@ -66,7 +66,7 @@ export interface Integrations {
 
 export interface GuildSettings {
   guild: { id: string; name: string; member_count?: number };
-  default_voice_channel_id: number | null;
+  default_voice_channel_id: string | null;
   admin_role_ids: number[];
   admins: string[];
 }
@@ -138,7 +138,7 @@ export const api = {
   guildSettings: (guildId: string) =>
     fetch(`/api/admin/guilds/${guildId}/settings`).then((r) => handle<GuildSettings>(r)),
 
-  updateGuildSettings: (guildId: string, defaultVoiceChannelId: number | null) =>
+  updateGuildSettings: (guildId: string, defaultVoiceChannelId: string | null) =>
     fetch(`/api/admin/guilds/${guildId}/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

@@ -50,7 +50,10 @@ async def get_settings(
     guild = bot.get_guild(guild_id)
     return {
         "guild": _guild_brief(guild) if guild else {"id": str(guild_id), "name": settings.name},
-        "default_voice_channel_id": settings.default_voice_channel_id,
+        # Snowflake ids travel as strings: JavaScript numbers lose precision above 2^53.
+        "default_voice_channel_id": (
+            str(settings.default_voice_channel_id) if settings.default_voice_channel_id is not None else None
+        ),
         "admin_role_ids": json.loads(settings.admin_role_ids),
         "admins": [str(a) for a in admins],
     }
