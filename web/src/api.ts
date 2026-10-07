@@ -100,6 +100,13 @@ export interface PostChannel {
   type: "text" | "forum";
 }
 
+export interface ComposerData {
+  channels: PostChannel[];
+  roles: { id: string; name: string; color: string | null; mentionable: boolean }[];
+  users: { id: string; name: string; avatar: string | null }[];
+  emojis: { name: string; id: string; animated: boolean }[];
+}
+
 export interface LibraryFile {
   path: string;
   name: string;
@@ -190,8 +197,8 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => handle<{ id: number }>(r)),
 
-  postChannels: (guildId: string) =>
-    fetch(`/api/guilds/${guildId}/posts/channels`).then((r) => handle<PostChannel[]>(r)),
+  postComposer: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/posts/composer`).then((r) => handle<ComposerData>(r)),
 
   createPost: (guildId: string, body: { channel_id: string; text: string; title?: string }) =>
     fetch(`/api/guilds/${guildId}/posts`, {

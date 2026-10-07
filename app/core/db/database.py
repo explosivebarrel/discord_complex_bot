@@ -16,6 +16,7 @@ from app.core.db.models import (
     GuildSettings,
     PlayHistory,
     SystemSetting,
+    WebSession,
 )
 
 
@@ -245,6 +246,37 @@ class Database:
                 select(func.count(func.distinct(PlayHistory.title))).where(PlayHistory.guild_id == guild_id)
             )
             return {"plays_total": int(total_all or 0), "plays_30d": int(recent or 0), "unique_tracks": int(unique or 0)}
+
+    # --- panel users ---
+
+    async def list_panel_users(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Discord accounts that logged into the panel, latest session first.
+
+        The bot runs without the privileged members intent, so this table is
+        one of the few reliable member-name sources for the post composer.
+        """
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(
+                    WebSession.discord_id,
+                    WebSession.username,
+                    WebSession.global_name,
+                    WebSession.avatar,
+                    func.max(WebSession.created_at).label("last_seen"),
+                )
+                .group_by(WebSession.discord_id, WebSession.username, WebSession.global_name, WebSession.avatar)
+                .order_by(func.max(WebSession.created_at).desc())
+                .limit(limit)
+            )
+            return [
+                {
+                    "id": str(r.discord_id),
+                    "username": r.username,
+                    "global_name": r.global_name,
+                    "avatar": r.avatar,
+                }
+                for r in result.all()
+            ]
 
     # --- favorites ---
 
