@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  FormControlLabel,
   IconButton,
   List,
   ListItem,
@@ -11,6 +12,7 @@ import {
   MenuItem,
   Select,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -29,6 +31,7 @@ export function AdminPage() {
   const [channels, setChannels] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newAdmin, setNewAdmin] = useState("");
+  const [autoplay, setAutoplay] = useState<{ enabled: boolean; query: string } | null>(null);
 
   const guard = (e: Error) => feedback.show(e.message, "error");
 
@@ -44,6 +47,11 @@ export function AdminPage() {
   }, [gid]);
 
   useEffect(refresh, [refresh]);
+
+  // Keep the local autoplay form in sync with the loaded settings.
+  useEffect(() => {
+    if (settings) setAutoplay({ enabled: settings.autoplay_enabled, query: settings.autoplay_query });
+  }, [settings]);
 
   if (loading) {
     return (
@@ -114,6 +122,56 @@ export function AdminPage() {
               </Stack>
             </CardContent>
           </Card>
+
+          {autoplay && (
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  After the queue
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+                  When the queue runs dry, the bot starts a radio station that
+                  matches this query (for example lofi or jazz).
+                </Typography>
+                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={autoplay.enabled}
+                        onChange={(e) => setAutoplay({ ...autoplay, enabled: e.target.checked })}
+                      />
+                    }
+                    label="Autoplay"
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Station query (lofi, jazz, news…)"
+                    value={autoplay.query}
+                    onChange={(e) => setAutoplay({ ...autoplay, query: e.target.value })}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={() =>
+                      api
+                        .updateGuildSettings(gid, {
+                          autoplay_enabled: autoplay.enabled,
+                          autoplay_query: autoplay.query,
+                        })
+                        .then((s) => {
+                          setSettings(s);
+                          setAutoplay({ enabled: s.autoplay_enabled, query: s.autoplay_query });
+                          feedback.show("Autoplay saved");
+                        })
+                        .catch(guard)
+                    }
+                  >
+                    Save
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardContent>

@@ -563,8 +563,11 @@ class MusicService:
             # Cycle the finished track to the end so the queue keeps rotating.
             queue.append(current)
         if not queue:
-            self.current_items.pop(guild_id, None)
-            return None
+            station = await self._autoplay_station(guild_id)
+            if station is None:
+                self.current_items.pop(guild_id, None)
+                return None
+            queue.append(station)
         item = queue.popleft()
         self.current_items[guild_id] = item
         try:
@@ -577,6 +580,37 @@ class MusicService:
         await player.play(track)
         await self._record_history(guild_id, item)
         return track
+
+    async def _autoplay_station(self, guild_id: int) -> QueueItem | None:
+        """A pending radio station for the guild autoplay setting, if any."""
+        try:
+            settings = await self.db.get_guild_settings(guild_id)
+        except Exception:  # noqa: BLE001 - settings trouble must not break playback
+            return None
+        query = (settings.autoplay_query or "").strip()
+        if not settings.autoplay_enabled or not query:
+            return None
+        try:
+            from app.core.services.extern_search import radio_search
+
+            stations = await radio_search(query, limit=1)
+        except Exception:  # noqa: BLE001
+            logger.warning("Autoplay radio search failed for guild %s", guild_id)
+            return None
+        if not stations:
+            return None
+        station = stations[0]
+        return QueueItem(
+            track=None,
+            requested_by_id=0,
+            requested_by_name="autoplay",
+            source="radio",
+            pending_url=station["uri"],
+            title=station["title"],
+            author=station["author"],
+            length=station.get("length", 0),
+            artwork=station.get("artwork"),
+        )
 
     async def _record_history(self, guild_id: int, item: QueueItem) -> None:
         # One row per play start. Stats must never break playback.

@@ -126,7 +126,7 @@ async def test_pending_item_resolves_at_play(music: MusicService) -> None:
     music.queues[GUILD_ID] = deque([item])
 
     async def fake_resolve(it: QueueItem):
-        return make_track(it.title)
+        return make_track(it.display_title)
 
     music._resolve_item = fake_resolve  # type: ignore[method-assign]
     track = await music.play_next(GUILD_ID, "finished")
@@ -147,10 +147,56 @@ async def test_broken_pending_skips_to_next(music: MusicService) -> None:
     async def fake_resolve(it: QueueItem):
         if it.title == "broken":
             raise MusicServiceError("Could not load the YouTube stream.")
-        return make_track(it.title)
+        return make_track(it.display_title)
 
     music._resolve_item = fake_resolve  # type: ignore[method-assign]
     track = await music.play_next(GUILD_ID, "finished")
     assert track is not None and track.title == "good"
     assert player.played == ["good"]
     assert music.last_error is not None and "broken" in music.last_error["context"]["title"]
+
+
+async def test_autoplay_starts_station_when_queue_drains(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    async def fake_radio_search(query: str, limit: int = 15):
+        return [
+            {
+                "title": "Groove Salad",
+                "author": "SomaFM",
+                "uri": "http://ice1.somafm.com/groovesalad-128-mp3",
+                "length": 0,
+                "artwork": None,
+                "source": "radio",
+            }
+        ]
+
+    monkeypatch.setattr("app.core.services.extern_search.radio_search", fake_radio_search)
+    await music.db.update_guild_settings(GUILD_ID, autoplay_enabled=True, autoplay_query="lofi")
+
+    fill_queue(music, ["a"])
+    await music.play_next(GUILD_ID, "finished")
+    assert player.played == ["a"]
+    # The queue ran dry: the station joins as a pending item and starts.
+    await music.play_next(GUILD_ID, "finished")
+    assert player.played == ["a", "Groove Salad"]
+    station = music.current_items[GUILD_ID]
+    assert station.source == "radio" and station.requested_by_name == "autoplay"
+
+
+async def test_autoplay_disabled_drains_silently(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    fill_queue(music, ["a"])
+    await music.play_next(GUILD_ID, "finished")
+    await music.play_next(GUILD_ID, "finished")
+    assert player.played == ["a"]
+    assert GUILD_ID not in music.current_items
