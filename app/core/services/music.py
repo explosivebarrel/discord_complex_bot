@@ -394,13 +394,12 @@ class MusicService:
             # skip ("stopped") still moves to the next track.
             await player.play(current.track)
             return current.track
+        if current is not None and self.repeat_modes.get(guild_id) == "all":
+            # Cycle the finished track to the end so the queue keeps rotating.
+            queue.append(current)
         if not queue:
-            if self.repeat_modes.get(guild_id) == "all" and current is not None:
-                # The round is over; start it again with the track that ended.
-                queue.append(current)
-            else:
-                self.current_items.pop(guild_id, None)
-                return None
+            self.current_items.pop(guild_id, None)
+            return None
         item = queue.popleft()
         self.current_items[guild_id] = item
         await player.play(item.track)
