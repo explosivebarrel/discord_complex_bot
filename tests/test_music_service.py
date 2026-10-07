@@ -205,3 +205,21 @@ async def test_autoplay_disabled_drains_silently(music: MusicService) -> None:
     await music.play_next(GUILD_ID, "finished")
     assert player.played == ["a"]
     assert GUILD_ID not in music.current_items
+
+
+async def test_state_reports_loading_during_transition(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    music.current_items[GUILD_ID] = QueueItem(
+        track=None,
+        requested_by_id=1,
+        requested_by_name="u",
+        source="yt",
+        pending_url="https://www.youtube.com/watch?v=x",
+        title="lazy",
+        length=5_000,
+    )
+    state = music.get_state(GUILD_ID)
+    assert state["current"]["loading"] is True
+    assert state["current"]["title"] == "lazy"
+    assert state["playing"] is False

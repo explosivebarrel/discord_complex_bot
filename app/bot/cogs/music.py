@@ -155,7 +155,10 @@ class MusicCog(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_inactive_player(self, player: wavelink.Player) -> None:
         # The node dispatches this event after 300 seconds without activity. Leave the voice channel.
-        await player.disconnect()
+        if player.guild is not None:
+            await self.bot.music.disconnect(player.guild.id)
+        else:
+            await player.disconnect()
 
 
 async def setup(bot: ComplexBot) -> None:

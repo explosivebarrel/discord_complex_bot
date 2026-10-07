@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Chip, IconButton, Slider, Tooltip, Typography } from "@mui/material";
+import { Box, Chip, CircularProgress, IconButton, LinearProgress, Slider, Tooltip, Typography } from "@mui/material";
 import Pause from "@mui/icons-material/Pause";
 import PlayArrow from "@mui/icons-material/PlayArrow";
 import SkipNext from "@mui/icons-material/SkipNext";
@@ -42,6 +42,7 @@ export function PlayerBar({
   const current = state?.current;
   const paused = !!current?.paused;
   const isLive = !!current && current.length >= LIVE_LENGTH;
+  const isLoading = !!current?.loading;
   const repeat = state?.repeat ?? "off";
   const [livePos, setLivePos] = useState(0);
 
@@ -75,27 +76,30 @@ export function PlayerBar({
         flexWrap: { xs: "wrap", md: "nowrap" },
       }}
     >
-      {current.artwork ? (
-        <Box
-          component="img"
-          src={current.artwork}
-          sx={{ width: 52, height: 52, borderRadius: "12px", objectFit: "cover", flexShrink: 0 }}
-        />
-      ) : (
-        <Box
-          sx={{
-            width: 52,
-            height: 52,
-            borderRadius: "12px",
-            bgcolor: "#49454F",
-            display: "grid",
-            placeItems: "center",
-            flexShrink: 0,
-          }}
-        >
-          <GraphicEq />
-        </Box>
-      )}
+      <Box sx={{ position: "relative", flexShrink: 0, width: 52, height: 52 }}>
+        {current.artwork ? (
+          <Box
+            component="img"
+            src={current.artwork}
+            sx={{ width: 52, height: 52, borderRadius: "12px", objectFit: "cover", opacity: isLoading ? 0.45 : 1 }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: 52,
+              height: 52,
+              borderRadius: "12px",
+              bgcolor: "#49454F",
+              display: "grid",
+              placeItems: "center",
+              opacity: isLoading ? 0.45 : 1,
+            }}
+          >
+            <GraphicEq />
+          </Box>
+        )}
+        {isLoading && <CircularProgress size={28} sx={{ position: "absolute", inset: "12px" }} />}
+      </Box>
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="subtitle2" noWrap>
@@ -105,7 +109,14 @@ export function PlayerBar({
           {current.author ?? ""}
           {current.requested_by ? ` · ${current.requested_by}` : ""}
         </Typography>
-        {isLive ? (
+        {isLoading ? (
+          <>
+            <LinearProgress sx={{ mt: 1.5, borderRadius: 999 }} />
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              Resolving the stream…
+            </Typography>
+          </>
+        ) : isLive ? (
           <Chip size="small" label="LIVE" color="error" sx={{ mt: 0.5, height: 20, fontSize: 11 }} />
         ) : (
           <>
@@ -131,14 +142,22 @@ export function PlayerBar({
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
         <Tooltip title={paused ? "Resume" : "Pause"}>
-          <IconButton onClick={onPauseToggle} sx={{ bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.main" } }}>
-            {paused ? <PlayArrow /> : <Pause />}
-          </IconButton>
+          <span>
+            <IconButton
+              disabled={isLoading}
+              onClick={onPauseToggle}
+              sx={{ bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.main" } }}
+            >
+              {paused ? <PlayArrow /> : <Pause />}
+            </IconButton>
+          </span>
         </Tooltip>
         <Tooltip title="Skip">
-          <IconButton onClick={onSkip}>
-            <SkipNext />
-          </IconButton>
+          <span>
+            <IconButton disabled={isLoading} onClick={onSkip}>
+              <SkipNext />
+            </IconButton>
+          </span>
         </Tooltip>
         <Tooltip title={`Repeat: ${repeat === "off" ? "off (click for queue)" : repeat === "all" ? "whole queue (click for one track)" : "one track (click to turn off)"}`}>
           <IconButton

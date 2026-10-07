@@ -27,6 +27,8 @@ export interface TrackInfo {
   encoded?: string;
   /** "hls" or "drm" when the All-search probe found a playback limit. */
   issue?: string | null;
+  /** True while the next track is resolving its stream (transition). */
+  loading?: boolean;
 }
 
 export interface PlayerState {

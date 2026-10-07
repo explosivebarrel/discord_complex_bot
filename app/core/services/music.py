@@ -144,6 +144,7 @@ class MusicService:
 
     async def disconnect(self, guild_id: int) -> None:
         self.queues.pop(guild_id, None)
+        self.current_items.pop(guild_id, None)
         player = self.get_player(guild_id)
         if player is not None:
             await player.disconnect()
@@ -719,11 +720,18 @@ class MusicService:
         current = None
         if player is not None and player.current is not None:
             item = self.current_items.get(guild_id)
-            if item is None or item.track.identifier != player.current.identifier:
+            if item is None or item.track is None or item.track.identifier != player.current.identifier:
                 item = QueueItem(player.current, 0, "")
             current = item.to_dict()
             current["position"] = player.position
             current["paused"] = player.paused
+        elif player is not None and self.current_items.get(guild_id) is not None:
+            # The item left the queue and is resolving its stream right now;
+            # show it in the bar with a loading flag instead of a blind spot.
+            current = self.current_items[guild_id].to_dict()
+            current["position"] = 0
+            current["paused"] = False
+            current["loading"] = True
         return {
             "guild_id": str(guild_id),
             "guild_name": guild.name if guild else None,

@@ -33,6 +33,9 @@ class FakePlayer:
     def __init__(self) -> None:
         self.played: list[str] = []
         self.playing = False
+        self.current = None  # nothing loaded yet
+        self.channel = None  # not connected to any voice channel
+        self.volume = 100
 
     async def play(self, track: Any) -> None:
         self.played.append(track.title)
