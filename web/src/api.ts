@@ -72,6 +72,38 @@ export interface GuildSettings {
   default_voice_channel_id: string | null;
   admin_role_ids: number[];
   admins: string[];
+  autoplay_enabled: boolean;
+  autoplay_query: string;
+}
+
+export interface GuildStats {
+  totals: { plays_total: number; plays_30d: number; unique_tracks: number };
+  top_tracks: { title: string; author: string; source: string; plays: number }[];
+  top_requesters: { name: string; plays: number }[];
+  recent: { title: string; author: string; source: string; requested_by: string; played_at: string }[];
+}
+
+export interface FavoriteTrackInfo {
+  id: number;
+  title: string;
+  author: string;
+  uri: string;
+  source: string;
+  length_ms: number;
+  artwork: string | null;
+  added_at: string;
+}
+
+export interface PostChannel {
+  id: string;
+  name: string;
+  type: "text" | "forum";
+}
+
+export interface LibraryFile {
+  path: string;
+  name: string;
+  size_mb: number;
 }
 
 async function handle<T>(resp: Response): Promise<T> {
@@ -157,14 +189,24 @@ export const api = {
       body: JSON.stringify({ position }),
     }).then((r) => handle<unknown>(r)),
 
+  guildStats: (guildId: string) =>
+    fetch(`/api/admin/guilds/${guildId}/stats`).then((r) => handle<GuildStats>(r)),
+
   guildSettings: (guildId: string) =>
     fetch(`/api/admin/guilds/${guildId}/settings`).then((r) => handle<GuildSettings>(r)),
 
-  updateGuildSettings: (guildId: string, defaultVoiceChannelId: string | null) =>
+  updateGuildSettings: (
+    guildId: string,
+    body: {
+      default_voice_channel_id?: string | null;
+      autoplay_enabled?: boolean;
+      autoplay_query?: string;
+    },
+  ) =>
     fetch(`/api/admin/guilds/${guildId}/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ default_voice_channel_id: defaultVoiceChannelId }),
+      body: JSON.stringify(body),
     }).then((r) => handle<GuildSettings>(r)),
 
   addGuildAdmin: (guildId: string, discordId: string) =>

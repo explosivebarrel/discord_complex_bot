@@ -96,3 +96,14 @@ async def test_play_next_without_player_is_noop(music: MusicService) -> None:
     fill_queue(music, ["a"])
     assert await music.play_next(GUILD_ID) is None
     assert len(music.queues[GUILD_ID]) == 1
+
+
+async def test_play_next_records_history(music: MusicService, db) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    fill_queue(music, ["a"])
+    await music.play_next(GUILD_ID, "finished")
+    history = await db.recent_history(GUILD_ID)
+    assert len(history) == 1
+    assert history[0]["title"] == "a"
+    assert history[0]["requested_by"] == "tester"

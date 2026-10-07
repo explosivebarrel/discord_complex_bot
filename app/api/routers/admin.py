@@ -17,6 +17,8 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 class UpdateSettingsBody(BaseModel):
     default_voice_channel_id: int | None = None
+    autoplay_enabled: bool | None = None
+    autoplay_query: str | None = None
 
 
 class AddAdminBody(BaseModel):
@@ -56,6 +58,8 @@ async def get_settings(
         ),
         "admin_role_ids": json.loads(settings.admin_role_ids),
         "admins": [str(a) for a in admins],
+        "autoplay_enabled": settings.autoplay_enabled,
+        "autoplay_query": settings.autoplay_query,
     }
 
 
@@ -72,6 +76,8 @@ async def update_settings(
         guild_id,
         name=guild.name if guild else None,
         default_voice_channel_id=body.default_voice_channel_id,
+        autoplay_enabled=body.autoplay_enabled,
+        autoplay_query=body.autoplay_query,
     )
     await db.audit(
         "admin.update_settings",
@@ -81,6 +87,23 @@ async def update_settings(
         details=body.model_dump(exclude_none=True),
     )
     return await get_settings(guild_id, user, bot, db)
+
+
+@router.get("/guilds/{guild_id}/stats")
+async def guild_stats(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_admin),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Playback statistics for the stats page of the web panel."""
+    requesters = await db.top_requesters(guild_id, days=30, limit=10)
+    return {
+        "totals": await db.history_totals(guild_id, days=30),
+        "top_tracks": await db.top_tracks(guild_id, days=30, limit=10),
+        # The discord id is not shown on the page; name and count are enough.
+        "top_requesters": [{"name": r["name"], "plays": r["plays"]} for r in requesters],
+        "recent": await db.recent_history(guild_id, limit=50),
+    }
 
 
 @router.post("/guilds/{guild_id}/admins")

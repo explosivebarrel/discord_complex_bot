@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Typography } from "@mui/material";
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import Settings from "@mui/icons-material/Settings";
+import BarChart from "@mui/icons-material/BarChart";
 import { api, GuildBrief } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -97,9 +98,14 @@ export function GuildsPage() {
                     Open player
                   </Button>
                   {(g.is_admin || g.is_superadmin) && (
-                    <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" startIcon={<Settings />}>
-                      Manage
-                    </Button>
+                    <>
+                      <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" startIcon={<Settings />}>
+                        Manage
+                      </Button>
+                      <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" startIcon={<BarChart />}>
+                        Stats
+                      </Button>
+                    </>
                   )}
                 </Box>
               </CardContent>

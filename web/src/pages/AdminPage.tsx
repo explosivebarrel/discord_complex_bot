@@ -101,7 +101,7 @@ export function AdminPage() {
                   variant="contained"
                   onClick={() =>
                     api
-                      .updateGuildSettings(gid, settings.default_voice_channel_id)
+                      .updateGuildSettings(gid, { default_voice_channel_id: settings.default_voice_channel_id })
                       .then((s) => {
                         setSettings(s);
                         feedback.show("Settings saved");

@@ -393,6 +393,7 @@ class MusicService:
             # Replay the same track; the queue stays as it is. An explicit
             # skip ("stopped") still moves to the next track.
             await player.play(current.track)
+            await self._record_history(guild_id, current)
             return current.track
         if current is not None and self.repeat_modes.get(guild_id) == "all":
             # Cycle the finished track to the end so the queue keeps rotating.
@@ -403,7 +404,24 @@ class MusicService:
         item = queue.popleft()
         self.current_items[guild_id] = item
         await player.play(item.track)
+        await self._record_history(guild_id, item)
         return item.track
+
+    async def _record_history(self, guild_id: int, item: QueueItem) -> None:
+        # One row per play start. Stats must never break playback.
+        try:
+            await self.db.add_play_history(
+                guild_id,
+                title=item.track.title,
+                author=item.track.author or "",
+                uri=item.track.uri or "",
+                source=item.source or item.track.source,
+                length_ms=item.track.length or 0,
+                requested_by_id=item.requested_by_id,
+                requested_by_name=item.requested_by_name,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to record play history for guild %s", guild_id)
 
     def set_repeat(self, guild_id: int, mode: str) -> str:
         if mode not in ("off", "one", "all"):
