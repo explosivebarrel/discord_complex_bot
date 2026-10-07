@@ -76,16 +76,28 @@ cd web && npm install && npm run dev       # http://localhost:5173
 
 ## Переменные окружения
 
-См. `.env.example` — все переменные с комментариями.
+См. `.env.example` — все переменные с комментариями. Дополнительно:
+`MUSIC_LIBRARY_DIR` — папка локальной библиотеки (по умолчанию `data/music`),
+`INTERNAL_BASE_URL` — адрес app-сервиса для Lavalink (в compose `http://app:8000`).
+
+## Тесты
+
+```
+python -m venv .venv
+.venv/Scripts/pip install -e ".[dev]"   # Linux/macOS: .venv/bin/pip
+.venv/Scripts/python -m pytest -q
+```
+
+Тесты не трогают реальную БД: sqlite создаётся во временной папке.
 
 ## Структура проекта
 
 ```
 app/
   bot/            # discord.py клиент + cogs
-    cogs/music.py, moderation.py, owner.py
+    cogs/music.py, moderation.py, owner.py, posts.py
   api/            # FastAPI
-    routers/auth.py, player.py, admin.py
+    routers/auth.py, player.py, admin.py, favorites.py, posts.py, library.py
     discord_oauth.py, sessions.py, deps.py
   core/           # общее ядро
     config.py, db/ (модели, миграции), services/music.py
@@ -96,10 +108,19 @@ lavalink/         # конфиг Lavalink
 alembic/          # миграции БД
 ```
 
+## Возможности
+
+- Музыка: YouTube / SoundCloud / Яндекс.Музыка / радио / Archive.org / локальная
+  библиотека (`data/music`), поиск «All» по всем источникам сразу с проверкой
+  HLS/DRM; очередь с удалением, перестановкой, повтором (трек/очередь),
+  автоплей радио-станции, когда очередь пуста; плейлисты пачкой (до 100 треков).
+- Личные избранные треки (♥ в поиске), история и статистика сервера.
+- Публикация постов и тредов: страница панели для админов + `/post`, `/announce`.
+
 ## Roadmap
 
 - [x] v1: скелет, музыка (slash + web), OAuth2-панель, роли, Docker
+- [x] Плейлисты, избранное, история и статистика, автоплей, локальная библиотека
+- [x] Посты/треды (форумы) из панели и slash-командами
 - [ ] Полноценная модерация: mute/timeout, варны, лог-каналы
-- [ ] Создание постов/тредов (форумы), расписания
-- [ ] Плейлисты и «избранное» в БД, история прослушиваний
 - [ ] PostgreSQL при росте, метрики
