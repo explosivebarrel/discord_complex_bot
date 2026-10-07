@@ -114,9 +114,12 @@ class MusicService:
 
     # --- playback ---
 
-    async def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
+        search_source = (
+            wavelink.TrackSource.SoundCloud if source == "sc" else wavelink.TrackSource.YouTubeMusic
+        )
         try:
-            result = await wavelink.Playable.search(query)
+            result = await wavelink.Playable.search(query, source=search_source)
         except wavelink.LavalinkLoadException as exc:
             raise MusicServiceError("Lavalink failed to load tracks. Try again in a moment.") from exc
         if isinstance(result, wavelink.Playlist):

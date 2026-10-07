@@ -100,6 +100,7 @@ export function PlayerPage() {
         <div className="row" style={{ marginBottom: 8 }}>
           {[
             ["yt", "YouTube Music"],
+            ["sc", "SoundCloud"],
             ["radio", "📻 Radio"],
             ["archive", "Archive.org"],
           ].map(([value, label]) => (
@@ -118,7 +119,9 @@ export function PlayerPage() {
             placeholder={
               searchSource === "yt"
                 ? "Track name or URL (YouTube, SoundCloud, …)"
-                : searchSource === "radio"
+                : searchSource === "sc"
+                  ? "Search SoundCloud tracks"
+                  : searchSource === "radio"
                   ? "Station name or genre (jazz, rock, news…)"
                   : "Search audio on Archive.org"
             }

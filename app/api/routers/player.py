@@ -103,7 +103,7 @@ async def search(
             return await archive_search(q)
         except ExternalSearchError as exc:
             raise HTTPException(status_code=502, detail=f"Archive search failed: {exc}") from exc
-    return await music.search(q)
+    return await music.search(q, source=source)
 
 
 @router.post("/enqueue")
