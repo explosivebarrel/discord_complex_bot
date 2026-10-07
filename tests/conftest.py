@@ -68,6 +68,8 @@ def config(tmp_path: Path) -> Config:
         yandex_music_token="",
         log_level="INFO",
         data_dir=tmp_path,
+        music_library_dir=tmp_path / "music",
+        internal_base_url="http://localhost:8000",
     )
 
 

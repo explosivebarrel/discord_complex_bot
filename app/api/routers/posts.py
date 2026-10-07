@@ -31,12 +31,12 @@ async def post_channels(
     guild = bot.get_guild(guild_id)
     if guild is None:
         raise HTTPException(status_code=404, detail="Bot is not on this server")
-    channels = [
-        {"id": str(ch.id), "name": ch.name, "type": "text"} for ch in guild.text_channels
-    ]
-    channels += [
-        {"id": str(ch.id), "name": ch.name, "type": "forum"} for ch in guild.forum_channels
-    ]
+    channels = []
+    for ch in guild.channels:
+        if isinstance(ch, discord.TextChannel):
+            channels.append({"id": str(ch.id), "name": ch.name, "type": "text"})
+        elif isinstance(ch, discord.ForumChannel):
+            channels.append({"id": str(ch.id), "name": ch.name, "type": "forum"})
     return channels
 
 

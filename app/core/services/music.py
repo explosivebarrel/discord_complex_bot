@@ -529,6 +529,16 @@ class MusicService:
             raise MusicServiceError("Could not load the stream.")
         return loaded[0]
 
+    async def _load_stream(self, url: str) -> wavelink.Playable | None:
+        """Load a direct URL through Lavalink; None on any load failure."""
+        try:
+            loaded = await wavelink.Playable.search(url)
+        except wavelink.LavalinkLoadException:
+            return None
+        if isinstance(loaded, wavelink.Playlist) or not loaded:
+            return None
+        return loaded[0]
+
     async def _play_item(self, guild_id: int, item: QueueItem) -> None:
         player = self.get_player(guild_id)
         if player is None:
@@ -582,7 +592,11 @@ class MusicService:
         return track
 
     async def _autoplay_station(self, guild_id: int) -> QueueItem | None:
-        """A pending radio station for the guild autoplay setting, if any."""
+        """The first playable radio station for the guild autoplay setting.
+
+        Stations resolve eagerly here: a dead stream must not enter the
+        queue and loop the autoplay path forever.
+        """
         try:
             settings = await self.db.get_guild_settings(guild_id)
         except Exception:  # noqa: BLE001 - settings trouble must not break playback
@@ -593,24 +607,32 @@ class MusicService:
         try:
             from app.core.services.extern_search import radio_search
 
-            stations = await radio_search(query, limit=1)
+            stations: list[dict[str, Any]] = []
+            for attempt in range(2):
+                stations = await radio_search(query, limit=4)
+                if stations:
+                    break
+                await asyncio.sleep(1.0)
         except Exception:  # noqa: BLE001
             logger.warning("Autoplay radio search failed for guild %s", guild_id)
             return None
-        if not stations:
-            return None
-        station = stations[0]
-        return QueueItem(
-            track=None,
-            requested_by_id=0,
-            requested_by_name="autoplay",
-            source="radio",
-            pending_url=station["uri"],
-            title=station["title"],
-            author=station["author"],
-            length=station.get("length", 0),
-            artwork=station.get("artwork"),
-        )
+        for station in stations:
+            track = await self._load_stream(station["uri"])
+            if track is None:
+                continue
+            track._title = station["title"]  # noqa: SLF001 - Lavalink only sees the stream name
+            track._author = station.get("author") or track.author  # noqa: SLF001
+            return QueueItem(
+                track=track,
+                requested_by_id=0,
+                requested_by_name="autoplay",
+                source="radio",
+                title=station["title"],
+                author=station.get("author") or "",
+                length=station.get("length", 0),
+                artwork=station.get("artwork"),
+            )
+        return None
 
     async def _record_history(self, guild_id: int, item: QueueItem) -> None:
         # One row per play start. Stats must never break playback.

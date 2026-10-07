@@ -187,7 +187,7 @@ export function PlayerPage() {
       .finally(() => setSearching(false));
   };
 
-  const enqueue = (key: string, body: { query?: string; encoded?: string; source?: string }) => {
+  const enqueue = (key: string, body: Parameters<typeof api.enqueue>[1]) => {
     if (enqueueing !== null) return;
     setEnqueueing(key);
     api

@@ -180,6 +180,11 @@ async def test_autoplay_starts_station_when_queue_drains(
         ]
 
     monkeypatch.setattr("app.core.services.extern_search.radio_search", fake_radio_search)
+
+    async def fake_load(url: str):
+        return make_track("Groove Salad")
+
+    music._load_stream = fake_load  # type: ignore[method-assign]
     await music.db.update_guild_settings(GUILD_ID, autoplay_enabled=True, autoplay_query="lofi")
 
     fill_queue(music, ["a"])
