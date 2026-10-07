@@ -133,7 +133,7 @@ export function PlayerPage() {
 
   if (loading) {
     return (
-      <AppShell me={me}>
+      <AppShell me={me} back>
         <Box sx={{ display: "grid", placeItems: "center", py: 10 }}>
           <CircularProgress />
         </Box>
@@ -142,7 +142,7 @@ export function PlayerPage() {
   }
 
   return (
-    <AppShell me={me} title={state?.guild_name ?? undefined}>
+    <AppShell me={me} back title={state?.guild_name ?? undefined}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>
         {/* Left column: search */}
         <Box sx={{ flex: { md: "1 1 58%" }, minWidth: 0, width: "100%" }}>

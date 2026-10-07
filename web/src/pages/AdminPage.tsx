@@ -47,7 +47,7 @@ export function AdminPage() {
 
   if (loading) {
     return (
-      <AppShell me={me} title="Manage">
+      <AppShell me={me} back title="Manage">
         <Typography variant="body2" sx={{ color: "text.secondary" }}>
           Loading…
         </Typography>
@@ -56,7 +56,7 @@ export function AdminPage() {
   }
 
   return (
-    <AppShell me={me} title={settings?.guild.name ?? "Manage"}>
+    <AppShell me={me} back title={settings?.guild.name ?? "Manage"}>
       <Typography variant="h5" sx={{ mb: 2 }}>
         Manage server
       </Typography>

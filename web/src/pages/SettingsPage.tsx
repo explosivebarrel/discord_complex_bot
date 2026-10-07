@@ -60,7 +60,7 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <AppShell me={me} title="Settings">
+      <AppShell me={me} back title="Settings">
         <Typography variant="body2" sx={{ color: "text.secondary" }}>
           Loading…
         </Typography>
@@ -69,7 +69,7 @@ export function SettingsPage() {
   }
   if (me && !me.is_superadmin) {
     return (
-      <AppShell me={me} title="Settings">
+      <AppShell me={me} back title="Settings">
         <Typography variant="body2" sx={{ color: "error.main" }}>
           Super-admin only. Add your Discord ID to SUPERADMIN_IDS in .env.
         </Typography>
@@ -78,7 +78,7 @@ export function SettingsPage() {
   }
 
   return (
-    <AppShell me={me} title="Settings">
+    <AppShell me={me} back title="Settings">
       <Typography variant="h5" sx={{ mb: 2 }}>
         System settings
       </Typography>
