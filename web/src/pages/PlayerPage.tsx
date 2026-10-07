@@ -91,6 +91,7 @@ export function PlayerPage() {
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -404,12 +405,24 @@ export function PlayerPage() {
                       key={i}
                       disableGutters
                       dense
+                      onMouseEnter={() => setHoveredRow(i)}
+                      onMouseLeave={() => setHoveredRow((h) => (h === i ? null : h))}
                       secondaryAction={
-                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            // Row actions appear on hover; touch devices have
+                            // no hover, so they stay visible there.
+                            visibility: hoveredRow === i ? "visible" : "hidden",
+                            ["@media (hover: none)"]: { visibility: "visible" },
+                          }}
+                        >
                           <IconButton
                             size="small"
                             disabled={i === 0}
                             onClick={() => act(() => api.moveQueued(gid, i, i - 1))}
+                            sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
                           >
                             <KeyboardArrowUp fontSize="small" />
                           </IconButton>
@@ -417,10 +430,15 @@ export function PlayerPage() {
                             size="small"
                             disabled={i === state.queue.length - 1}
                             onClick={() => act(() => api.moveQueued(gid, i, i + 1))}
+                            sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
                           >
                             <KeyboardArrowDown fontSize="small" />
                           </IconButton>
-                          <IconButton size="small" onClick={() => act(() => api.removeQueued(gid, i))}>
+                          <IconButton
+                            size="small"
+                            onClick={() => act(() => api.removeQueued(gid, i))}
+                            sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#4A3038", color: "error.main" }, ml: 0.25 }}
+                          >
                             <DeleteOutlined fontSize="small" />
                           </IconButton>
                         </Box>
