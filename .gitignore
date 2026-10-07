@@ -30,6 +30,13 @@ alembic/versions/__pycache__/
 .DS_Store
 Thumbs.db
 
+# Test & build artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
 # Code search index
 .codesearch.db*
 
