@@ -18,6 +18,8 @@ share the same session history mechanism.
 - Add a **Shuffle** button next to Clear: shuffle the rest of the queue.
 - The autoplay radio never blocks the queue (a new enqueue replaces it at
   once) and never enters the session history.
+- **Drag and drop** reordering of queue rows; the arrow buttons stay for
+  touch devices.
 
 ## 2. Playlist browser (shipped)
 
@@ -43,6 +45,34 @@ For "add all" on a large playlist (1500+ tracks):
   the auto-advance reaches it; an expired session drops the marker quietly.
 - The queue shows the marker as a collapsed row "N more tracks"; a click on
   it reopens the playlist browser. Shuffle keeps the marker at the tail.
+
+## 4. Personal playlists (planned)
+
+Named playlists owned by a panel user and stored in the bot database:
+
+- Add tracks from search results, the queue, favorites and playlist browser
+  rows ("add to playlist").
+- Play a personal playlist in one click; the list is available in every
+  guild the bot is in.
+- Optional later: guild-shared playlists managed by the admins.
+
+## 5. Queue persistence (planned)
+
+The queue and the session history live in memory and disappear on a restart:
+
+- Store the queue as pending items (the deferred resolve mechanism already
+  fits) and restore it when the bot starts.
+- Restore the repeat mode and the session history the same way.
+
+## 6. Unbounded Yandex playlists (planned, when needed)
+
+LavaSrc cannot paginate: one request returns the first 100 x
+`playlistLoadLimit` tracks (the current ceiling is 1000):
+
+- Walk the Yandex Music API directly with the stored access token, page by
+  page, and keep only track metadata in the browser session.
+- Resolve each track right before it plays through the deferred QueueItem
+  mechanism. Needed only when playlists longer than 1000 show up.
 
 ## Constraint: one voice channel per bot per guild
 
