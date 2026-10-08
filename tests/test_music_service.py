@@ -316,7 +316,7 @@ async def test_previous_without_history_fails(music: MusicService) -> None:
         await music.previous(GUILD_ID, 1)
 
 
-async def test_jump_to_plays_target_and_moves_skipped_to_played(music: MusicService) -> None:
+async def test_jump_to_plays_target_and_drops_skipped(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
     music.current_items[GUILD_ID] = QueueItem(make_track("playing"), 1, "u")
@@ -326,9 +326,53 @@ async def test_jump_to_plays_target_and_moves_skipped_to_played(music: MusicServ
 
     assert player.played == ["b"]
     assert [i.track.title for i in music.queues[GUILD_ID]] == ["c"]
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["playing", "a"]
+    # Only the interrupted current track enters the history; the jumped-over
+    # "a" never played, so it stays out of Recent.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["playing"]
     with pytest.raises(MusicServiceError):
         await music.jump_to(GUILD_ID, 9, 1)
+
+
+async def test_enqueue_interrupts_autoplay_radio(music: MusicService) -> None:
+    player = FakePlayer()
+    player.playing = True
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    music.current_items[GUILD_ID] = QueueItem(
+        make_track("radio"), 0, "autoplay", source="radio", is_autoplay=True
+    )
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    result = await music.enqueue(
+        GUILD_ID,
+        "https://www.youtube.com/watch?v=abc",
+        1,
+        "u",
+        source="yt",
+        meta={"title": "real song", "length_ms": 1000},
+    )
+
+    # The endless radio must not hold the queue hostage.
+    assert result["now_playing"] is True
+    assert player.played == ["real song"]
+    assert music.current_items[GUILD_ID].display_title == "real song"
+    assert not music.played.get(GUILD_ID)
+
+
+async def test_autoplay_radio_stays_out_of_played(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    music.current_items[GUILD_ID] = QueueItem(
+        make_track("radio"), 0, "autoplay", source="radio", is_autoplay=True
+    )
+    fill_queue(music, ["song"])
+
+    await music.play_next(GUILD_ID, "stopped")
+
+    assert player.played == ["song"]
+    assert GUILD_ID not in music.played
 
 
 async def test_replay_played_by_position(music: MusicService) -> None:

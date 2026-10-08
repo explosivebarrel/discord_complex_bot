@@ -45,6 +45,9 @@ class QueueItem:
     author: str = ""
     length: int = 0
     artwork: str | None = None
+    # Autoplay radio items never enter the session history and never block
+    # the queue: they are placeholders the real tracks replace at once.
+    is_autoplay: bool = False
 
     @property
     def display_title(self) -> str:
@@ -477,8 +480,15 @@ class MusicService:
 
         queue = self._queue(guild_id)
         player = self.get_player(guild_id)
+        current = self.current_items.get(guild_id)
+        # The autoplay radio is an endless stream: real tracks must replace
+        # it at once instead of waiting behind it forever.
+        radio_current = current is not None and current.is_autoplay
+        # An unresolved current item means a resolve is already in flight;
+        # queueing avoids the lost-track race of two overlapping starts.
+        resolving = current is not None and current.track is None
         now_playing = False
-        if player is not None and not player.playing and not queue:
+        if player is not None and (not player.playing or radio_current) and not queue and not resolving:
             first = items.pop(0)
             queue.extend(items)
             self.current_items[guild_id] = first
@@ -620,9 +630,10 @@ class MusicService:
                 self.current_items.pop(guild_id, None)
                 return None
             queue.append(station)
-        if current is not None and current.track is not None:
+        if current is not None and current.track is not None and not current.is_autoplay:
             # The outgoing track enters the session history for Previous/Recent.
-            # A dead pending item (track is None, recursion) must not enter it.
+            # A dead pending item (track is None, recursion) and the autoplay
+            # radio must not enter it.
             self._played(guild_id).append(current)
         item = queue.popleft()
         self.current_items[guild_id] = item
@@ -691,6 +702,7 @@ class MusicService:
                 author=station.get("author") or "",
                 length=station.get("length", 0),
                 artwork=station.get("artwork"),
+                is_autoplay=True,
             )
         return None
 
@@ -763,7 +775,7 @@ class MusicService:
             raise MusicServiceError("Nothing was played yet.")
         item = self._for_replay(played.pop())
         current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None:
+        if current is not None and current.track is not None and not current.is_autoplay:
             self._queue(guild_id).appendleft(current)
         self.current_items[guild_id] = item
         # A direct play: the old track ends with reason "replaced" and the
@@ -783,7 +795,7 @@ class MusicService:
         item = self._for_replay(played[len(played) - 1 - position])
         del played[len(played) - 1 - position]
         current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None:
+        if current is not None and current.track is not None and not current.is_autoplay:
             self._played(guild_id).append(current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
@@ -793,16 +805,17 @@ class MusicService:
         return item.display_title
 
     async def jump_to(self, guild_id: int, index: int, requester_id: int) -> str:
-        """Start a queued track now. The tracks jumped over enter the history."""
+        """Start a queued track now. The tracks jumped over are dropped;
+        only the interrupted current track enters the history."""
         self._require_player(guild_id)
         queue = self._queue(guild_id)
         if index < 0 or index >= len(queue):
             raise MusicServiceError("That queue position does not exist.")
         current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None:
+        if current is not None and current.track is not None and not current.is_autoplay:
             self._played(guild_id).append(current)
         for _ in range(index):
-            self._played(guild_id).append(queue.popleft())
+            queue.popleft()
         item = queue.popleft()
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)

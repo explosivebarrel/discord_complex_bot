@@ -3,7 +3,7 @@
 Planned work, ordered by priority. Each item is a separate step; steps 1 and 2
 share the same session history mechanism.
 
-## 1. Queue and history
+## 1. Queue and history (shipped)
 
 - Keep a played-track stack (last ~20) per guild in the music service.
 - Add a **Previous** button to the player bar: the current track goes to the
@@ -12,10 +12,12 @@ share the same session history mechanism.
 - Add an **Up next / Recent** view switch to the queue panel. The Recent view
   shows the current track and the last played tracks with the requester name
   and time. A click on a recent track plays it again.
-- **Jump to track**: a click on a queued track starts it now. Tracks before it
-  move to the played stack, the tail of the queue stays in place. This reuses
-  the skip mechanism (`jump_to(index)` in the service).
+- **Jump to track**: a click on a queued track starts it now. The interrupted
+  current track moves to the played stack, the tail of the queue stays in
+  place. This reuses the skip mechanism (`jump_to(index)` in the service).
 - Add a **Shuffle** button next to Clear: shuffle the rest of the queue.
+- The autoplay radio never blocks the queue (a new enqueue replaces it at
+  once) and never enters the session history.
 
 ## 2. Playlist browser
 
