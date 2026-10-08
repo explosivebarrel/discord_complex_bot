@@ -232,7 +232,11 @@ def section_allows(level: str, is_admin_tier: bool) -> bool:
 
 
 async def is_admin_tier(
-    user: CurrentUser, oauth: DiscordOAuthClient, bot: ComplexBot, db: Database, guild_id: int
+    guild_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
+    db: Database = Depends(get_db),
 ) -> bool:
     """Super-admin, Discord owner/MANAGE_GUILD, or a panel-added admin."""
     if user.is_superadmin:
@@ -261,7 +265,7 @@ def require_section_access(section: str):
             raise HTTPException(status_code=403, detail="You are not a member of this server")
         settings = await db.get_guild_settings(guild_id)
         level = getattr(settings, f"{section}_access", "admins")
-        admin_tier = await is_admin_tier(user, oauth, bot, db, guild_id)
+        admin_tier = await is_admin_tier(guild_id, user, oauth, bot, db)
         if not section_allows(level, admin_tier):
             raise HTTPException(status_code=403, detail="This section is not available for you")
         return user
@@ -282,7 +286,7 @@ async def require_guild_admin(
         raise HTTPException(status_code=404, detail="Bot is not on this server")
     if not await _is_guild_member(user, oauth, bot, db, guild_id):
         raise HTTPException(status_code=403, detail="You are not a member of this server")
-    _, is_discord_admin = await _guild_access(user, oauth, bot, db, guild_id)
-    if is_discord_admin or await is_guild_admin(db, user, guild_id):
+    admin_tier = await is_admin_tier(guild_id, user, oauth, bot, db)
+    if admin_tier:
         return user
     raise HTTPException(status_code=403, detail="Server admin rights required")
