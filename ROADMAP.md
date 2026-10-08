@@ -29,8 +29,8 @@ link opens a preview instead:
 - Per-track buttons: **Play now** and **Add to queue**.
 - Bulk actions: add page, add all (lazy), shuffle +100.
 - The server caches the flat playlist dump for 15 minutes and serves pages
-  from the cache. Yandex playlists load through LavaSrc (up to 100 tracks
-  per open).
+  from the cache. Yandex playlists load through LavaSrc; the config caps the
+  request at 100 x `playlistLoadLimit` tracks (set to 3 in application.yml).
 
 ## 3. Lazy full-playlist playback (shipped)
 
