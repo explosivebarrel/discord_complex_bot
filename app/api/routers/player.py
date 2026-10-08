@@ -11,7 +11,7 @@ from app.core.config import Config
 from app.core.db import Database
 from app.core.services.extern_search import ExternalSearchError, archive_search, radio_search
 from app.core.services.library import search_library
-from app.core.services.music import MusicService, MusicServiceError
+from app.core.services.music import MusicService, MusicServiceError, QueueItem
 
 if TYPE_CHECKING:
     from app.bot.client import ComplexBot
@@ -71,6 +71,10 @@ class PlaylistAddBody(BaseModel):
 
 
 class PlaylistPlayBody(BaseModel):
+    index: int
+
+
+class UserPlaylistPlayBody(BaseModel):
     index: int
 
 
@@ -482,6 +486,74 @@ async def playlist_play(
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"playing": title}
+
+
+@router.post("/myplaylist/{playlist_id}/play")
+async def play_user_playlist_track(
+    guild_id: int,
+    playlist_id: int,
+    body: UserPlaylistPlayBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    playlist = await db.get_user_playlist(user.discord_id, playlist_id)
+    if playlist is None:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    tracks = playlist["tracks"]
+    if body.index < 0 or body.index >= len(tracks):
+        raise HTTPException(status_code=400, detail="That playlist position does not exist.")
+    row = tracks[body.index]
+    item = QueueItem(
+        track=None,
+        requested_by_id=user.discord_id,
+        requested_by_name=user.global_name,
+        source=row["source"],
+        pending_url=row["uri"],
+        title=row["title"],
+        author=row["author"],
+        length=row["length_ms"],
+        artwork=row["artwork"],
+    )
+    try:
+        title = await music.play_pending_now(
+            guild_id, item, user.discord_id, {"playlist": playlist["name"], "title": row["title"]}
+        )
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"playing": title}
+
+
+@router.post("/myplaylist/{playlist_id}/queue")
+async def queue_user_playlist(
+    guild_id: int,
+    playlist_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    playlist = await db.get_user_playlist(user.discord_id, playlist_id)
+    if playlist is None:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    items = [
+        QueueItem(
+            track=None,
+            requested_by_id=user.discord_id,
+            requested_by_name=user.global_name,
+            source=row["source"],
+            pending_url=row["uri"],
+            title=row["title"],
+            author=row["author"],
+            length=row["length_ms"],
+            artwork=row["artwork"],
+        )
+        for row in playlist["tracks"][:1000]
+    ]
+    try:
+        queued = await music.queue_pending_items(guild_id, items, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"queued": queued}
 
 
 @router.post("/played/replay")

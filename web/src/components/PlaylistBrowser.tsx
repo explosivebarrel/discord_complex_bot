@@ -20,6 +20,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import Shuffle from "@mui/icons-material/Shuffle";
 import LibraryMusic from "@mui/icons-material/LibraryMusic";
 import { PlaylistPageInfo } from "../api";
+import { PlaylistAddMenu } from "./PlaylistAddMenu";
 
 function fmt(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -113,6 +114,18 @@ export function PlaylistBrowser({
                   >
                     <AddQueue fontSize="small" />
                   </IconButton>
+                  <Box sx={{ ml: 0.25 }}>
+                    <PlaylistAddMenu
+                      track={{
+                        title: t.title,
+                        author: t.author,
+                        uri: t.uri ?? "",
+                        source: playlist.source,
+                        length_ms: t.length,
+                        artwork: t.artwork,
+                      }}
+                    />
+                  </Box>
                 </Box>
               }
             >

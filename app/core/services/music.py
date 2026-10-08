@@ -893,6 +893,7 @@ class MusicService:
                     "author": self._entry_author(e),
                     "length": self._entry_length(e),
                     "artwork": self._entry_artwork(e),
+                    "uri": self._entry_uri(e),
                 }
                 for i, e in chunk
             ],
@@ -915,6 +916,10 @@ class MusicService:
     @staticmethod
     def _entry_artwork(entry: Any) -> str | None:
         return entry.artwork if isinstance(entry, wavelink.Playable) else entry.get("artwork")
+
+    @staticmethod
+    def _entry_uri(entry: Any) -> str:
+        return str(entry.uri if isinstance(entry, wavelink.Playable) else entry.get("url") or "")
 
     def _entry_to_item(
         self, entry: Any, session: PlaylistSession, requester_id: int, requester_name: str
@@ -1024,6 +1029,40 @@ class MusicService:
             details={"playlist": session.title, "total": len(session.entries)},
         )
         return {"queued": len(window), "remaining": remaining, "total": len(session.entries)}
+
+    async def play_pending_now(
+        self, guild_id: int, item: QueueItem, requester_id: int, details: dict[str, Any] | None = None
+    ) -> str:
+        """Start one deferred item right now with the usual history rules.
+
+        The interrupted track enters the session history; an autoplay radio
+        is replaced without a trace.
+        """
+        self._require_player(guild_id)
+        current = self.current_items.get(guild_id)
+        if current is not None and current.track is not None and not current.is_autoplay:
+            self._played(guild_id).append(current)
+        self.current_items[guild_id] = item
+        await self._play_item(guild_id, item)
+        await self.db.audit("music.play_pending", guild_id=guild_id, actor_id=requester_id, details=details)
+        return item.display_title
+
+    async def queue_pending_items(self, guild_id: int, items: list[QueueItem], requester_id: int) -> int:
+        """Append deferred items; start the first one when the player is idle."""
+        if not items:
+            raise MusicServiceError("Nothing to queue.")
+        player = self.get_player(guild_id)
+        queue = self._queue(guild_id)
+        was_idle = not queue and (player is None or not player.playing)
+        queue.extend(items)
+        if was_idle and player is not None:
+            first = queue.popleft()
+            self.current_items[guild_id] = first
+            await self._play_item(guild_id, first)
+        await self.db.audit(
+            "music.queue_pending", guild_id=guild_id, actor_id=requester_id, details={"queued": len(items)}
+        )
+        return len(items)
 
     async def play_playlist_track(
         self, guild_id: int, playlist_id: int, index: int, requester_id: int, requester_name: str

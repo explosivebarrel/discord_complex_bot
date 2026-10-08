@@ -122,3 +122,28 @@ class FavoriteTrack(Base):
     added_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
     __table_args__ = (UniqueConstraint("user_id", "uri", name="uq_favorite_user_uri"),)
+
+
+class UserPlaylist(Base):
+    __tablename__ = "user_playlists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_user_playlist_name"),)
+
+
+class UserPlaylistTrack(Base):
+    __tablename__ = "user_playlist_tracks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    playlist_id: Mapped[int] = mapped_column(Integer, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    title: Mapped[str] = mapped_column(String(256), default="")
+    author: Mapped[str] = mapped_column(String(256), default="")
+    uri: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(32), default="")
+    length_ms: Mapped[int] = mapped_column(Integer, default=0)
+    artwork: Mapped[str | None] = mapped_column(String(512), nullable=True)

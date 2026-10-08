@@ -77,6 +77,7 @@ export interface PlaylistTrack {
   author: string;
   length: number;
   artwork: string | null;
+  uri: string | null;
 }
 
 export interface PlaylistPageInfo {
@@ -88,6 +89,30 @@ export interface PlaylistPageInfo {
   page: number;
   pages: number;
   tracks: PlaylistTrack[];
+}
+
+export interface UserPlaylistBrief {
+  id: number;
+  name: string;
+  tracks: number;
+  created_at: string;
+}
+
+export interface UserPlaylistTrack {
+  id: number;
+  position: number;
+  title: string;
+  author: string;
+  uri: string;
+  source: string;
+  length_ms: number;
+  artwork: string | null;
+}
+
+export interface UserPlaylistFull {
+  id: number;
+  name: string;
+  tracks: UserPlaylistTrack[];
 }
 
 export interface VoiceChannel {
@@ -352,6 +377,50 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ index }),
     }).then((r) => handle<{ playing: string }>(r)),
+
+  myPlaylists: () => fetch("/api/playlists").then((r) => handle<UserPlaylistBrief[]>(r)),
+
+  createUserPlaylist: (name: string) =>
+    fetch("/api/playlists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then((r) => handle<{ id: number }>(r)),
+
+  deleteUserPlaylist: (playlistId: number) =>
+    fetch(`/api/playlists/${playlistId}`, { method: "DELETE" }).then((r) =>
+      handle<{ removed: boolean }>(r),
+    ),
+
+  userPlaylist: (playlistId: number) =>
+    fetch(`/api/playlists/${playlistId}`).then((r) => handle<UserPlaylistFull>(r)),
+
+  addUserPlaylistTracks: (
+    playlistId: number,
+    tracks: { title?: string; author?: string; uri: string; source?: string; length_ms?: number; artwork?: string | null }[],
+  ) =>
+    fetch(`/api/playlists/${playlistId}/tracks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tracks }),
+    }).then((r) => handle<{ added: number }>(r)),
+
+  removeUserPlaylistTrack: (playlistId: number, trackId: number) =>
+    fetch(`/api/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" }).then((r) =>
+      handle<{ removed: boolean }>(r),
+    ),
+
+  playUserPlaylistTrack: (guildId: string, playlistId: number, index: number) =>
+    fetch(`/api/guilds/${guildId}/player/myplaylist/${playlistId}/play`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index }),
+    }).then((r) => handle<{ playing: string }>(r)),
+
+  queueUserPlaylist: (guildId: string, playlistId: number) =>
+    fetch(`/api/guilds/${guildId}/player/myplaylist/${playlistId}/queue`, { method: "POST" }).then(
+      (r) => handle<{ queued: number }>(r),
+    ),
 
   volume: (guildId: string, volume: number) =>
     fetch(`/api/guilds/${guildId}/player/volume`, {

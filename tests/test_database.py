@@ -134,3 +134,36 @@ async def test_warnings_and_recent_actions(db: Database) -> None:
     actions = await db.recent_actions(100, "moderation.")
     assert {a["action"] for a in actions} == {"moderation.timeout", "moderation.kick"}
     assert all(a["action"].startswith("moderation.") for a in actions)
+
+
+async def test_user_playlists_crud_and_ownership(db: Database) -> None:
+    playlist_id = await db.create_user_playlist(1, "My mix")
+    assert playlist_id is not None
+    assert await db.create_user_playlist(1, "My mix") is None  # same name rejected
+
+    added = await db.add_user_playlist_tracks(
+        1,
+        playlist_id,
+        [
+            {"title": "a", "author": "x", "uri": "https://example.com/1", "source": "yt", "length_ms": 1000},
+            {"title": "b", "author": "x", "uri": "https://example.com/2", "source": "yt", "length_ms": 2000},
+        ],
+    )
+    assert added == 2
+
+    playlist = await db.get_user_playlist(1, playlist_id)
+    assert playlist is not None and playlist["name"] == "My mix"
+    assert [t["title"] for t in playlist["tracks"]] == ["a", "b"]
+
+    # Another user cannot see or touch the playlist.
+    assert await db.get_user_playlist(2, playlist_id) is None
+    assert await db.add_user_playlist_tracks(2, playlist_id, [{"uri": "https://x"}]) == 0
+    assert await db.remove_user_playlist_track(2, playlist_id, playlist["tracks"][0]["id"]) is False
+    assert await db.delete_user_playlist(2, playlist_id) is False
+
+    assert await db.remove_user_playlist_track(1, playlist_id, playlist["tracks"][0]["id"]) is True
+    playlist = await db.get_user_playlist(1, playlist_id)
+    assert [t["title"] for t in playlist["tracks"]] == ["b"]
+
+    assert await db.delete_user_playlist(1, playlist_id) is True
+    assert await db.get_user_playlist(1, playlist_id) is None

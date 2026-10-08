@@ -40,11 +40,21 @@ import PlayArrow from "@mui/icons-material/PlayArrow";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import Shuffle from "@mui/icons-material/Shuffle";
 import History from "@mui/icons-material/History";
-import { api, FavoriteTrackInfo, PlayerState, PlaylistPageInfo, TrackInfo, VoiceChannel } from "../api";
+import {
+  api,
+  FavoriteTrackInfo,
+  PlayerState,
+  PlaylistPageInfo,
+  TrackInfo,
+  UserPlaylistBrief,
+  UserPlaylistFull,
+  VoiceChannel,
+} from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { PlayerBar } from "../components/PlayerBar";
 import { PlaylistBrowser } from "../components/PlaylistBrowser";
+import { PlaylistAddMenu } from "../components/PlaylistAddMenu";
 import { useFeedback } from "../components/Feedback";
 
 const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
@@ -109,11 +119,19 @@ export function PlayerPage() {
   // HTML5 drag and drop of queue rows. The source index rides through the
   // dataTransfer so a re-render between dragstart and drop cannot lose it.
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [myPls, setMyPls] = useState<UserPlaylistBrief[]>([]);
+  const [openPl, setOpenPl] = useState<UserPlaylistFull | null>(null);
+  const [newPlName, setNewPlName] = useState("");
+  const [plBusy, setPlBusy] = useState(false);
   const [favorites, setFavorites] = useState<FavoriteTrackInfo[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(() => {
+    api
+      .myPlaylists()
+      .then(setMyPls)
+      .catch(() => {});
     api
       .playerState(gid)
       .then((s) => {
@@ -234,6 +252,45 @@ export function PlayerPage() {
       })
       .catch(guard)
       .finally(() => setPlaylistBusy(false));
+  };
+
+  const loadMyPls = () =>
+    api
+      .myPlaylists()
+      .then(setMyPls)
+      .catch(guard);
+
+  const plAction = (fn: () => Promise<unknown>, okMsg?: string, after?: () => void) => {
+    setPlBusy(true);
+    fn()
+      .then(() => {
+        if (okMsg) feedback.show(okMsg);
+        after?.();
+      })
+      .catch(guard)
+      .finally(() => setPlBusy(false));
+  };
+
+  const createPlaylist = () => {
+    const name = newPlName.trim();
+    if (!name || plBusy) return;
+    plAction(
+      async () => {
+        await api.createUserPlaylist(name);
+        setNewPlName("");
+        await loadMyPls();
+      },
+      `Playlist "${name}" created`,
+    );
+  };
+
+  const openPlaylistTracks = (pid: number) => {
+    setPlBusy(true);
+    api
+      .userPlaylist(pid)
+      .then(setOpenPl)
+      .catch(guard)
+      .finally(() => setPlBusy(false));
   };
 
   const cycleRepeat = () => {
@@ -392,6 +449,16 @@ export function PlayerPage() {
                                   sx={{ height: 20, fontSize: 11 }}
                                 />
                               )}
+                              <PlaylistAddMenu
+                                track={{
+                                  title: t.title,
+                                  author: t.author,
+                                  uri: t.uri ?? "",
+                                  source: t.source ?? source,
+                                  length_ms: t.length,
+                                  artwork: t.artwork,
+                                }}
+                              />
                               <Button
                                 size="small"
                                 variant="tonal"
@@ -490,6 +557,16 @@ export function PlayerPage() {
                           >
                             <Favorite fontSize="small" sx={{ color: "primary.main" }} />
                           </IconButton>
+                          <PlaylistAddMenu
+                            track={{
+                              title: f.title,
+                              author: f.author,
+                              uri: f.uri,
+                              source: f.source,
+                              length_ms: f.length_ms,
+                              artwork: f.artwork,
+                            }}
+                          />
                         </Stack>
                       }
                     >
@@ -509,6 +586,162 @@ export function PlayerPage() {
               </CardContent>
             </Card>
           )}
+          <Card sx={{ mt: 2 }}>
+            <CardContent>
+              {openPl ? (
+                <>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>
+                    <Button size="small" variant="text" onClick={() => setOpenPl(null)}>
+                      Back
+                    </Button>
+                    <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                      {openPl.name}
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="tonal"
+                      disabled={plBusy || openPl.tracks.length === 0}
+                      onClick={() =>
+                        plAction(
+                          () => api.queueUserPlaylist(gid, openPl.id),
+                          `Queued ${openPl.tracks.length} track(s)`,
+                        )
+                      }
+                    >
+                      Queue all
+                    </Button>
+                  </Stack>
+                  <List disablePadding>
+                    {openPl.tracks.map((t, i) => (
+                      <ListItem
+                        key={t.id}
+                        disableGutters
+                        dense
+                        secondaryAction={
+                          <Stack direction="row" spacing={0.5}>
+                            <IconButton
+                              size="small"
+                              disabled={plBusy}
+                              onClick={() =>
+                                plAction(
+                                  () => api.playUserPlaylistTrack(gid, openPl.id, i),
+                                  `Now playing: ${t.title}`,
+                                )
+                              }
+                            >
+                              <PlayArrow fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              disabled={plBusy}
+                              onClick={() =>
+                                plAction(async () => {
+                                  await api.removeUserPlaylistTrack(openPl.id, t.id);
+                                  setOpenPl(await api.userPlaylist(openPl.id));
+                                })
+                              }
+                            >
+                              <DeleteOutlined fontSize="small" />
+                            </IconButton>
+                          </Stack>
+                        }
+                      >
+                        <ListItemAvatar sx={{ minWidth: 36 }}>
+                          <Typography variant="body2" sx={{ color: "text.secondary", textAlign: "center" }}>
+                            {i + 1}
+                          </Typography>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={t.title}
+                          secondary={[SOURCE_LABELS[t.source] ?? "", t.author].filter(Boolean).join(" · ")}
+                          slotProps={{
+                            primary: { noWrap: true, sx: { pr: 2 } },
+                            secondary: { noWrap: true, sx: { pr: 2 } },
+                          }}
+                        />
+                      </ListItem>
+                    ))}
+                    {openPl.tracks.length === 0 && (
+                      <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                        The playlist is empty. Add tracks from search or the queue.
+                      </Typography>
+                    )}
+                  </List>
+                </>
+              ) : (
+                <>
+                  <Typography variant="h6" gutterBottom>
+                    My playlists
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      placeholder="New playlist name"
+                      value={newPlName}
+                      onChange={(e) => setNewPlName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && createPlaylist()}
+                    />
+                    <Button variant="tonal" disabled={!newPlName.trim() || plBusy} onClick={createPlaylist}>
+                      Create
+                    </Button>
+                  </Stack>
+                  {myPls.length > 0 ? (
+                    <List disablePadding>
+                      {myPls.map((p) => (
+                        <ListItem
+                          key={p.id}
+                          disableGutters
+                          dense
+                          secondaryAction={
+                            <Stack direction="row" spacing={0.5}>
+                              <IconButton size="small" disabled={plBusy} onClick={() => openPlaylistTracks(p.id)}>
+                                <PlayArrow fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                disabled={plBusy}
+                                onClick={() =>
+                                  plAction(
+                                    () => api.deleteUserPlaylist(p.id),
+                                    `Playlist "${p.name}" deleted`,
+                                    loadMyPls,
+                                  )
+                                }
+                              >
+                                <DeleteOutlined fontSize="small" />
+                              </IconButton>
+                            </Stack>
+                          }
+                        >
+                          <ListItem
+                            disableGutters
+                            dense
+                            component="div"
+                            onClick={() => openPlaylistTracks(p.id)}
+                            sx={{ cursor: "pointer", flex: 1, minWidth: 0, pr: 1 }}
+                          >
+                            <ListItemText
+                              primary={p.name}
+                              secondary={`${p.tracks} track(s) - click to open`}
+                              slotProps={{
+                                primary: { noWrap: true, sx: { pr: 2 } },
+                                secondary: { noWrap: true, sx: { pr: 2 } },
+                              }}
+                            />
+                          </ListItem>
+                        </ListItem>
+                      ))}
+                    </List>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                      No playlists yet. Create one and add tracks from search or the queue.
+                    </Typography>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
         </Box>
 
         {/* Right column: voice + queue + volume */}
@@ -755,6 +988,18 @@ export function PlayerPage() {
                             >
                               <DeleteOutlined fontSize="small" />
                             </IconButton>
+                            <Box sx={{ ml: 0.25 }} onClick={(e) => e.stopPropagation()}>
+                              <PlaylistAddMenu
+                                track={{
+                                  title: t.title,
+                                  author: t.author,
+                                  uri: t.uri ?? "",
+                                  source: t.source ?? "",
+                                  length_ms: t.length,
+                                  artwork: t.artwork,
+                                }}
+                              />
+                            </Box>
                           </Box>
                         }
                       >

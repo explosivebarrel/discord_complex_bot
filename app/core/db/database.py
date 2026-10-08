@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.core.config import Config
@@ -17,6 +17,8 @@ from app.core.db.models import (
     ModWarning,
     PlayHistory,
     SystemSetting,
+    UserPlaylist,
+    UserPlaylistTrack,
     WebSession,
 )
 
@@ -445,3 +447,126 @@ class Database:
                 )
             )
             return {r.uri: r.id for r in result.all()}
+
+
+    # --- personal playlists ---
+
+    async def create_user_playlist(self, user_id: int, name: str) -> int | None:
+        """Create a playlist; None when the user already has one with the name."""
+        async with self.session_factory() as session:
+            exists = await session.execute(
+                select(UserPlaylist).where(UserPlaylist.user_id == user_id, UserPlaylist.name == name)
+            )
+            if exists.scalars().first() is not None:
+                return None
+            row = UserPlaylist(user_id=user_id, name=name[:100])
+            session.add(row)
+            await session.commit()
+            return row.id
+
+    async def list_user_playlists(self, user_id: int) -> list[dict[str, Any]]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(UserPlaylist).where(UserPlaylist.user_id == user_id).order_by(UserPlaylist.created_at)
+            )
+            playlists = result.scalars().all()
+            if not playlists:
+                return []
+            counts = await session.execute(
+                select(UserPlaylistTrack.playlist_id, func.count(UserPlaylistTrack.id))
+                .where(UserPlaylistTrack.playlist_id.in_([p.id for p in playlists]))
+                .group_by(UserPlaylistTrack.playlist_id)
+            )
+            track_counts = dict(counts.all())
+            return [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "tracks": track_counts.get(p.id, 0),
+                    "created_at": p.created_at.isoformat(),
+                }
+                for p in playlists
+            ]
+
+    async def get_user_playlist(self, user_id: int, playlist_id: int) -> dict[str, Any] | None:
+        async with self.session_factory() as session:
+            row = await session.get(UserPlaylist, playlist_id)
+            if row is None or row.user_id != user_id:
+                return None
+            tracks = await session.execute(
+                select(UserPlaylistTrack)
+                .where(UserPlaylistTrack.playlist_id == playlist_id)
+                .order_by(UserPlaylistTrack.position, UserPlaylistTrack.id)
+            )
+            return {
+                "id": row.id,
+                "name": row.name,
+                "tracks": [
+                    {
+                        "id": t.id,
+                        "position": t.position,
+                        "title": t.title,
+                        "author": t.author,
+                        "uri": t.uri,
+                        "source": t.source,
+                        "length_ms": t.length_ms,
+                        "artwork": t.artwork,
+                    }
+                    for t in tracks.scalars().all()
+                ],
+            }
+
+    async def delete_user_playlist(self, user_id: int, playlist_id: int) -> bool:
+        async with self.session_factory() as session:
+            row = await session.get(UserPlaylist, playlist_id)
+            if row is None or row.user_id != user_id:
+                return False
+            await session.execute(
+                delete(UserPlaylistTrack).where(UserPlaylistTrack.playlist_id == playlist_id)
+            )
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    async def add_user_playlist_tracks(
+        self, user_id: int, playlist_id: int, tracks: list[dict[str, Any]]
+    ) -> int:
+        """Append track dicts (title/author/uri/source/length_ms/artwork)."""
+        async with self.session_factory() as session:
+            row = await session.get(UserPlaylist, playlist_id)
+            if row is None or row.user_id != user_id:
+                return 0
+            last = await session.execute(
+                select(func.max(UserPlaylistTrack.position)).where(
+                    UserPlaylistTrack.playlist_id == playlist_id
+                )
+            )
+            position = (last.scalar() or 0) + 1
+            for t in tracks:
+                session.add(
+                    UserPlaylistTrack(
+                        playlist_id=playlist_id,
+                        position=position,
+                        title=str(t.get("title") or "")[:256],
+                        author=str(t.get("author") or "")[:256],
+                        uri=str(t.get("uri") or ""),
+                        source=str(t.get("source") or "")[:32],
+                        length_ms=int(t.get("length_ms") or 0),
+                        artwork=t.get("artwork"),
+                    )
+                )
+                position += 1
+            await session.commit()
+            return len(tracks)
+
+    async def remove_user_playlist_track(self, user_id: int, playlist_id: int, track_id: int) -> bool:
+        async with self.session_factory() as session:
+            playlist = await session.get(UserPlaylist, playlist_id)
+            if playlist is None or playlist.user_id != user_id:
+                return False
+            row = await session.get(UserPlaylistTrack, track_id)
+            if row is None or row.playlist_id != playlist_id:
+                return False
+            await session.delete(row)
+            await session.commit()
+            return True
