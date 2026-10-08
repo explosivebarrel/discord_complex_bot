@@ -12,6 +12,7 @@ from app.api.deps import (
     CurrentUser,
     create_session,
     get_bot,
+    get_config,
     get_current_user,
     get_db,
     get_oauth,
@@ -31,6 +32,12 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def _session_cookie_kwargs(config: Config) -> dict[str, Any]:
     secure = config.base_url.startswith("https")
     return {"httponly": True, "samesite": "lax", "secure": secure, "path": "/"}
+
+
+@router.get("/meta")
+async def meta(config: Config = Depends(get_config)) -> dict[str, str]:
+    """Public panel metadata. The display name is needed before login."""
+    return {"bot_name": config.bot_name}
 
 
 @router.get("/login")

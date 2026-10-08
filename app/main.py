@@ -61,7 +61,7 @@ def create_app() -> FastAPI:
                 await bot_task
             await db.dispose()
 
-    app = FastAPI(title="discord_complex_bot", lifespan=lifespan)
+    app = FastAPI(title=config.bot_name, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[config.base_url, "http://localhost:5173"],

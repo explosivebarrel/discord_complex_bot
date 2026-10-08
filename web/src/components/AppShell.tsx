@@ -7,6 +7,7 @@ import Home from "@mui/icons-material/Home";
 import Settings from "@mui/icons-material/Settings";
 import Logout from "@mui/icons-material/Logout";
 import type { Me } from "../api";
+import { useBotName } from "../useMeta";
 
 export function AppShell({
   me,
@@ -22,6 +23,7 @@ export function AppShell({
   onLogout?: () => void;
   children: ReactNode;
 }) {
+  const botName = useBotName();
   return (
     <Box sx={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       <AppBar position="fixed" elevation={0} sx={{ bgcolor: "#211F26", borderBottom: "1px solid #2B2930" }}>
@@ -44,7 +46,7 @@ export function AppShell({
               noWrap
               sx={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", "&:hover": { color: "primary.main" } }}
             >
-              Discord Council Bot{title ? ` — ${title}` : ""}
+              {botName}{title ? ` — ${title}` : ""}
             </Typography>
           </Box>
           <Box sx={{ flexGrow: 1 }} />

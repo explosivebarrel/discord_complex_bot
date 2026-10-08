@@ -34,6 +34,7 @@ class Config:
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
     music_library_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "music")
     internal_base_url: str = "http://localhost:8000"
+    bot_name: str = "discord_complex_bot"
 
 
 def load_config() -> Config:
@@ -66,6 +67,7 @@ def load_config() -> Config:
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         music_library_dir=Path(os.getenv("MUSIC_LIBRARY_DIR", str(data_dir_value / "music"))),
         internal_base_url=os.getenv("INTERNAL_BASE_URL", base_url_value),
+        bot_name=os.getenv("BOT_NAME", "discord_complex_bot"),
     )
 
 
