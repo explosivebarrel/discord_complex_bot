@@ -94,3 +94,43 @@ async def test_favorites_upsert_scope_and_remove(db: Database) -> None:
     assert await db.remove_favorite(1, first_id) is False
     assert await db.remove_favorite(2, other_id) is False  # the row belongs to user 1
     assert len(await db.list_favorites(1)) == 1
+
+
+async def test_section_access_settings_roundtrip(db: Database) -> None:
+    settings = await db.get_guild_settings(100)
+    assert settings.stats_access == "admins"
+    assert settings.posts_access == "admins"
+    assert settings.moderation_access == "admins"
+    assert settings.mod_log_channel_id is None
+
+    settings = await db.update_guild_settings(
+        100,
+        stats_access="everyone",
+        posts_access="off",
+        moderation_access="everyone",
+        mod_log_channel_id=12345,
+    )
+    assert settings.stats_access == "everyone"
+    assert settings.posts_access == "off"
+    assert settings.moderation_access == "everyone"
+    assert settings.mod_log_channel_id == 12345
+
+
+async def test_warnings_and_recent_actions(db: Database) -> None:
+    await db.add_warning(100, 7, "user7", 1, "FEZEN", "spam")
+    await db.add_warning(100, 7, "user7", 1, "FEZEN", "flood")
+    await db.add_warning(100, 8, "user8", 2, "Masha", "offtopic")
+    await db.audit("moderation.timeout", guild_id=100, actor_id=2, details={"user_id": "7", "minutes": 10})
+    await db.audit("moderation.kick", guild_id=100, actor_id=2, details={"user_id": "9"})
+    await db.audit("music.play", guild_id=100)  # must not appear in moderation log
+
+    mine = await db.list_warnings(100, user_id=7)
+    assert [w["reason"] for w in mine] == ["flood", "spam"]  # newest first
+    assert mine[0]["user_name"] == "user7" and mine[0]["issuer_name"] == "FEZEN"
+
+    all_rows = await db.list_warnings(100)
+    assert len(all_rows) == 3
+
+    actions = await db.recent_actions(100, "moderation.")
+    assert {a["action"] for a in actions} == {"moderation.timeout", "moderation.kick"}
+    assert all(a["action"].startswith("moderation.") for a in actions)

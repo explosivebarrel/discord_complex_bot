@@ -17,6 +17,7 @@ from app.api.deps import (
     get_db,
     get_oauth,
     revoke_session,
+    section_allows,
 )
 from app.api.discord_oauth import DiscordAPIError, DiscordOAuthClient
 from app.api.sessions import SessionExpiredError, fetch_guilds_with_retry
@@ -138,7 +139,10 @@ async def my_guilds(
             continue
         permissions = int(g.get("permissions", "0"))
         is_owner = bool(g.get("owner"))
-        is_admin = is_owner or bool(permissions & 0x20) or gid in await db.list_guild_admins(gid)
+        is_discord_admin = is_owner or bool(permissions & 0x20)
+        is_admin = is_discord_admin or gid in await db.list_guild_admins(gid)
+        tier = is_admin or user.is_superadmin
+        settings = await db.get_guild_settings(gid)
         result.append(
             {
                 "id": str(gid),
@@ -146,6 +150,12 @@ async def my_guilds(
                 "icon": g.get("icon"),
                 "is_admin": is_admin,
                 "is_superadmin": user.is_superadmin,
+                "access": {
+                    "manage": tier,
+                    "stats": section_allows(settings.stats_access, tier),
+                    "posts": section_allows(settings.posts_access, tier),
+                    "moderation": section_allows(settings.moderation_access, tier),
+                },
             }
         )
     result.sort(key=lambda item: item["name"].lower())

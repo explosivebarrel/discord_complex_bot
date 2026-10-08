@@ -4,6 +4,7 @@ import GraphicEq from "@mui/icons-material/GraphicEq";
 import Settings from "@mui/icons-material/Settings";
 import BarChart from "@mui/icons-material/BarChart";
 import PostAdd from "@mui/icons-material/PostAdd";
+import Gavel from "@mui/icons-material/Gavel";
 import { api, GuildBrief } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -98,19 +99,30 @@ export function GuildsPage() {
                   <Button href={`/guild/${g.id}`} variant="contained" size="small">
                     Open player
                   </Button>
-                  {(g.is_admin || g.is_superadmin) && (
-                    <Box sx={{ display: "flex", gap: 1 }}>
+                  {(g.access?.manage || g.access?.stats || g.access?.posts || g.access?.moderation || g.is_superadmin) && (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                    {g.access?.manage && (
                       <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Settings />}>
                         Manage
                       </Button>
+                    )}
+                    {g.access?.stats && (
                       <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<BarChart />}>
                         Stats
                       </Button>
+                    )}
+                    {g.access?.posts && (
                       <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<PostAdd />}>
                         Post
                       </Button>
-                    </Box>
-                  )}
+                    )}
+                    {g.access?.moderation && (
+                      <Button href={`/guild/${g.id}/moderation`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Gavel />}>
+                        Mod
+                      </Button>
+                    )}
+                  </Box>
+                )}
                 </Box>
               </CardContent>
             </Card>

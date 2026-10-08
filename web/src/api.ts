@@ -12,6 +12,29 @@ export interface GuildBrief {
   icon: string | null;
   is_admin: boolean;
   is_superadmin?: boolean;
+  access: {
+    manage: boolean;
+    stats: boolean;
+    posts: boolean;
+    moderation: boolean;
+  };
+}
+
+export interface ModerationWarning {
+  id: number;
+  user_id: string;
+  user_name: string;
+  issuer_id: string | null;
+  issuer_name: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface ModerationAction {
+  action: string;
+  actor_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface TrackInfo {
@@ -76,6 +99,10 @@ export interface GuildSettings {
   admins: string[];
   autoplay_enabled: boolean;
   autoplay_query: string;
+  stats_access: string;
+  posts_access: string;
+  moderation_access: string;
+  mod_log_channel_id: string | null;
 }
 
 export interface GuildStats {
@@ -212,6 +239,28 @@ export const api = {
   removeFavorite: (id: number) =>
     fetch(`/api/favorites/${id}`, { method: "DELETE" }).then((r) => handle<{ removed: boolean }>(r)),
 
+  moderationUsers: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/moderation/users`).then((r) =>
+      handle<{ id: string; name: string; avatar: string | null }[]>(r),
+    ),
+
+  moderationWarnings: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/moderation/warnings`).then((r) => handle<ModerationWarning[]>(r)),
+
+  moderationLog: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/moderation/log`).then((r) => handle<ModerationAction[]>(r)),
+
+  moderationAction: (
+    guildId: string,
+    kind: "timeout" | "kick" | "ban",
+    body: { user_id: string; reason?: string; minutes?: number; delete_days?: number },
+  ) =>
+    fetch(`/api/guilds/${guildId}/moderation/${kind}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => handle<Record<string, string>>(r)),
+
   clearQueue: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/queue/clear`, { method: "POST" }).then((r) =>
       handle<{ cleared: number }>(r),
@@ -255,6 +304,10 @@ export const api = {
       default_voice_channel_id?: string | null;
       autoplay_enabled?: boolean;
       autoplay_query?: string;
+      stats_access?: string;
+      posts_access?: string;
+      moderation_access?: string;
+      mod_log_channel_id?: string | null;
     },
   ) =>
     fetch(`/api/admin/guilds/${guildId}/settings`, {

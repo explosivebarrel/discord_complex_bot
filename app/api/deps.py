@@ -5,6 +5,7 @@ import hashlib
 import secrets
 from typing import TYPE_CHECKING
 
+import discord
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import delete
 
@@ -129,49 +130,78 @@ async def is_guild_admin(db: Database, user: CurrentUser, guild_id: int) -> bool
     return user.discord_id in admins
 
 
-# Membership check results. Key: (discord_id, guild_id), value: (expires_at, is_member).
+# Membership and Discord-level admin check results.
+# Key: (discord_id, guild_id), value: (expires_at, is_member, is_discord_admin).
 # The panel polls the player every few seconds. Without this cache each poll
 # would call the Discord API and burn the rate limit.
 _MEMBER_CACHE_TTL = 600.0
-_member_cache: dict[tuple[int, int], tuple[float, bool]] = {}
+_member_cache: dict[tuple[int, int], tuple[float, bool, bool]] = {}
 
 
-def _cached_membership(user: CurrentUser, guild_id: int) -> bool | None:
+def _cached_access(user: CurrentUser, guild_id: int) -> tuple[bool, bool] | None:
     import time
 
     entry = _member_cache.get((user.discord_id, guild_id))
     if entry is None:
         return None
-    expires_at, is_member = entry
+    expires_at, is_member, is_discord_admin = entry
     if expires_at < time.monotonic():
         _member_cache.pop((user.discord_id, guild_id), None)
         return None
-    return is_member
+    return is_member, is_discord_admin
 
 
-def _store_membership(user: CurrentUser, guild_id: int, is_member: bool) -> None:
+def _store_access(user: CurrentUser, guild_id: int, is_member: bool, is_discord_admin: bool) -> None:
     import time
 
-    _member_cache[(user.discord_id, guild_id)] = (time.monotonic() + _MEMBER_CACHE_TTL, is_member)
+    _member_cache[(user.discord_id, guild_id)] = (
+        time.monotonic() + _MEMBER_CACHE_TTL,
+        is_member,
+        is_discord_admin,
+    )
 
 
-async def _is_guild_member(
+def _guild_payload_is_admin(payload: dict) -> bool:
+    """Owner or MANAGE_GUILD in a raw Discord guild payload."""
+    return bool(payload.get("owner")) or bool(int(payload.get("permissions", "0")) & 0x20)
+
+
+async def _guild_access(
     user: CurrentUser, oauth: DiscordOAuthClient, bot: ComplexBot, db: Database, guild_id: int
-) -> bool:
-    """Check membership with a request to the Discord API. If the request fails, use the bot member cache."""
-    cached = _cached_membership(user, guild_id)
+) -> tuple[bool, bool]:
+    """(is_member, is_discord_admin) for the user in the guild.
+
+    The Discord API is the primary source; if it fails, fall back to the bot
+    member cache so an API hiccup does not lock the user out.
+    """
+    cached = _cached_access(user, guild_id)
     if cached is not None:
         return cached
     try:
         from app.api.sessions import fetch_guilds_with_retry
 
         guilds = await fetch_guilds_with_retry(oauth, db, user)
-        is_member = any(int(g["id"]) == guild_id for g in guilds)
-        _store_membership(user, guild_id, is_member)
-        return is_member
+        payload = next((g for g in guilds if int(g["id"]) == guild_id), None)
+        is_member = payload is not None
+        is_discord_admin = _guild_payload_is_admin(payload) if payload else False
+        _store_access(user, guild_id, is_member, is_discord_admin)
+        return is_member, is_discord_admin
     except Exception:  # noqa: BLE001 - API hiccup should not lock the user out; try cache below
         guild = bot.get_guild(guild_id)
-        return guild is not None and guild.get_member(user.discord_id) is not None
+        member = guild.get_member(user.discord_id) if guild else None
+        if guild is None or member is None:
+            return False, False
+        is_discord_admin = guild.owner_id == user.discord_id or bool(
+            member.guild_permissions & discord.Permissions.manage_guild
+        )
+        return True, is_discord_admin
+
+
+async def _is_guild_member(
+    user: CurrentUser, oauth: DiscordOAuthClient, bot: ComplexBot, db: Database, guild_id: int
+) -> bool:
+    is_member, _ = await _guild_access(user, oauth, bot, db, guild_id)
+    return is_member
 
 
 async def require_guild_member(
@@ -190,6 +220,53 @@ async def require_guild_member(
     return user
 
 
+def section_allows(level: str, is_admin_tier: bool) -> bool:
+    """Pure rule for panel section visibility.
+
+    Levels: "admins" (admin tier only), "everyone" (any member), "off"
+    (nobody except the super-admin, who is handled before this check).
+    """
+    if is_admin_tier:
+        return level in ("admins", "everyone")
+    return level == "everyone"
+
+
+async def is_admin_tier(
+    user: CurrentUser, oauth: DiscordOAuthClient, bot: ComplexBot, db: Database, guild_id: int
+) -> bool:
+    """Super-admin, Discord owner/MANAGE_GUILD, or a panel-added admin."""
+    if user.is_superadmin:
+        return True
+    _, is_discord_admin = await _guild_access(user, oauth, bot, db, guild_id)
+    return is_discord_admin or await is_guild_admin(db, user, guild_id)
+
+
+def require_section_access(section: str):
+    """Dependency factory: gate a router on a panel section (stats/posts/moderation)."""
+
+    async def dep(
+        guild_id: int,
+        user: CurrentUser = Depends(get_current_user),
+        oauth: DiscordOAuthClient = Depends(get_oauth),
+        bot: ComplexBot = Depends(get_bot),
+        db: Database = Depends(get_db),
+    ) -> CurrentUser:
+        if user.is_superadmin:
+            return user
+        if bot.get_guild(guild_id) is None:
+            raise HTTPException(status_code=404, detail="Bot is not on this server")
+        if not await _is_guild_member(user, oauth, bot, db, guild_id):
+            raise HTTPException(status_code=403, detail="You are not a member of this server")
+        settings = await db.get_guild_settings(guild_id)
+        level = getattr(settings, f"{section}_access", "admins")
+        admin_tier = await is_admin_tier(user, oauth, bot, db, guild_id)
+        if not section_allows(level, admin_tier):
+            raise HTTPException(status_code=403, detail="This section is not available for you")
+        return user
+
+    return dep
+
+
 async def require_guild_admin(
     guild_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -203,6 +280,7 @@ async def require_guild_admin(
         raise HTTPException(status_code=404, detail="Bot is not on this server")
     if not await _is_guild_member(user, oauth, bot, db, guild_id):
         raise HTTPException(status_code=403, detail="You are not a member of this server")
-    if await is_guild_admin(db, user, guild_id):
+    _, is_discord_admin = await _guild_access(user, oauth, bot, db, guild_id)
+    if is_discord_admin or await is_guild_admin(db, user, guild_id):
         return user
     raise HTTPException(status_code=403, detail="Server admin rights required")

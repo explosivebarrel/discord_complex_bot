@@ -14,6 +14,7 @@ from app.core.db.models import (
     FavoriteTrack,
     GuildAdmin,
     GuildSettings,
+    ModWarning,
     PlayHistory,
     SystemSetting,
     WebSession,
@@ -52,6 +53,10 @@ class Database:
         admin_role_ids: list[int] | None = None,
         autoplay_enabled: bool | None = None,
         autoplay_query: str | None = None,
+        stats_access: str | None = None,
+        posts_access: str | None = None,
+        moderation_access: str | None = None,
+        mod_log_channel_id: int | None = None,
     ) -> GuildSettings:
         async with self.session_factory() as session:
             settings = await session.get(GuildSettings, guild_id)
@@ -68,6 +73,14 @@ class Database:
                 settings.autoplay_enabled = autoplay_enabled
             if autoplay_query is not None:
                 settings.autoplay_query = autoplay_query
+            if stats_access is not None:
+                settings.stats_access = stats_access
+            if posts_access is not None:
+                settings.posts_access = posts_access
+            if moderation_access is not None:
+                settings.moderation_access = moderation_access
+            if mod_log_channel_id is not None:
+                settings.mod_log_channel_id = mod_log_channel_id
             await session.commit()
             return settings
 
@@ -282,6 +295,72 @@ class Database:
                     "avatar": r.avatar,
                 }
                 for r in result.all()
+            ]
+
+    # --- moderation ---
+
+    async def add_warning(
+        self,
+        guild_id: int,
+        user_id: int,
+        user_name: str,
+        issuer_id: int | None,
+        issuer_name: str,
+        reason: str,
+    ) -> int:
+        async with self.session_factory() as session:
+            row = ModWarning(
+                guild_id=guild_id,
+                user_id=user_id,
+                user_name=user_name[:128],
+                issuer_id=issuer_id,
+                issuer_name=issuer_name[:128],
+                reason=reason,
+            )
+            session.add(row)
+            await session.commit()
+            return row.id
+
+    async def list_warnings(
+        self, guild_id: int, user_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        async with self.session_factory() as session:
+            query = select(ModWarning).where(ModWarning.guild_id == guild_id)
+            if user_id is not None:
+                query = query.where(ModWarning.user_id == user_id)
+            result = await session.execute(query.order_by(ModWarning.created_at.desc()).limit(limit))
+            return [
+                {
+                    "id": row.id,
+                    "user_id": str(row.user_id),
+                    "user_name": row.user_name,
+                    "issuer_id": str(row.issuer_id) if row.issuer_id else None,
+                    "issuer_name": row.issuer_name,
+                    "reason": row.reason,
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in result.scalars()
+            ]
+
+    async def recent_actions(
+        self, guild_id: int, action_prefix: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Latest audit entries for an action prefix, newest first."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AuditLog)
+                .where(AuditLog.guild_id == guild_id, AuditLog.action.like(f"{action_prefix}%"))
+                .order_by(AuditLog.created_at.desc())
+                .limit(limit)
+            )
+            return [
+                {
+                    "action": row.action,
+                    "actor_id": str(row.actor_id) if row.actor_id else None,
+                    "details": json.loads(row.details or "{}"),
+                    "created_at": row.created_at.isoformat(),
+                }
+                for row in result.scalars()
             ]
 
     # --- favorites ---

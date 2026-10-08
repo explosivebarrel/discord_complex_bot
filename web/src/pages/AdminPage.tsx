@@ -32,6 +32,13 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [newAdmin, setNewAdmin] = useState("");
   const [autoplay, setAutoplay] = useState<{ enabled: boolean; query: string } | null>(null);
+  const [textChannels, setTextChannels] = useState<{ id: string; name: string }[]>([]);
+  const [access, setAccess] = useState<{
+    stats: string;
+    posts: string;
+    moderation: string;
+    modLog: string;
+  } | null>(null);
 
   const guard = (e: Error) => feedback.show(e.message, "error");
 
@@ -47,6 +54,26 @@ export function AdminPage() {
   }, [gid]);
 
   useEffect(refresh, [refresh]);
+
+  useEffect(() => {
+    api
+      .postComposer(gid)
+      .then((c) => setTextChannels(c.channels.filter((ch) => ch.type === "text")))
+      .catch(() => setTextChannels([]));
+  }, [gid]);
+
+  // Keep local forms in sync with the loaded settings.
+  useEffect(() => {
+    if (settings) {
+      setAutoplay({ enabled: settings.autoplay_enabled, query: settings.autoplay_query });
+      setAccess({
+        stats: settings.stats_access,
+        posts: settings.posts_access,
+        moderation: settings.moderation_access,
+        modLog: settings.mod_log_channel_id ?? "",
+      });
+    }
+  }, [settings]);
 
   // Keep the local autoplay form in sync with the loaded settings.
   useEffect(() => {
@@ -168,6 +195,93 @@ export function AdminPage() {
                   >
                     Save
                   </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
+
+          {access && (
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Panel access
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+                  Who can open each panel section. Admins: server owner, Discord
+                  Manage Server permission, or an id added below.
+                </Typography>
+                <Stack spacing={1.5}>
+                  {(
+                    [
+                      ["stats", "Stats"],
+                      ["posts", "Posts"],
+                      ["moderation", "Moderation"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <Stack key={key} direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                      <Typography variant="body2" sx={{ width: 110 }}>
+                        {label}
+                      </Typography>
+                      <Select
+                        fullWidth
+                        size="small"
+                        value={access[key]}
+                        onChange={(e) => setAccess({ ...access, [key]: e.target.value as string })}
+                      >
+                        <MenuItem value="admins">Admins only</MenuItem>
+                        <MenuItem value="everyone">Everyone</MenuItem>
+                        <MenuItem value="off">Off</MenuItem>
+                      </Select>
+                    </Stack>
+                  ))}
+                  <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                    <Typography variant="body2" sx={{ width: 110 }}>
+                      Mod log
+                    </Typography>
+                    <Select
+                      fullWidth
+                      size="small"
+                      value={access.modLog}
+                      onChange={(e) => setAccess({ ...access, modLog: e.target.value as string })}
+                      displayEmpty
+                    >
+                      <MenuItem value="">
+                        <em>Not set</em>
+                      </MenuItem>
+                      {textChannels.map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          # {c.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Stack>
+                  <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Button
+                      variant="contained"
+                      onClick={() =>
+                        api
+                          .updateGuildSettings(gid, {
+                            stats_access: access.stats,
+                            posts_access: access.posts,
+                            moderation_access: access.moderation,
+                            mod_log_channel_id: access.modLog || null,
+                          })
+                          .then((s) => {
+                            setSettings(s);
+                            setAccess({
+                              stats: s.stats_access,
+                              posts: s.posts_access,
+                              moderation: s.moderation_access,
+                              modLog: s.mod_log_channel_id ?? "",
+                            });
+                            feedback.show("Panel access saved");
+                          })
+                          .catch(guard)
+                      }
+                    >
+                      Save
+                    </Button>
+                  </Box>
                 </Stack>
               </CardContent>
             </Card>

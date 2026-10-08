@@ -26,6 +26,12 @@ class GuildSettings(Base):
     # When the queue drains, the bot can start a radio station by query.
     autoplay_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     autoplay_query: Mapped[str] = mapped_column(String(128), default="")
+    # Panel section visibility: admins | everyone | off.
+    stats_access: Mapped[str] = mapped_column(String(16), default="admins")
+    posts_access: Mapped[str] = mapped_column(String(16), default="admins")
+    moderation_access: Mapped[str] = mapped_column(String(16), default="admins")
+    # Moderation actions are mirrored to this channel as embeds.
+    mod_log_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
 
@@ -87,6 +93,19 @@ class PlayHistory(Base):
     requested_by_name: Mapped[str] = mapped_column(String(128), default="")
     length_ms: Mapped[int] = mapped_column(Integer, default=0)
     played_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, index=True)
+
+
+class ModWarning(Base):
+    __tablename__ = "mod_warnings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_name: Mapped[str] = mapped_column(String(128), default="")
+    issuer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    issuer_name: Mapped[str] = mapped_column(String(128), default="")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
 
 class FavoriteTrack(Base):

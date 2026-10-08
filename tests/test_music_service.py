@@ -267,3 +267,16 @@ async def test_resolve_playlist_null_guard(music: MusicService) -> None:
     music._run_ytdlp = fake_run  # type: ignore[method-assign]
     with pytest.raises(MusicServiceError):
         await music._resolve_playlist("https://www.youtube.com/playlist?list=x")
+
+
+def test_section_allows_matrix() -> None:
+    from app.api.deps import section_allows
+
+    # admins pass for admins/everyone, but not for a section switched off
+    assert section_allows("admins", True) is True
+    assert section_allows("everyone", True) is True
+    assert section_allows("off", True) is False
+    # members only pass when the section is open to everyone
+    assert section_allows("admins", False) is False
+    assert section_allows("everyone", False) is True
+    assert section_allows("off", False) is False

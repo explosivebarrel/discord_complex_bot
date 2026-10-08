@@ -19,6 +19,10 @@ class UpdateSettingsBody(BaseModel):
     default_voice_channel_id: int | None = None
     autoplay_enabled: bool | None = None
     autoplay_query: str | None = None
+    stats_access: str | None = None
+    posts_access: str | None = None
+    moderation_access: str | None = None
+    mod_log_channel_id: int | None = None
 
 
 class AddAdminBody(BaseModel):
@@ -60,6 +64,12 @@ async def get_settings(
         "admins": [str(a) for a in admins],
         "autoplay_enabled": settings.autoplay_enabled,
         "autoplay_query": settings.autoplay_query,
+        "stats_access": settings.stats_access,
+        "posts_access": settings.posts_access,
+        "moderation_access": settings.moderation_access,
+        "mod_log_channel_id": (
+            str(settings.mod_log_channel_id) if settings.mod_log_channel_id is not None else None
+        ),
     }
 
 
@@ -78,6 +88,10 @@ async def update_settings(
         default_voice_channel_id=body.default_voice_channel_id,
         autoplay_enabled=body.autoplay_enabled,
         autoplay_query=body.autoplay_query,
+        stats_access=body.stats_access,
+        posts_access=body.posts_access,
+        moderation_access=body.moderation_access,
+        mod_log_channel_id=body.mod_log_channel_id,
     )
     await db.audit(
         "admin.update_settings",

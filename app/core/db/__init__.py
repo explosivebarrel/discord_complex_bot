@@ -5,6 +5,7 @@ from app.core.db.models import (
     FavoriteTrack,
     GuildAdmin,
     GuildSettings,
+    ModWarning,
     PlayHistory,
     SystemSetting,
     WebSession,
@@ -20,4 +21,5 @@ __all__ = [
     "SystemSetting",
     "PlayHistory",
     "FavoriteTrack",
+    "ModWarning",
 ]
