@@ -100,26 +100,34 @@ export function GuildsPage() {
                     Open player
                   </Button>
                   {(g.access?.manage || g.access?.stats || g.access?.posts || g.access?.moderation || g.is_superadmin) && (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                    {g.access?.manage && (
-                      <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Settings />}>
-                        Manage
-                      </Button>
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    {(g.access?.manage || g.access?.stats) && (
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        {g.access?.manage && (
+                          <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Settings />}>
+                            Manage
+                          </Button>
+                        )}
+                        {g.access?.stats && (
+                          <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<BarChart />}>
+                            Stats
+                          </Button>
+                        )}
+                      </Box>
                     )}
-                    {g.access?.stats && (
-                      <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<BarChart />}>
-                        Stats
-                      </Button>
-                    )}
-                    {g.access?.posts && (
-                      <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<PostAdd />}>
-                        Post
-                      </Button>
-                    )}
-                    {g.access?.moderation && (
-                      <Button href={`/guild/${g.id}/moderation`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Gavel />}>
-                        Mod
-                      </Button>
+                    {(g.access?.posts || g.access?.moderation) && (
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        {g.access?.posts && (
+                          <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<PostAdd />}>
+                            Post
+                          </Button>
+                        )}
+                        {g.access?.moderation && (
+                          <Button href={`/guild/${g.id}/moderation`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Gavel />}>
+                            Mod
+                          </Button>
+                        )}
+                      </Box>
                     )}
                   </Box>
                 )}
