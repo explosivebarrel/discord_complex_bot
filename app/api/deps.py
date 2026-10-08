@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import discord
 from fastapi import Depends, HTTPException, Request
@@ -250,7 +250,9 @@ def require_section_access(section: str):
         oauth: DiscordOAuthClient = Depends(get_oauth),
         bot: ComplexBot = Depends(get_bot),
         db: Database = Depends(get_db),
-    ) -> CurrentUser:
+    ) -> Any:
+        # Any, not CurrentUser: FastAPI >= 0.14x builds a response model from a
+        # dependency return annotation, and CurrentUser is not a Pydantic model.
         if user.is_superadmin:
             return user
         if bot.get_guild(guild_id) is None:

@@ -54,7 +54,6 @@ export function ModerationPage() {
   const [minutes, setMinutes] = useState(10);
   const [reason, setReason] = useState("");
   const [applying, setApplying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const guard = (e: Error) => {
     if (e.message !== "unauthorized") feedback.show(e.message, "error");
