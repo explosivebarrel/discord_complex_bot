@@ -76,7 +76,7 @@ export function ModerationPage() {
       .then(setLog)
       .catch(guard);
     // The access endpoint answers 403 for visitors without section access;
-    // admins get can_act=true, everyone-level viewers false.
+    // the server owner gets can_act=true, everyone-level viewers false.
     fetch(`/api/guilds/${gid}/moderation/access`)
       .then((r) => (r.ok ? r.json() : { can_act: false }))
       .then((j) => setCanAct(!!j.can_act))

@@ -290,3 +290,23 @@ async def require_guild_admin(
     if admin_tier:
         return user
     raise HTTPException(status_code=403, detail="Server admin rights required")
+
+
+async def require_guild_owner(
+    guild_id: int,
+    user: CurrentUser = Depends(get_current_user),
+    bot: ComplexBot = Depends(get_bot),
+) -> CurrentUser:
+    """Strict gate for destructive moderation actions: the guild owner only.
+
+    No membership call is needed: the owner of the guild is always a member,
+    and guild.owner_id comes from the bot cache.
+    """
+    if user.is_superadmin:
+        return user
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        raise HTTPException(status_code=404, detail="Bot is not on this server")
+    if user.discord_id != guild.owner_id:
+        raise HTTPException(status_code=403, detail="Only the server owner can do this")
+    return user

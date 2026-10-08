@@ -20,12 +20,22 @@ COLOR_STRICT = discord.Color.red()
 
 
 class ModerationCog(commands.Cog):
-    """Moderation commands: kick, ban, timeouts, warnings and message purge."""
+    """Owner-only moderation commands: kick, ban, timeouts, warnings, purge."""
 
     def __init__(self, bot: ComplexBot) -> None:
         self.bot = bot
 
     # --- helpers ---
+
+    async def _owner_gate(self, interaction: discord.Interaction) -> bool:
+        """Only the server owner may moderate; the bot host passes too."""
+        guild = interaction.guild
+        if guild is not None and interaction.user.id in (guild.owner_id, *self.bot.config.superadmin_ids):
+            return True
+        await interaction.response.send_message(
+            "❌ Only the server owner can use moderation commands.", ephemeral=True
+        )
+        return False
 
     async def _mod_log(
         self, guild: discord.Guild, title: str, description: str, color: discord.Color
@@ -51,10 +61,12 @@ class ModerationCog(commands.Cog):
     @app_commands.command(name="kick", description="Kick a member from the server")
     @app_commands.describe(member="Member to kick", reason="Why the member is kicked")
     @app_commands.guild_only()
-    @app_commands.default_permissions(kick_members=True)
+    @app_commands.default_permissions(administrator=True)
     async def kick(
         self, interaction: discord.Interaction, member: discord.Member, reason: str | None = None
     ) -> None:
+        if not await self._owner_gate(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         try:
             await member.kick(reason=self._reason_text(reason))
@@ -80,7 +92,7 @@ class ModerationCog(commands.Cog):
         reason="Why the member is banned",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(ban_members=True)
+    @app_commands.default_permissions(administrator=True)
     async def ban(
         self,
         interaction: discord.Interaction,
@@ -88,6 +100,8 @@ class ModerationCog(commands.Cog):
         delete_days: app_commands.Range[int, 0, 7] = 0,
         reason: str | None = None,
     ) -> None:
+        if not await self._owner_gate(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         try:
             await interaction.guild.ban(
@@ -109,8 +123,10 @@ class ModerationCog(commands.Cog):
     @app_commands.command(name="unban", description="Lift a ban by user id")
     @app_commands.describe(user_id="Discord id of the banned user")
     @app_commands.guild_only()
-    @app_commands.default_permissions(ban_members=True)
+    @app_commands.default_permissions(administrator=True)
     async def unban(self, interaction: discord.Interaction, user_id: str) -> None:
+        if not await self._owner_gate(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         if not user_id.isdigit():
             await interaction.followup.send("❌ The user id must be digits only.", ephemeral=True)
@@ -140,7 +156,7 @@ class ModerationCog(commands.Cog):
         reason="Why the member is timed out",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(moderate_members=True)
+    @app_commands.default_permissions(administrator=True)
     async def timeout(
         self,
         interaction: discord.Interaction,
@@ -148,6 +164,8 @@ class ModerationCog(commands.Cog):
         minutes: app_commands.Range[int, 1, TIMEOUT_MAX_MINUTES],
         reason: str | None = None,
     ) -> None:
+        if not await self._owner_gate(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         until = discord.utils.utcnow() + dt.timedelta(minutes=minutes)
         try:
@@ -176,8 +194,10 @@ class ModerationCog(commands.Cog):
 
     @app_commands.command(name="untimeout", description="Remove the timeout from a member")
     @app_commands.guild_only()
-    @app_commands.default_permissions(moderate_members=True)
+    @app_commands.default_permissions(administrator=True)
     async def untimeout(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if not await self._owner_gate(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         try:
             await member.timeout(None)
@@ -196,8 +216,10 @@ class ModerationCog(commands.Cog):
     @app_commands.command(name="warn", description="Give a member a warning (stored in the bot database)")
     @app_commands.describe(member="Member to warn", reason="What the warning is for")
     @app_commands.guild_only()
-    @app_commands.default_permissions(manage_messages=True)
+    @app_commands.default_permissions(administrator=True)
     async def warn(self, interaction: discord.Interaction, member: discord.Member, reason: str) -> None:
+        if not await self._owner_gate(interaction):
+            return
         await self.bot.db.add_warning(
             interaction.guild_id,
             member.id,
@@ -227,8 +249,10 @@ class ModerationCog(commands.Cog):
     @app_commands.command(name="warnings", description="Show warnings of a member")
     @app_commands.describe(member="Member to look up")
     @app_commands.guild_only()
-    @app_commands.default_permissions(manage_messages=True)
+    @app_commands.default_permissions(administrator=True)
     async def warnings(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if not await self._owner_gate(interaction):
+            return
         rows = await self.bot.db.list_warnings(interaction.guild_id, user_id=member.id, limit=25)
         if not rows:
             await interaction.response.send_message(
@@ -243,9 +267,11 @@ class ModerationCog(commands.Cog):
 
     @app_commands.command(name="clear", description="Delete the last N messages in this channel (max 100)")
     @app_commands.guild_only()
-    @app_commands.default_permissions(manage_messages=True)
+    @app_commands.default_permissions(administrator=True)
     async def clear(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100]) -> None:
         assert isinstance(interaction.channel, discord.TextChannel)
+        if not await self._owner_gate(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         deleted = await interaction.channel.purge(limit=amount, bulk=True)
         await interaction.followup.send(f"🧹 Deleted {len(deleted)} messages.", ephemeral=True)

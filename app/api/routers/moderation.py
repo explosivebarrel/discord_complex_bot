@@ -11,8 +11,7 @@ from app.api.deps import (
     CurrentUser,
     get_bot,
     get_db,
-    is_admin_tier,
-    require_guild_admin,
+    require_guild_owner,
     require_section_access,
 )
 from app.core.db import Database
@@ -107,7 +106,7 @@ async def _mod_log(
 async def timeout_user(
     guild_id: int,
     body: TimeoutBody,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(require_guild_owner),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
@@ -135,7 +134,7 @@ async def timeout_user(
 async def kick_user(
     guild_id: int,
     body: KickBody,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(require_guild_owner),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
@@ -162,7 +161,7 @@ async def kick_user(
 async def ban_user(
     guild_id: int,
     body: BanBody,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(require_guild_owner),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
@@ -198,8 +197,9 @@ async def ban_user(
 async def access_info(
     guild_id: int,
     user: CurrentUser = Depends(section),
-    db: Database = Depends(get_db),
-    admin_check: bool = Depends(is_admin_tier),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
-    """Whether the current user may act (admin tier) or only view."""
-    return {"can_act": admin_check}
+    """Whether the current user may act (the guild owner) or only view."""
+    guild = bot.get_guild(guild_id)
+    can_act = user.is_superadmin or (guild is not None and user.discord_id == guild.owner_id)
+    return {"can_act": can_act}
