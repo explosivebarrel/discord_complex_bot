@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 VOLUME_MIN, VOLUME_MAX = 0, 1000
 PLAYLIST_LIMIT = 100
 PLAYED_LIMIT = 20
+# Playlist browser: server-side pagination and the lazy "add all" window.
+PLAYLIST_PAGE_SIZE = 50
+PLAYLIST_WINDOW = 100
+PLAYLIST_SESSION_TTL = 900.0
+PLAYLIST_SESSIONS_MAX = 24
 
 
 @dataclass
@@ -48,6 +53,9 @@ class QueueItem:
     # Autoplay radio items never enter the session history and never block
     # the queue: they are placeholders the real tracks replace at once.
     is_autoplay: bool = False
+    # A lazy "load more" marker for a big playlist: (session id, next index).
+    # Popping it pulls the next window of the playlist into the queue.
+    more_from_playlist: tuple[int, int] | None = None
 
     @property
     def display_title(self) -> str:
@@ -64,7 +72,7 @@ class QueueItem:
                 "source": self.source or self.track.source,
                 "requested_by": self.requested_by_name,
             }
-        return {
+        base = {
             "title": self.title or self.pending_url,
             "author": self.author,
             "uri": self.pending_url,
@@ -73,10 +81,36 @@ class QueueItem:
             "source": self.source,
             "requested_by": self.requested_by_name,
         }
+        if self.more_from_playlist is not None:
+            base["source"] = "playlist"
+            base["playlist_id"] = self.more_from_playlist[0]
+        return base
 
 
 class MusicServiceError(Exception):
     """Error in music control. Show the message text to the user."""
+
+
+@dataclass
+class PlaylistSession:
+    """A cached flat playlist for the panel browser.
+
+    Entries are raw dicts for yt/sc (page URLs, resolved lazily at play time)
+    or ready Playables for ym. The session lives in memory for a short while:
+    the panel pages through it and bulk-adds from it.
+    """
+
+    id: int
+    title: str
+    source: str
+    url: str
+    entries: list[Any]
+    created: float
+
+    def expired(self) -> bool:
+        import time
+
+        return (time.monotonic() - self.created) > PLAYLIST_SESSION_TTL
 
 
 class MusicService:
@@ -99,6 +133,9 @@ class MusicService:
         self.track_cache: dict[str, dict[str, Any]] = {}
         # Last playback failure, shown on the web panel settings page.
         self.last_error: dict[str, Any] | None = None
+        # Cached flat playlists for the panel browser (PlaylistSession).
+        self.playlist_sessions: dict[int, PlaylistSession] = {}
+        self._playlist_seq = 0
 
     # --- helpers ---
 
@@ -164,6 +201,9 @@ class MusicService:
             player: wavelink.Player = await channel.connect(cls=wavelink.Player, self_deaf=True)
         except discord.ClientException as exc:
             raise MusicServiceError(f"Failed to connect: {exc}") from exc
+        except wavelink.ChannelTimeoutException as exc:
+            # The voice handshake can time out on a flaky network.
+            raise MusicServiceError("The voice channel did not answer in time. Try again.") from exc
         await player.set_volume(100)
         await self.db.audit(
             "music.join", guild_id=guild_id, actor_id=requester_id, details={"channel_id": channel_id}
@@ -395,7 +435,7 @@ class MusicService:
             items = [QueueItem(t, requester_id, requester_name, source=source) for t in tracks]
             title = f"{getattr(result, 'name', None) or 'Playlist'} — {len(items)} track(s)"
         elif self._is_playlist_url(query) and source in ("yt", "sc"):
-            entries = await self._resolve_playlist(query)
+            playlist_title, entries = await self._resolve_playlist(query)
             if not entries:
                 raise MusicServiceError("The playlist is empty or cannot be read.")
             entries = entries[:PLAYLIST_LIMIT]
@@ -413,7 +453,7 @@ class MusicService:
                 )
                 for entry in entries
             ]
-            title = f"Playlist - {len(items)} track(s)"
+            title = f"{playlist_title or 'Playlist'} - {len(items)} track(s)"
         elif source == "local":
             # Pending item; the signed stream URL is built at play time.
             items = [
@@ -515,13 +555,14 @@ class MusicService:
             return "/playlists/" in q or "/album/" in q
         return False
 
-    async def _resolve_playlist(self, query: str) -> list[dict[str, Any]]:
-        """Read a playlist page with yt-dlp and return flat track metadata."""
+    async def _resolve_playlist(self, query: str) -> tuple[str, list[dict[str, Any]]]:
+        """Read a playlist page with yt-dlp; (playlist title, flat track metadata)."""
         out = await self._run_ytdlp(["--flat-playlist", "--no-warnings", "-J", query], label="The playlist")
         info = json.loads(out.strip())
         # yt-dlp can print a bare null with exit code 0 on unsupported pages.
         if not isinstance(info, dict) or info.get("_type") != "playlist":
             raise MusicServiceError("That link is not a playlist the bot can read.")
+        playlist_title = str(info.get("title") or "")
         tracks: list[dict[str, Any]] = []
         for entry in info.get("entries") or []:
             url = entry.get("url") or entry.get("webpage_url")
@@ -537,7 +578,7 @@ class MusicService:
                     "artwork": thumbnails[-1].get("url") if thumbnails else None,
                 }
             )
-        return tracks
+        return playlist_title, tracks
 
     async def _resolve_item(self, item: QueueItem) -> wavelink.Playable:
         """Turn a pending item into a playable track right before playing."""
@@ -636,6 +677,23 @@ class MusicService:
             # radio must not enter it.
             self._played(guild_id).append(current)
         item = queue.popleft()
+        if item.more_from_playlist is not None:
+            window, next_index = self._expand_marker(item)
+            if not window:
+                # The playlist session expired; drop the marker and move on.
+                self.current_items[guild_id] = item
+                return await self.play_next(guild_id, reason)
+            queue.extend(window)
+            if next_index is not None:
+                session = self.playlist_sessions.get(item.more_from_playlist[0])
+                left = (len(session.entries) - next_index) if session else 0
+                queue.append(
+                    self._playlist_marker(
+                        item.more_from_playlist[0], next_index, left,
+                        item.requested_by_id, item.requested_by_name,
+                    )
+                )
+            item = queue.popleft()
         self.current_items[guild_id] = item
         try:
             track = await self._resolve_item(item)
@@ -753,11 +811,243 @@ class MusicService:
 
     def shuffle_queue(self, guild_id: int) -> int:
         queue = self._queue(guild_id)
-        items = list(queue)
+        markers = [it for it in queue if it.more_from_playlist is not None]
+        items = [it for it in queue if it.more_from_playlist is None]
         random.shuffle(items)
         queue.clear()
         queue.extend(items)
+        queue.extend(markers)
         return len(items)
+
+    # --- playlist browser (panel) ---
+
+    def looks_like_playlist(self, query: str, source: str) -> bool:
+        return self._is_playlist_url(query) and self._detect_source(query, source) in ("yt", "sc", "ym")
+
+    async def open_playlist(self, query: str, source: str) -> PlaylistSession:
+        """Read a playlist into a cached session for the panel browser."""
+        source = self._detect_source(query, source)
+        if source == "ym":
+            result = await self._lavalink_load_with_retry(query)
+            entries = list(getattr(result, "tracks", None) or [])
+            title = str(getattr(result, "name", None) or "Playlist")
+        else:
+            title, entries = await self._resolve_playlist(query)
+            title = title or "Playlist"
+        if not entries:
+            raise MusicServiceError("The playlist is empty or cannot be read.")
+        self._playlist_seq += 1
+        import time
+
+        session = PlaylistSession(
+            id=self._playlist_seq,
+            title=title,
+            source=source,
+            url=query,
+            entries=entries[:3000],
+            created=time.monotonic(),
+        )
+        self._store_session(session)
+        return session
+
+    def _store_session(self, session: PlaylistSession) -> None:
+        for pid in [p for p, s in self.playlist_sessions.items() if s.expired()]:
+            del self.playlist_sessions[pid]
+        if len(self.playlist_sessions) >= PLAYLIST_SESSIONS_MAX:
+            oldest = min(self.playlist_sessions, key=lambda p: self.playlist_sessions[p].created)
+            del self.playlist_sessions[oldest]
+        self.playlist_sessions[session.id] = session
+
+    def _session(self, playlist_id: int) -> PlaylistSession:
+        session = self.playlist_sessions.get(playlist_id)
+        if session is None or session.expired():
+            raise MusicServiceError("This playlist preview has expired. Open the link again.")
+        return session
+
+    def playlist_page(self, playlist_id: int, page: int, query: str = "") -> dict[str, Any]:
+        """One page of the playlist for the panel browser, with a filter."""
+        session = self._session(playlist_id)
+        needle = query.strip().lower()
+        entries = [
+            (i, e)
+            for i, e in enumerate(session.entries)
+            if not needle
+            or needle in self._entry_title(e).lower()
+            or needle in self._entry_author(e).lower()
+        ]
+        pages = max(1, -(-len(entries) // PLAYLIST_PAGE_SIZE))
+        page = max(0, min(page, pages - 1))
+        chunk = entries[page * PLAYLIST_PAGE_SIZE : (page + 1) * PLAYLIST_PAGE_SIZE]
+        return {
+            "id": session.id,
+            "title": session.title,
+            "source": session.source,
+            "total": len(session.entries),
+            "matched": len(entries),
+            "page": page,
+            "pages": pages,
+            "tracks": [
+                {
+                    "index": i,
+                    "title": self._entry_title(e),
+                    "author": self._entry_author(e),
+                    "length": self._entry_length(e),
+                    "artwork": self._entry_artwork(e),
+                }
+                for i, e in chunk
+            ],
+        }
+
+    @staticmethod
+    def _entry_title(entry: Any) -> str:
+        return str(entry.title if isinstance(entry, wavelink.Playable) else entry.get("title") or "?")
+
+    @staticmethod
+    def _entry_author(entry: Any) -> str:
+        return str(
+            (entry.author or "") if isinstance(entry, wavelink.Playable) else entry.get("author") or ""
+        )
+
+    @staticmethod
+    def _entry_length(entry: Any) -> int:
+        return int(entry.length if isinstance(entry, wavelink.Playable) else entry.get("duration") or 0)
+
+    @staticmethod
+    def _entry_artwork(entry: Any) -> str | None:
+        return entry.artwork if isinstance(entry, wavelink.Playable) else entry.get("artwork")
+
+    def _entry_to_item(
+        self, entry: Any, session: PlaylistSession, requester_id: int, requester_name: str
+    ) -> QueueItem:
+        if isinstance(entry, wavelink.Playable):
+            return QueueItem(
+                track=entry,
+                requested_by_id=requester_id,
+                requested_by_name=requester_name,
+                source=session.source,
+            )
+        return QueueItem(
+            track=None,
+            requested_by_id=requester_id,
+            requested_by_name=requester_name,
+            source=session.source,
+            pending_url=entry.get("url") or "",
+            title=self._entry_title(entry),
+            author=self._entry_author(entry),
+            length=self._entry_length(entry),
+            artwork=self._entry_artwork(entry),
+        )
+
+    def _playlist_marker(
+        self, playlist_id: int, next_index: int, remaining: int, requester_id: int, requester_name: str
+    ) -> QueueItem:
+        return QueueItem(
+            track=None,
+            requested_by_id=requester_id,
+            requested_by_name=requester_name,
+            source="playlist",
+            title=f"{remaining} more tracks",
+            more_from_playlist=(playlist_id, next_index),
+        )
+
+    def _expand_marker(self, marker: QueueItem) -> tuple[list[QueueItem], int | None]:
+        """The next window of a lazy playlist. None next index = the end."""
+        playlist_id, next_index = marker.more_from_playlist or (0, 0)
+        session = self.playlist_sessions.get(playlist_id)
+        if session is None or session.expired() or next_index >= len(session.entries):
+            return [], None
+        window = session.entries[next_index : next_index + PLAYLIST_WINDOW]
+        items = [
+            self._entry_to_item(e, session, marker.requested_by_id, marker.requested_by_name) for e in window
+        ]
+        new_next = next_index + len(window)
+        return items, (new_next if new_next < len(session.entries) else None)
+
+    async def add_playlist_tracks(
+        self, guild_id: int, playlist_id: int, indices: list[int], requester_id: int, requester_name: str
+    ) -> int:
+        """Queue selected playlist tracks (the panel caps the list size)."""
+        session = self._session(playlist_id)
+        picked = sorted({i for i in indices if 0 <= i < len(session.entries)})[:200]
+        if not picked:
+            raise MusicServiceError("No tracks selected.")
+        player = self.get_player(guild_id)
+        queue = self._queue(guild_id)
+        was_idle = not queue and (player is None or not player.playing)
+        items = [
+            self._entry_to_item(session.entries[i], session, requester_id, requester_name) for i in picked
+        ]
+        queue.extend(items)
+        if was_idle and player is not None and items:
+            first = queue.popleft()
+            self.current_items[guild_id] = first
+            await self._play_item(guild_id, first)
+        await self.db.audit(
+            "music.playlist_add",
+            guild_id=guild_id,
+            actor_id=requester_id,
+            details={"playlist": session.title, "added": len(items)},
+        )
+        return len(items)
+
+    async def queue_entire_playlist(
+        self, guild_id: int, playlist_id: int, requester_id: int, requester_name: str
+    ) -> dict[str, Any]:
+        """Lazy "add all": the first window now, a marker pulls the rest.
+
+        The marker at the end of the queue expands when the auto-advance
+        reaches it, so a 1500-track playlist never resolves at once.
+        """
+        session = self._session(playlist_id)
+        player = self.get_player(guild_id)
+        queue = self._queue(guild_id)
+        was_idle = not queue and (player is None or not player.playing)
+        window, next_index = self._expand_marker(
+            self._playlist_marker(session.id, 0, len(session.entries), requester_id, requester_name)
+        )
+        if not window:
+            raise MusicServiceError("The playlist is empty or cannot be read.")
+        queue.extend(window)
+        remaining = len(session.entries) - len(window)
+        if next_index is not None:
+            queue.append(
+                self._playlist_marker(session.id, next_index, remaining, requester_id, requester_name)
+            )
+        if was_idle and player is not None:
+            first = queue.popleft()
+            self.current_items[guild_id] = first
+            await self._play_item(guild_id, first)
+        await self.db.audit(
+            "music.playlist_add_all",
+            guild_id=guild_id,
+            actor_id=requester_id,
+            details={"playlist": session.title, "total": len(session.entries)},
+        )
+        return {"queued": len(window), "remaining": remaining, "total": len(session.entries)}
+
+    async def play_playlist_track(
+        self, guild_id: int, playlist_id: int, index: int, requester_id: int, requester_name: str
+    ) -> str:
+        """Play one playlist track right now; the current track keeps its
+        place in the session history (the interrupted-radio rules apply)."""
+        self._require_player(guild_id)
+        session = self._session(playlist_id)
+        if index < 0 or index >= len(session.entries):
+            raise MusicServiceError("That playlist position does not exist.")
+        item = self._entry_to_item(session.entries[index], session, requester_id, requester_name)
+        current = self.current_items.get(guild_id)
+        if current is not None and current.track is not None and not current.is_autoplay:
+            self._played(guild_id).append(current)
+        self.current_items[guild_id] = item
+        await self._play_item(guild_id, item)
+        await self.db.audit(
+            "music.playlist_play",
+            guild_id=guild_id,
+            actor_id=requester_id,
+            details={"playlist": session.title, "index": index, "title": item.display_title},
+        )
+        return item.display_title
+
 
     async def skip(self, guild_id: int, requester_id: int) -> bool:
         player = self._require_player(guild_id)
@@ -814,8 +1104,31 @@ class MusicService:
         current = self.current_items.get(guild_id)
         if current is not None and current.track is not None and not current.is_autoplay:
             self._played(guild_id).append(current)
-        for _ in range(index):
+        # Count real tracks only; a lazy playlist marker expands in place.
+        skipped = 0
+        while True:
+            if not queue:
+                raise MusicServiceError("That queue position does not exist.")
+            candidate = queue[0]
+            if candidate.more_from_playlist is not None:
+                queue.popleft()
+                window, next_index = self._expand_marker(candidate)
+                if window:
+                    queue.extendleft(list(reversed(window)))
+                    if next_index is not None:
+                        session = self.playlist_sessions.get(candidate.more_from_playlist[0])
+                        left = (len(session.entries) - next_index) if session else 0
+                        queue.append(
+                            self._playlist_marker(
+                                candidate.more_from_playlist[0], next_index, left,
+                                candidate.requested_by_id, candidate.requested_by_name,
+                            )
+                        )
+                continue
+            if skipped == index:
+                break
             queue.popleft()
+            skipped += 1
         item = queue.popleft()
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)

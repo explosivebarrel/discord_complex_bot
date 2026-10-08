@@ -52,6 +52,8 @@ export interface TrackInfo {
   issue?: string | null;
   /** True while the next track is resolving its stream (transition). */
   loading?: boolean;
+  /** Set on the lazy playlist row: open the browser for this playlist. */
+  playlist_id?: number;
 }
 
 export interface PlayerState {
@@ -67,6 +69,25 @@ export interface PlayerState {
   queue: TrackInfo[];
   /** Session history, newest first. */
   played: TrackInfo[];
+}
+
+export interface PlaylistTrack {
+  index: number;
+  title: string;
+  author: string;
+  length: number;
+  artwork: string | null;
+}
+
+export interface PlaylistPageInfo {
+  id: number;
+  title: string;
+  source: string;
+  total: number;
+  matched: number;
+  page: number;
+  pages: number;
+  tracks: PlaylistTrack[];
 }
 
 export interface VoiceChannel {
@@ -200,7 +221,9 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).then((r) => handle<{ queued: number; title: string; now_playing: boolean }>(r)),
+    }).then((r) =>
+      handle<{ queued: number; title: string; now_playing: boolean; preview?: PlaylistPageInfo }>(r),
+    ),
 
   simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop" | "previous") =>
     fetch(`/api/guilds/${guildId}/player/${action}`, { method: "POST" }).then((r) => handle<unknown>(r)),
@@ -297,6 +320,37 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ position }),
+    }).then((r) => handle<{ playing: string }>(r)),
+
+  playlistPreview: (guildId: string, query: string, source: string) =>
+    fetch(`/api/guilds/${guildId}/player/playlist/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, source }),
+    }).then((r) => handle<PlaylistPageInfo>(r)),
+
+  playlistPage: (guildId: string, playlistId: number, page: number, q: string) =>
+    fetch(
+      `/api/guilds/${guildId}/player/playlist/${playlistId}?page=${page}&q=${encodeURIComponent(q)}`,
+    ).then((r) => handle<PlaylistPageInfo>(r)),
+
+  playlistAdd: (guildId: string, playlistId: number, indices: number[]) =>
+    fetch(`/api/guilds/${guildId}/player/playlist/${playlistId}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ indices }),
+    }).then((r) => handle<{ added: number }>(r)),
+
+  playlistAddAll: (guildId: string, playlistId: number) =>
+    fetch(`/api/guilds/${guildId}/player/playlist/${playlistId}/add_all`, { method: "POST" }).then(
+      (r) => handle<{ queued: number; remaining: number; total: number }>(r),
+    ),
+
+  playlistPlay: (guildId: string, playlistId: number, index: number) =>
+    fetch(`/api/guilds/${guildId}/player/playlist/${playlistId}/play`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index }),
     }).then((r) => handle<{ playing: string }>(r)),
 
   volume: (guildId: string, volume: number) =>

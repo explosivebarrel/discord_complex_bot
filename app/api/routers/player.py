@@ -66,6 +66,14 @@ class ReplayBody(BaseModel):
     position: int
 
 
+class PlaylistAddBody(BaseModel):
+    indices: list[int]
+
+
+class PlaylistPlayBody(BaseModel):
+    index: int
+
+
 @router.get("/state")
 async def player_state(
     guild_id: int,
@@ -185,6 +193,26 @@ async def enqueue(
             await music.connect(guild_id, channel_id, user.discord_id)
         except MusicServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not body.encoded and music.looks_like_playlist(body.query, body.source):
+        # The panel opens a playlist preview instead of dumping the tracks
+        # into the queue; the Discord slash command keeps the old behavior.
+        try:
+            session = await music.open_playlist(body.query, body.source)
+        except MusicServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await db.audit(
+            "music.enqueue",
+            guild_id=guild_id,
+            actor_id=user.discord_id,
+            actor_kind="web",
+            details={"query": body.query, "preview": True},
+        )
+        return {
+            "preview": music.playlist_page(session.id, 0),
+            "queued": 0,
+            "title": session.title,
+            "now_playing": False,
+        }
     try:
         meta = {
             "title": body.title,
@@ -364,6 +392,96 @@ async def jump_queued(
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"jumped": title}
+
+
+@router.post("/playlist/preview")
+async def playlist_preview(
+    guild_id: int,
+    body: EnqueueBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    if not music.looks_like_playlist(body.query, body.source):
+        raise HTTPException(status_code=400, detail="That link is not a supported playlist.")
+    try:
+        session = await music.open_playlist(body.query, body.source)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await db.audit(
+        "music.playlist_preview",
+        guild_id=guild_id,
+        actor_id=user.discord_id,
+        actor_kind="web",
+        details={"query": body.query, "total": len(session.entries)},
+    )
+    return music.playlist_page(session.id, 0)
+
+
+@router.get("/playlist/{playlist_id}")
+async def playlist_page(
+    guild_id: int,
+    playlist_id: int,
+    page: int = 0,
+    q: str = "",
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+) -> dict[str, Any]:
+    try:
+        return music.playlist_page(playlist_id, page, q)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/playlist/{playlist_id}/add")
+async def playlist_add(
+    guild_id: int,
+    playlist_id: int,
+    body: PlaylistAddBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        added = await music.add_playlist_tracks(
+            guild_id, playlist_id, body.indices, user.discord_id, user.global_name
+        )
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"added": added}
+
+
+@router.post("/playlist/{playlist_id}/add_all")
+async def playlist_add_all(
+    guild_id: int,
+    playlist_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        result = await music.queue_entire_playlist(guild_id, playlist_id, user.discord_id, user.global_name)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result
+
+
+@router.post("/playlist/{playlist_id}/play")
+async def playlist_play(
+    guild_id: int,
+    playlist_id: int,
+    body: PlaylistPlayBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = await music.play_playlist_track(
+            guild_id, playlist_id, body.index, user.discord_id, user.global_name
+        )
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"playing": title}
 
 
 @router.post("/played/replay")

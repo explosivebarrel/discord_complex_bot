@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import time
 from collections import deque
 
 import pytest
 
-from app.core.services.music import MusicService, MusicServiceError, QueueItem
+from app.core.services.music import MusicService, MusicServiceError, PlaylistSession, QueueItem
 
 from .conftest import GUILD_ID, FakePlayer, fill_queue, make_track
 
@@ -410,3 +411,126 @@ def test_for_replay_keeps_radio_track(music: MusicService) -> None:
     out = music._for_replay(item)  # noqa: SLF001
     assert out.track is not None
     assert out.pending_url == ""
+
+
+def _make_session(music: MusicService, count: int, source: str = "yt") -> PlaylistSession:
+    entries = [
+        {
+            "title": f"track {i}",
+            "author": "artist",
+            "url": f"https://example.com/{i}",
+            "duration": 60_000,
+            "artwork": None,
+        }
+        for i in range(count)
+    ]
+    session = PlaylistSession(
+        id=1, title="Test playlist", source=source, url="https://example.com/pl",
+        entries=entries, created=time.monotonic(),
+    )
+    music.playlist_sessions[session.id] = session
+    return session
+
+
+def test_playlist_page_pagination_and_filter(music: MusicService) -> None:
+    session = _make_session(music, 120)
+
+    page = music.playlist_page(session.id, 0)
+    assert page["total"] == 120 and page["pages"] == 3 and page["page"] == 0
+    assert [t["index"] for t in page["tracks"]] == list(range(50))
+
+    last = music.playlist_page(session.id, 2)
+    assert len(last["tracks"]) == 20
+
+    found = music.playlist_page(session.id, 0, "track 5")
+    assert found["matched"] == 11  # 5, 15, 25, ..., 115
+    assert found["pages"] == 1
+
+    with pytest.raises(MusicServiceError):
+        music.playlist_page(999, 0)
+
+
+async def test_queue_entire_playlist_windows_and_marker(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    session = _make_session(music, 250)
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    result = await music.queue_entire_playlist(GUILD_ID, session.id, 1, "u")
+    assert result == {"queued": 100, "remaining": 150, "total": 250}
+    queue = music.queues[GUILD_ID]
+    # 99 window items wait in the queue, "track 0" started playing (idle start).
+    assert len(queue) == 100
+    assert queue[-1].more_from_playlist == (session.id, 100)
+    assert player.played == ["track 0"]  # idle start played the first one
+
+    # Skip to the marker: play_next expands the next window in its place.
+    for _ in range(99):
+        await music.play_next(GUILD_ID, "finished")
+    assert queue[-1].more_from_playlist == (session.id, 100)
+    await music.play_next(GUILD_ID, "finished")
+    # New window: 99 wait + the marker; "track 100" plays now.
+    assert len(queue) == 100
+    assert queue[-1].more_from_playlist == (session.id, 200)
+    assert player.played[-1] == "track 100"
+
+
+async def test_expired_marker_drops_silently(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    session = _make_session(music, 10)
+    session.created = time.monotonic() - 901.0
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="10 more tracks", more_from_playlist=(session.id, 0),
+    )
+    music.queues[GUILD_ID] = deque([marker])
+
+    assert await music.play_next(GUILD_ID, "finished") is None
+    assert not music.queues[GUILD_ID]
+
+
+def test_shuffle_keeps_playlist_markers_at_the_end(music: MusicService) -> None:
+    fill_queue(music, ["a", "b", "c"])
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="5 more tracks", more_from_playlist=(1, 0),
+    )
+    music.queues[GUILD_ID].append(marker)
+
+    assert music.shuffle_queue(GUILD_ID) == 3
+    assert music.queues[GUILD_ID][-1].more_from_playlist == (1, 0)
+    assert sorted(i.track.title for i in list(music.queues[GUILD_ID])[:3]) == ["a", "b", "c"]
+
+
+async def test_add_playlist_tracks_validates_and_dedupes(music: MusicService) -> None:
+    music.get_player = lambda _gid: None  # type: ignore[method-assign]
+    session = _make_session(music, 10)
+
+    added = await music.add_playlist_tracks(GUILD_ID, session.id, [5, 2, 2, 99, -1], 1, "u")
+    assert added == 2
+    assert [i.display_title for i in music.queues[GUILD_ID]] == ["track 2", "track 5"]
+    with pytest.raises(MusicServiceError):
+        await music.add_playlist_tracks(GUILD_ID, session.id, [500], 1, "u")
+
+
+async def test_play_playlist_track_moves_current_to_played(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    session = _make_session(music, 3)
+    music.current_items[GUILD_ID] = QueueItem(make_track("playing now"), 1, "u")
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    title = await music.play_playlist_track(GUILD_ID, session.id, 1, 1, "u")
+
+    assert title == "track 1"
+    assert player.played == ["track 1"]
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["playing now"]
+    with pytest.raises(MusicServiceError):
+        await music.play_playlist_track(GUILD_ID, session.id, 99, 1, "u")

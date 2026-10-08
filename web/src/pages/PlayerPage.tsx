@@ -40,10 +40,11 @@ import PlayArrow from "@mui/icons-material/PlayArrow";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
 import Shuffle from "@mui/icons-material/Shuffle";
 import History from "@mui/icons-material/History";
-import { api, FavoriteTrackInfo, PlayerState, TrackInfo, VoiceChannel } from "../api";
+import { api, FavoriteTrackInfo, PlayerState, PlaylistPageInfo, TrackInfo, VoiceChannel } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { PlayerBar } from "../components/PlayerBar";
+import { PlaylistBrowser } from "../components/PlaylistBrowser";
 import { useFeedback } from "../components/Feedback";
 
 const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
@@ -103,6 +104,8 @@ export function PlayerPage() {
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [queueView, setQueueView] = useState<"next" | "recent">("next");
+  const [playlist, setPlaylist] = useState<PlaylistPageInfo | null>(null);
+  const [playlistBusy, setPlaylistBusy] = useState(false);
   const [favorites, setFavorites] = useState<FavoriteTrackInfo[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -196,13 +199,38 @@ export function PlayerPage() {
     api
       .enqueue(gid, body)
       .then((r) => {
-        feedback.show(r.now_playing ? `Now playing: ${r.title}` : `Queued: ${r.title}`);
+        if (r.preview) {
+          setPlaylist(r.preview);
+          feedback.show("Playlist loaded. Pick the tracks you want.");
+        } else {
+          feedback.show(r.now_playing ? `Now playing: ${r.title}` : `Queued: ${r.title}`);
+        }
         setResults(null);
         setQuery("");
         refresh();
       })
       .catch(guard)
       .finally(() => setEnqueueing(null));
+  };
+
+  const openPlaylistPage = (pid: number, page: number, q: string) => {
+    setPlaylistBusy(true);
+    api
+      .playlistPage(gid, pid, page, q)
+      .then(setPlaylist)
+      .catch(guard)
+      .finally(() => setPlaylistBusy(false));
+  };
+
+  const playlistAction = (fn: () => Promise<unknown>, okMsg: string) => {
+    setPlaylistBusy(true);
+    fn()
+      .then(() => {
+        feedback.show(okMsg);
+        refresh();
+      })
+      .catch(guard)
+      .finally(() => setPlaylistBusy(false));
   };
 
   const cycleRepeat = () => {
@@ -547,6 +575,26 @@ export function PlayerPage() {
               </CardContent>
             </Card>
           )}
+          {playlist && (
+            <PlaylistBrowser
+              playlist={playlist}
+              busy={playlistBusy}
+              onClose={() => setPlaylist(null)}
+              onReload={(page, q) => openPlaylistPage(playlist.id, page, q)}
+              onPlay={(index) =>
+                playlistAction(() => api.playlistPlay(gid, playlist.id, index), "Playing from playlist")
+              }
+              onAdd={(indices) =>
+                playlistAction(
+                  () => api.playlistAdd(gid, playlist.id, indices),
+                  `Added ${indices.length} track(s) to the queue`,
+                )
+              }
+              onAddAll={() =>
+                playlistAction(() => api.playlistAddAll(gid, playlist.id), "Whole playlist queued (lazy)")
+              }
+            />
+          )}
           <Card>
             <CardContent>
               <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
@@ -601,7 +649,35 @@ export function PlayerPage() {
               {queueView === "next" ? (
                 state && state.queue.length > 0 ? (
                   <List disablePadding>
-                    {state.queue.map((t, i) => (
+                    {state.queue.map((t, i) => {
+                      if (t.source === "playlist") {
+                        return (
+                          <ListItem
+                            key={`pl${i}`}
+                            disableGutters
+                            dense
+                            onClick={() => t.playlist_id && openPlaylistPage(t.playlist_id, 0, "")}
+                            sx={{
+                              cursor: "pointer",
+                              borderRadius: 1,
+                              "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                            }}
+                          >
+                            <ListItemAvatar sx={{ minWidth: 36 }}>
+                              <LibraryMusic fontSize="small" sx={{ color: "text.secondary", ml: 1 }} />
+                            </ListItemAvatar>
+                            <ListItemText
+                              primary={t.title}
+                              secondary={[t.author, "click to browse"].filter(Boolean).join(" · ")}
+                              slotProps={{
+                                primary: { noWrap: true },
+                                secondary: { noWrap: true },
+                              }}
+                            />
+                          </ListItem>
+                        );
+                      }
+                      return (
                       <ListItem
                         key={i}
                         disableGutters
@@ -674,7 +750,8 @@ export function PlayerPage() {
                           }}
                         />
                       </ListItem>
-                    ))}
+                      );
+                    })}
                   </List>
                 ) : (
                   <Typography variant="body2" sx={{ color: "text.secondary" }}>

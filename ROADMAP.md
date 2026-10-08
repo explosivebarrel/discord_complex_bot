@@ -19,7 +19,7 @@ share the same session history mechanism.
 - The autoplay radio never blocks the queue (a new enqueue replaces it at
   once) and never enters the session history.
 
-## 2. Playlist browser
+## 2. Playlist browser (shipped)
 
 The queue must not receive a whole playlist as a wall of tracks. A playlist
 link opens a preview instead:
@@ -27,23 +27,22 @@ link opens a preview instead:
 - A paginated list (50 tracks per page) with a filter box to search inside
   the playlist.
 - Per-track buttons: **Play now** and **Add to queue**.
-- Bulk actions: add next 25, add all, shuffle and add.
-- The server caches the flat playlist dump for 10-15 minutes and serves pages
-  from the cache. `yt-dlp --playlist-items START:END` is the fallback for a
-  cache miss.
+- Bulk actions: add page, add all (lazy), shuffle +100.
+- The server caches the flat playlist dump for 15 minutes and serves pages
+  from the cache. Yandex playlists load through LavaSrc (up to 100 tracks
+  per open).
 
-## 3. Lazy full-playlist playback
+## 3. Lazy full-playlist playback (shipped)
 
 For "add all" on a large playlist (1500+ tracks):
 
 - The queue holds a cursor into the playlist source, not 1500 resolved items.
   The first ~100 positions are pending items that resolve just before play
   (the existing deferred `QueueItem` mechanism).
-- A background task fetches the next page as the cursor moves.
-- The queue shows a collapsed row "Playlist: N tracks left" that expands into
-  the same paginated view as the browser.
-- Steps 2 and 3 share the playlist-source abstraction and belong to one
-  design pass.
+- A "load more" marker at the end of the queue pulls the next window when
+  the auto-advance reaches it; an expired session drops the marker quietly.
+- The queue shows the marker as a collapsed row "N more tracks"; a click on
+  it reopens the playlist browser. Shuffle keeps the marker at the tail.
 
 ## Constraint: one voice channel per bot per guild
 
