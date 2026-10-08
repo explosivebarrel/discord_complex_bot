@@ -106,6 +106,9 @@ export function PlayerPage() {
   const [queueView, setQueueView] = useState<"next" | "recent">("next");
   const [playlist, setPlaylist] = useState<PlaylistPageInfo | null>(null);
   const [playlistBusy, setPlaylistBusy] = useState(false);
+  // HTML5 drag and drop of queue rows. The source index rides through the
+  // dataTransfer so a re-render between dragstart and drop cannot lose it.
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [favorites, setFavorites] = useState<FavoriteTrackInfo[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -682,11 +685,30 @@ export function PlayerPage() {
                         key={i}
                         disableGutters
                         dense
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", String(i));
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDragOverIndex(i);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverIndex(null);
+                          const from = Number(e.dataTransfer.getData("text/plain"));
+                          if (!Number.isInteger(from) || from === i || Number.isNaN(from)) return;
+                          act(() => api.moveQueued(gid, from, i), "Queue reordered");
+                        }}
+                        onDragEnd={() => setDragOverIndex(null)}
                         onClick={() => act(() => api.jumpQueued(gid, i), `Now playing: ${t.title}`)}
                         sx={{
                           cursor: "pointer",
                           borderRadius: 1,
                           "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                          ...(dragOverIndex === i && { bgcolor: "rgba(255,255,255,0.09)" }),
                         }}
                         onMouseEnter={() => setHoveredRow(`q${i}`)}
                         onMouseLeave={() => setHoveredRow((h) => (h === `q${i}` ? null : h))}
