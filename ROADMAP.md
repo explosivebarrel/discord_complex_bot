@@ -46,14 +46,14 @@ For "add all" on a large playlist (1500+ tracks):
 - The queue shows the marker as a collapsed row "N more tracks"; a click on
   it reopens the playlist browser. Shuffle keeps the marker at the tail.
 
-## 4. Personal playlists (planned)
+## 4. Personal playlists (shipped)
 
 Named playlists owned by a panel user and stored in the bot database:
 
 - Add tracks from search results, the queue, favorites and playlist browser
   rows ("add to playlist").
-- Play a personal playlist in one click; the list is available in every
-  guild the bot is in.
+- Play a track from the playlist or queue the whole playlist in one click;
+  the list is available in every guild the bot is in.
 - Optional later: guild-shared playlists managed by the admins.
 
 ## 5. Queue persistence (planned)
