@@ -73,8 +73,9 @@ plugins:
       # Personal OAuth token of a Yandex Music account (Plus recommended).
       # See the panel settings page for how to obtain it.
       accessToken: "${YANDEX_MUSIC_TOKEN:}"
-      # LavaSrc fetches up to 100 x limit tracks of a playlist in one request.
-      playlistLoadLimit: 3
+      # LavaSrc fetches up to 100 x limit tracks of a playlist in one request;
+      # it has no pagination, so this is the whole playlist for LavaSrc.
+      playlistLoadLimit: 10
       albumLoadLimit: 3
       artistLoadLimit: 1
 
