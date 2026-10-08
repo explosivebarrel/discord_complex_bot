@@ -65,6 +65,8 @@ export interface PlayerState {
   repeat: "off" | "one" | "all";
   current: TrackInfo | null;
   queue: TrackInfo[];
+  /** Session history, newest first. */
+  played: TrackInfo[];
 }
 
 export interface VoiceChannel {
@@ -200,7 +202,7 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => handle<{ queued: number; title: string; now_playing: boolean }>(r)),
 
-  simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop") =>
+  simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop" | "previous") =>
     fetch(`/api/guilds/${guildId}/player/${action}`, { method: "POST" }).then((r) => handle<unknown>(r)),
 
   repeat: (guildId: string, mode: "off" | "one" | "all") =>
@@ -277,6 +279,25 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ from, to }),
     }).then((r) => handle<{ moved: string }>(r)),
+
+  shuffleQueue: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/queue/shuffle`, { method: "POST" }).then((r) =>
+      handle<{ shuffled: number }>(r),
+    ),
+
+  jumpQueued: (guildId: string, index: number) =>
+    fetch(`/api/guilds/${guildId}/player/queue/jump`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index }),
+    }).then((r) => handle<{ jumped: string }>(r)),
+
+  replayPlayed: (guildId: string, position: number) =>
+    fetch(`/api/guilds/${guildId}/player/played/replay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position }),
+    }).then((r) => handle<{ playing: string }>(r)),
 
   volume: (guildId: string, volume: number) =>
     fetch(`/api/guilds/${guildId}/player/volume`, {

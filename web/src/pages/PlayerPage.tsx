@@ -38,6 +38,8 @@ import Favorite from "@mui/icons-material/Favorite";
 import FavoriteBorder from "@mui/icons-material/FavoriteBorder";
 import PlayArrow from "@mui/icons-material/PlayArrow";
 import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
+import Shuffle from "@mui/icons-material/Shuffle";
+import History from "@mui/icons-material/History";
 import { api, FavoriteTrackInfo, PlayerState, TrackInfo, VoiceChannel } from "../api";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -99,7 +101,8 @@ export function PlayerPage() {
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
-  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [queueView, setQueueView] = useState<"next" | "recent">("next");
   const [favorites, setFavorites] = useState<FavoriteTrackInfo[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -546,10 +549,46 @@ export function PlayerPage() {
           )}
           <Card>
             <CardContent>
-              <Stack direction="row" sx={{ alignItems: "center", mb: 1 }}>
-                <Typography variant="h6" sx={{ flex: 1 }}>
+              <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
+                <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }}>
                   Queue ({state?.queue.length ?? 0})
                 </Typography>
+                {/* MD3 segmented button: the view of the queue card. */}
+                <Box
+                  sx={{
+                    display: "inline-flex",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 999,
+                    overflow: "hidden",
+                  }}
+                >
+                  <Button
+                    size="small"
+                    variant={queueView === "next" ? "tonal" : "text"}
+                    onClick={() => setQueueView("next")}
+                    sx={{ borderRadius: 999, minWidth: 0, px: 1.5 }}
+                  >
+                    Up next
+                  </Button>
+                  <Button
+                    size="small"
+                    variant={queueView === "recent" ? "tonal" : "text"}
+                    onClick={() => setQueueView("recent")}
+                    sx={{ borderRadius: 999, minWidth: 0, px: 1.5 }}
+                  >
+                    Recent
+                  </Button>
+                </Box>
+                <Button
+                  size="small"
+                  variant="tonal"
+                  startIcon={<Shuffle />}
+                  disabled={!state?.queue.length}
+                  onClick={() => act(() => api.shuffleQueue(gid), "Queue shuffled")}
+                >
+                  Shuffle
+                </Button>
                 <Button
                   size="small"
                   variant="tonal"
@@ -559,56 +598,124 @@ export function PlayerPage() {
                   Clear
                 </Button>
               </Stack>
-              {state && state.queue.length > 0 ? (
+              {queueView === "next" ? (
+                state && state.queue.length > 0 ? (
+                  <List disablePadding>
+                    {state.queue.map((t, i) => (
+                      <ListItem
+                        key={i}
+                        disableGutters
+                        dense
+                        onClick={() => act(() => api.jumpQueued(gid, i), `Now playing: ${t.title}`)}
+                        sx={{
+                          cursor: "pointer",
+                          borderRadius: 1,
+                          "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                        }}
+                        onMouseEnter={() => setHoveredRow(`q${i}`)}
+                        onMouseLeave={() => setHoveredRow((h) => (h === `q${i}` ? null : h))}
+                        secondaryAction={
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              // Row actions appear on hover; touch devices have
+                              // no hover, so they stay visible there.
+                              visibility: hoveredRow === `q${i}` ? "visible" : "hidden",
+                              ["@media (hover: none)"]: { visibility: "visible" },
+                            }}
+                          >
+                            <IconButton
+                              size="small"
+                              disabled={i === 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                act(() => api.moveQueued(gid, i, i - 1));
+                              }}
+                              sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
+                            >
+                              <KeyboardArrowUp fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              disabled={i === state.queue.length - 1}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                act(() => api.moveQueued(gid, i, i + 1));
+                              }}
+                              sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
+                            >
+                              <KeyboardArrowDown fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                act(() => api.removeQueued(gid, i));
+                              }}
+                              sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#4A3038", color: "error.main" }, ml: 0.25 }}
+                            >
+                              <DeleteOutlined fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        }
+                      >
+                        <ListItemAvatar sx={{ minWidth: 36 }}>
+                          <Typography variant="body2" sx={{ color: "text.secondary", textAlign: "center" }}>
+                            {i + 1}
+                          </Typography>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={t.title}
+                          secondary={[SOURCE_LABELS[t.source ?? ""] ?? "", t.requested_by].filter(Boolean).join(" · ")}
+                          slotProps={{
+                            primary: { noWrap: true },
+                            secondary: { noWrap: true },
+                          }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                ) : (
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Queue is empty. Add something above.
+                  </Typography>
+                )
+              ) : state && state.played.length > 0 ? (
                 <List disablePadding>
-                  {state.queue.map((t, i) => (
+                  {state.played.map((t, i) => (
                     <ListItem
-                      key={i}
+                      key={`r${i}`}
                       disableGutters
                       dense
-                      onMouseEnter={() => setHoveredRow(i)}
-                      onMouseLeave={() => setHoveredRow((h) => (h === i ? null : h))}
+                      onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
+                      sx={{
+                        cursor: "pointer",
+                        borderRadius: 1,
+                        "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                      }}
+                      onMouseEnter={() => setHoveredRow(`r${i}`)}
+                      onMouseLeave={() => setHoveredRow((h) => (h === `r${i}` ? null : h))}
                       secondaryAction={
-                        <Box
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`);
+                          }}
                           sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            // Row actions appear on hover; touch devices have
-                            // no hover, so they stay visible there.
-                            visibility: hoveredRow === i ? "visible" : "hidden",
+                            bgcolor: "#313038",
+                            "&:hover": { bgcolor: "#3D3847" },
+                            visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
                             ["@media (hover: none)"]: { visibility: "visible" },
                           }}
                         >
-                          <IconButton
-                            size="small"
-                            disabled={i === 0}
-                            onClick={() => act(() => api.moveQueued(gid, i, i - 1))}
-                            sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
-                          >
-                            <KeyboardArrowUp fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            disabled={i === state.queue.length - 1}
-                            onClick={() => act(() => api.moveQueued(gid, i, i + 1))}
-                            sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
-                          >
-                            <KeyboardArrowDown fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => act(() => api.removeQueued(gid, i))}
-                            sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#4A3038", color: "error.main" }, ml: 0.25 }}
-                          >
-                            <DeleteOutlined fontSize="small" />
-                          </IconButton>
-                        </Box>
+                          <PlayArrow fontSize="small" />
+                        </IconButton>
                       }
                     >
                       <ListItemAvatar sx={{ minWidth: 36 }}>
-                        <Typography variant="body2" sx={{ color: "text.secondary", textAlign: "center" }}>
-                          {i + 1}
-                        </Typography>
+                        <History fontSize="small" sx={{ color: "text.secondary" }} />
                       </ListItemAvatar>
                       <ListItemText
                         primary={t.title}
@@ -623,7 +730,7 @@ export function PlayerPage() {
                 </List>
               ) : (
                 <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                  Queue is empty. Add something above.
+                  Nothing played yet in this session.
                 </Typography>
               )}
             </CardContent>
@@ -638,6 +745,7 @@ export function PlayerPage() {
         onVolumeChange={(v) => setVolume(v)}
         onVolumeCommit={(v) => act(() => api.volume(gid, v))}
         onPauseToggle={() => act(() => api.simpleAction(gid, state?.current?.paused ? "resume" : "pause"))}
+        onPrevious={() => act(() => api.simpleAction(gid, "previous"), "Playing the previous track")}
         onSkip={() => act(() => api.simpleAction(gid, "skip"))}
         onStop={() => act(() => api.simpleAction(gid, "stop"), "Stopped, queue cleared")}
         onSeek={(p) => act(() => api.seek(gid, p))}

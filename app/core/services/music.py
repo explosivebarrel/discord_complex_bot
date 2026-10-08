@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 VOLUME_MIN, VOLUME_MAX = 0, 1000
 PLAYLIST_LIMIT = 100
+PLAYED_LIMIT = 20
 
 
 @dataclass
@@ -83,6 +85,9 @@ class MusicService:
         self.config = config
         self.queues: dict[int, deque[QueueItem]] = {}
         self.current_items: dict[int, QueueItem] = {}
+        # Session history per guild, oldest last. The Previous button and the
+        # Recent queue view read from it.
+        self.played: dict[int, deque[QueueItem]] = {}
         # Repeat mode per guild: "off", "one" or "all".
         self.repeat_modes: dict[int, str] = {}
         # Raw Lavalink payloads of recent search results, keyed by encoded track.
@@ -114,6 +119,29 @@ class MusicService:
         if guild_id not in self.queues:
             self.queues[guild_id] = deque()
         return self.queues[guild_id]
+
+    def _played(self, guild_id: int) -> deque[QueueItem]:
+        played = self.played.get(guild_id)
+        if played is None:
+            played = deque(maxlen=PLAYED_LIMIT)
+            self.played[guild_id] = played
+        return played
+
+    @staticmethod
+    def _for_replay(item: QueueItem) -> QueueItem:
+        """Prepare a history entry for another play.
+
+        A resolved yt/sc stream URL expires after a few hours (and live
+        streams refuse a second run at once). The page URL still resolves,
+        so replay rebuilds the stream from it. Items without a URL (search
+        results on other sources, radio) replay their stored track.
+        """
+        if item.track is not None:
+            if not item.pending_url and item.source in ("yt", "sc") and item.track.uri:
+                item.pending_url = item.track.uri
+            if item.pending_url:
+                item.track = None
+        return item
 
     # --- connection ---
 
@@ -592,6 +620,10 @@ class MusicService:
                 self.current_items.pop(guild_id, None)
                 return None
             queue.append(station)
+        if current is not None and current.track is not None:
+            # The outgoing track enters the session history for Previous/Recent.
+            # A dead pending item (track is None, recursion) must not enter it.
+            self._played(guild_id).append(current)
         item = queue.popleft()
         self.current_items[guild_id] = item
         try:
@@ -707,6 +739,14 @@ class MusicService:
         queue.insert(to_index, item)
         return item.display_title
 
+    def shuffle_queue(self, guild_id: int) -> int:
+        queue = self._queue(guild_id)
+        items = list(queue)
+        random.shuffle(items)
+        queue.clear()
+        queue.extend(items)
+        return len(items)
+
     async def skip(self, guild_id: int, requester_id: int) -> bool:
         player = self._require_player(guild_id)
         if not player.playing:
@@ -714,6 +754,62 @@ class MusicService:
         await player.stop()  # The TrackEnd listener starts the next queued item.
         await self.db.audit("music.skip", guild_id=guild_id, actor_id=requester_id)
         return True
+
+    async def previous(self, guild_id: int, requester_id: int) -> str:
+        """Replay the last history entry; the current track returns to the queue front."""
+        self._require_player(guild_id)
+        played = self._played(guild_id)
+        if not played:
+            raise MusicServiceError("Nothing was played yet.")
+        item = self._for_replay(played.pop())
+        current = self.current_items.get(guild_id)
+        if current is not None and current.track is not None:
+            self._queue(guild_id).appendleft(current)
+        self.current_items[guild_id] = item
+        # A direct play: the old track ends with reason "replaced" and the
+        # auto-advance listener ignores it.
+        await self._play_item(guild_id, item)
+        await self.db.audit("music.previous", guild_id=guild_id, actor_id=requester_id)
+        return item.display_title
+
+    async def replay_played(self, guild_id: int, position: int, requester_id: int) -> str:
+        """Play a session history entry. Position 0 is the most recent track."""
+        self._require_player(guild_id)
+        played = self._played(guild_id)
+        if position < 0 or position >= len(played):
+            raise MusicServiceError("That history entry does not exist.")
+        # Take the target out first: the interrupted current track joins the
+        # history afterwards and must not shift the position.
+        item = self._for_replay(played[len(played) - 1 - position])
+        del played[len(played) - 1 - position]
+        current = self.current_items.get(guild_id)
+        if current is not None and current.track is not None:
+            self._played(guild_id).append(current)
+        self.current_items[guild_id] = item
+        await self._play_item(guild_id, item)
+        await self.db.audit(
+            "music.replay", guild_id=guild_id, actor_id=requester_id, details={"position": position}
+        )
+        return item.display_title
+
+    async def jump_to(self, guild_id: int, index: int, requester_id: int) -> str:
+        """Start a queued track now. The tracks jumped over enter the history."""
+        self._require_player(guild_id)
+        queue = self._queue(guild_id)
+        if index < 0 or index >= len(queue):
+            raise MusicServiceError("That queue position does not exist.")
+        current = self.current_items.get(guild_id)
+        if current is not None and current.track is not None:
+            self._played(guild_id).append(current)
+        for _ in range(index):
+            self._played(guild_id).append(queue.popleft())
+        item = queue.popleft()
+        self.current_items[guild_id] = item
+        await self._play_item(guild_id, item)
+        await self.db.audit(
+            "music.jump", guild_id=guild_id, actor_id=requester_id, details={"index": index}
+        )
+        return item.display_title
 
     async def stop(self, guild_id: int, requester_id: int) -> None:
         player = self._require_player(guild_id)
@@ -770,4 +866,6 @@ class MusicService:
             "repeat": self.repeat_modes.get(guild_id, "off"),
             "current": current,
             "queue": [item.to_dict() for item in queue],
+            # Newest first, for the Recent view of the queue panel.
+            "played": [item.to_dict() for item in reversed(self._played(guild_id))],
         }

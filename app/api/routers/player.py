@@ -58,6 +58,14 @@ class MoveBody(BaseModel):
     to_index: int = Field(alias="to")
 
 
+class JumpBody(BaseModel):
+    index: int
+
+
+class ReplayBody(BaseModel):
+    position: int
+
+
 @router.get("/state")
 async def player_state(
     guild_id: int,
@@ -259,6 +267,20 @@ async def stop(
     return {"stopped": True}
 
 
+@router.post("/previous")
+async def previous(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = await music.previous(guild_id, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"previous": title}
+
+
 @router.post("/volume")
 async def volume(
     guild_id: int,
@@ -313,6 +335,50 @@ async def clear_queue(
         "music.queue_clear", guild_id=guild_id, actor_id=user.discord_id, details={"cleared": cleared}
     )
     return {"cleared": cleared}
+
+
+@router.post("/queue/shuffle")
+async def shuffle_queue(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    shuffled = music.shuffle_queue(guild_id)
+    await db.audit(
+        "music.queue_shuffle", guild_id=guild_id, actor_id=user.discord_id, details={"shuffled": shuffled}
+    )
+    return {"shuffled": shuffled}
+
+
+@router.post("/queue/jump")
+async def jump_queued(
+    guild_id: int,
+    body: JumpBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = await music.jump_to(guild_id, body.index, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"jumped": title}
+
+
+@router.post("/played/replay")
+async def replay_played(
+    guild_id: int,
+    body: ReplayBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = await music.replay_played(guild_id, body.position, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"playing": title}
 
 
 @router.delete("/queue/{index}")

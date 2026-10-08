@@ -3,6 +3,7 @@ import { Box, Chip, CircularProgress, IconButton, LinearProgress, Slider, Toolti
 import Pause from "@mui/icons-material/Pause";
 import PlayArrow from "@mui/icons-material/PlayArrow";
 import SkipNext from "@mui/icons-material/SkipNext";
+import SkipPrevious from "@mui/icons-material/SkipPrevious";
 import Stop from "@mui/icons-material/Stop";
 import Repeat from "@mui/icons-material/Repeat";
 import RepeatOne from "@mui/icons-material/RepeatOne";
@@ -24,6 +25,7 @@ export function PlayerBar({
   onVolumeChange,
   onVolumeCommit,
   onPauseToggle,
+  onPrevious,
   onSkip,
   onStop,
   onSeek,
@@ -34,6 +36,7 @@ export function PlayerBar({
   onVolumeChange: (v: number) => void;
   onVolumeCommit: (v: number) => void;
   onPauseToggle: () => void;
+  onPrevious: () => void;
   onSkip: () => void;
   onStop: () => void;
   onSeek: (positionMs: number) => void;
@@ -43,6 +46,7 @@ export function PlayerBar({
   const paused = !!current?.paused;
   const isLive = !!current && current.length >= LIVE_LENGTH;
   const isLoading = !!current?.loading;
+  const hasHistory = (state?.played?.length ?? 0) > 0;
   const repeat = state?.repeat ?? "off";
   const [livePos, setLivePos] = useState(0);
 
@@ -149,6 +153,13 @@ export function PlayerBar({
               sx={{ bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.main" } }}
             >
               {paused ? <PlayArrow /> : <Pause />}
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="Previous track">
+          <span>
+            <IconButton disabled={isLoading || !hasHistory} onClick={onPrevious}>
+              <SkipPrevious />
             </IconButton>
           </span>
         </Tooltip>
