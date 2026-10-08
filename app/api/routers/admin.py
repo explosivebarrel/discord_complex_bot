@@ -6,13 +6,22 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUser, get_bot, get_current_user, get_db, require_guild_admin
+from app.api.deps import (
+    CurrentUser,
+    get_bot,
+    get_current_user,
+    get_db,
+    require_guild_admin,
+    require_section_access,
+)
 from app.core.db import Database
 
 if TYPE_CHECKING:
     from app.bot.client import ComplexBot
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+stats_section = require_section_access("stats")
 
 
 class UpdateSettingsBody(BaseModel):
@@ -106,7 +115,7 @@ async def update_settings(
 @router.get("/guilds/{guild_id}/stats")
 async def guild_stats(
     guild_id: int,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(stats_section),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     """Playback statistics for the stats page of the web panel."""

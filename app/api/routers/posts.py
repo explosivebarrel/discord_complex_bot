@@ -6,7 +6,7 @@ import discord
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUser, get_bot, get_db, require_guild_admin
+from app.api.deps import CurrentUser, get_bot, get_db, require_section_access
 from app.bot.cogs.posts import PostsError, publish_post
 from app.core.db import Database
 from app.core.services.directory import collect_known_users
@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 router = APIRouter(prefix="/api/guilds/{guild_id}/posts", tags=["posts"])
 
+posts_section = require_section_access("posts")
+
 
 class PostBody(BaseModel):
     channel_id: int
@@ -28,7 +30,7 @@ class PostBody(BaseModel):
 @router.get("/channels")
 async def post_channels(
     guild_id: int,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(posts_section),
     bot: ComplexBot = Depends(get_bot),
 ) -> list[dict[str, Any]]:
     guild = bot.get_guild(guild_id)
@@ -46,7 +48,7 @@ async def post_channels(
 @router.get("/composer")
 async def composer_data(
     guild_id: int,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(posts_section),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
@@ -91,7 +93,7 @@ async def composer_data(
 async def create_post(
     guild_id: int,
     body: PostBody,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(posts_section),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
