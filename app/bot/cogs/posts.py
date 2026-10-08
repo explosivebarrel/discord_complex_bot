@@ -46,7 +46,9 @@ class PostsCog(commands.Cog):
     def __init__(self, bot: ComplexBot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="post", description="Create a post: a thread in forum channels or a message in text channels")
+    @app_commands.command(
+        name="post", description="Create a post: a thread in forum channels or a message in text channels"
+    )
     @app_commands.describe(
         channel="Target channel (forum channels create a thread with a title)",
         text="Post text",
@@ -79,7 +81,9 @@ class PostsCog(commands.Cog):
     @app_commands.describe(text="Announcement text", title="Announcement title")
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
-    async def announce(self, interaction: discord.Interaction, text: str, title: str = "Announcement") -> None:
+    async def announce(
+        self, interaction: discord.Interaction, text: str, title: str = "Announcement"
+    ) -> None:
         embed = discord.Embed(title=title, description=text, color=discord.Color.from_str("#D0BCFF"))
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
         await interaction.response.send_message(embed=embed)

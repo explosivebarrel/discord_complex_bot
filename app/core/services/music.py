@@ -4,8 +4,8 @@ import asyncio
 import json
 import logging
 from collections import deque
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -615,7 +615,9 @@ class MusicService:
             except wavelink.LavalinkLoadException as exc:
                 last_error = exc
                 await asyncio.sleep(0.8 * (attempt + 1))
-        raise MusicServiceError("Lavalink failed to load that playlist. Try again in a moment.") from last_error
+        raise MusicServiceError(
+            "Lavalink failed to load that playlist. Try again in a moment."
+        ) from last_error
 
     async def _autoplay_station(self, guild_id: int) -> QueueItem | None:
         """The first playable radio station for the guild autoplay setting.

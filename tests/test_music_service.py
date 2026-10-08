@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import pytest
 from collections import deque
 
-from app.core.services.music import MusicServiceError, QueueItem
+import pytest
+
+from app.core.services.music import MusicService, MusicServiceError, QueueItem
 
 from .conftest import GUILD_ID, FakePlayer, fill_queue, make_track
 

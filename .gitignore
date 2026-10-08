@@ -42,4 +42,5 @@ dist/
 
 # ZCode session files
 .zcode/
+.zcodeignore
 web/tsconfig.tsbuildinfo

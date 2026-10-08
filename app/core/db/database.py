@@ -245,7 +245,11 @@ class Database:
             unique = await session.scalar(
                 select(func.count(func.distinct(PlayHistory.title))).where(PlayHistory.guild_id == guild_id)
             )
-            return {"plays_total": int(total_all or 0), "plays_30d": int(recent or 0), "unique_tracks": int(unique or 0)}
+            return {
+                "plays_total": int(total_all or 0),
+                "plays_30d": int(recent or 0),
+                "unique_tracks": int(unique or 0),
+            }
 
     # --- panel users ---
 
@@ -264,7 +268,9 @@ class Database:
                     WebSession.avatar,
                     func.max(WebSession.created_at).label("last_seen"),
                 )
-                .group_by(WebSession.discord_id, WebSession.username, WebSession.global_name, WebSession.avatar)
+                .group_by(
+                    WebSession.discord_id, WebSession.username, WebSession.global_name, WebSession.avatar
+                )
                 .order_by(func.max(WebSession.created_at).desc())
                 .limit(limit)
             )
@@ -302,7 +308,17 @@ class Database:
                 for row in result.scalars()
             ]
 
-    async def add_favorite(self, user_id: int, *, title: str, author: str, uri: str, source: str, length_ms: int, artwork: str | None) -> int:
+    async def add_favorite(
+        self,
+        user_id: int,
+        *,
+        title: str,
+        author: str,
+        uri: str,
+        source: str,
+        length_ms: int,
+        artwork: str | None,
+    ) -> int:
         async with self.session_factory() as session:
             existing = await session.execute(
                 select(FavoriteTrack).where(FavoriteTrack.user_id == user_id, FavoriteTrack.uri == uri)

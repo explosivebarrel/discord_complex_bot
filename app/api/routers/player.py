@@ -309,7 +309,9 @@ async def clear_queue(
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     cleared = music.clear_queue(guild_id)
-    await db.audit("music.queue_clear", guild_id=guild_id, actor_id=user.discord_id, details={"cleared": cleared})
+    await db.audit(
+        "music.queue_clear", guild_id=guild_id, actor_id=user.discord_id, details={"cleared": cleared}
+    )
     return {"cleared": cleared}
 
 
@@ -326,7 +328,10 @@ async def remove_queued(
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await db.audit(
-        "music.queue_remove", guild_id=guild_id, actor_id=user.discord_id, details={"index": index, "title": title}
+        "music.queue_remove",
+        guild_id=guild_id,
+        actor_id=user.discord_id,
+        details={"index": index, "title": title},
     )
     return {"removed": title}
 
