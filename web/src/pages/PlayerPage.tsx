@@ -892,7 +892,14 @@ export function PlayerPage() {
                             key={`pl${i}`}
                             disableGutters
                             dense
-                            onClick={() => t.playlist_id && openPlaylistPage(t.playlist_id, 0, "")}
+                            onClick={() => {
+                            setPlaylistBusy(true);
+                            api
+                              .openQueuedPlaylist(gid, i)
+                              .then(setPlaylist)
+                              .catch(guard)
+                              .finally(() => setPlaylistBusy(false));
+                          }}
                             sx={{
                               cursor: "pointer",
                               borderRadius: 1,

@@ -12,9 +12,9 @@ share the same session history mechanism.
 - Add an **Up next / Recent** view switch to the queue panel. The Recent view
   shows the current track and the last played tracks with the requester name
   and time. A click on a recent track plays it again.
-- **Jump to track**: a click on a queued track starts it now. The interrupted
-  current track moves to the played stack, the tail of the queue stays in
-  place. This reuses the skip mechanism (`jump_to(index)` in the service).
+- **Jump to track**: a click on a queued track starts it now. The chosen
+  track leaves the queue, the rest of the queue keeps its order, and the
+  interrupted current track moves to the played stack.
 - Add a **Shuffle** button next to Clear: shuffle the rest of the queue.
 - The autoplay radio never blocks the queue (a new enqueue replaces it at
   once) and never enters the session history.
@@ -44,7 +44,10 @@ For "add all" on a large playlist (1500+ tracks):
 - A "load more" marker at the end of the queue pulls the next window when
   the auto-advance reaches it; an expired session drops the marker quietly.
 - The queue shows the marker as a collapsed row "N more tracks"; a click on
-  it reopens the playlist browser. Shuffle keeps the marker at the tail.
+  it reopens the playlist browser (an expired session is re-read from the
+  link stored in the marker and the marker is rebound). The marker expands
+  in place, so tracks queued after it keep their order. Shuffle keeps the
+  marker at the tail.
 
 ## 4. Personal playlists (shipped)
 

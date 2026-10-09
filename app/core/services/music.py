@@ -54,8 +54,12 @@ class QueueItem:
     # the queue: they are placeholders the real tracks replace at once.
     is_autoplay: bool = False
     # A lazy "load more" marker for a big playlist: (session id, next index).
-    # Popping it pulls the next window of the playlist into the queue.
+    # Popping it pulls the next window of the playlist into the queue. The
+    # link and source let the panel reopen the playlist after the session
+    # expires.
     more_from_playlist: tuple[int, int] | None = None
+    playlist_url: str = ""
+    playlist_source: str = ""
 
     @property
     def display_title(self) -> str:
@@ -84,6 +88,8 @@ class QueueItem:
         if self.more_from_playlist is not None:
             base["source"] = "playlist"
             base["playlist_id"] = self.more_from_playlist[0]
+            base["playlist_url"] = self.playlist_url
+            base["playlist_source"] = self.playlist_source
         return base
 
 
@@ -683,15 +689,20 @@ class MusicService:
                 # The playlist session expired; drop the marker and move on.
                 self.current_items[guild_id] = item
                 return await self.play_next(guild_id, reason)
-            queue.extend(window)
+            # Splice the window where the marker stood: tracks queued after it
+            # keep their order, the new marker follows its own window.
+            queue.extendleft(list(reversed(window)))
             if next_index is not None:
                 session = self.playlist_sessions.get(item.more_from_playlist[0])
                 left = (len(session.entries) - next_index) if session else 0
-                queue.append(
+                queue.insert(
+                    len(window),
                     self._playlist_marker(
                         item.more_from_playlist[0], next_index, left,
                         item.requested_by_id, item.requested_by_name,
-                    )
+                        url=session.url if session else item.playlist_url,
+                        source=session.source if session else item.playlist_source,
+                    ),
                 )
             item = queue.popleft()
         self.current_items[guild_id] = item
@@ -944,7 +955,14 @@ class MusicService:
         )
 
     def _playlist_marker(
-        self, playlist_id: int, next_index: int, remaining: int, requester_id: int, requester_name: str
+        self,
+        playlist_id: int,
+        next_index: int,
+        remaining: int,
+        requester_id: int,
+        requester_name: str,
+        url: str = "",
+        source: str = "",
     ) -> QueueItem:
         return QueueItem(
             track=None,
@@ -953,6 +971,8 @@ class MusicService:
             source="playlist",
             title=f"{remaining} more tracks",
             more_from_playlist=(playlist_id, next_index),
+            playlist_url=url,
+            playlist_source=source,
         )
 
     def _expand_marker(self, marker: QueueItem) -> tuple[list[QueueItem], int | None]:
@@ -1016,7 +1036,10 @@ class MusicService:
         remaining = len(session.entries) - len(window)
         if next_index is not None:
             queue.append(
-                self._playlist_marker(session.id, next_index, remaining, requester_id, requester_name)
+                self._playlist_marker(
+                    session.id, next_index, remaining, requester_id, requester_name,
+                    url=session.url, source=session.source,
+                )
             )
         if was_idle and player is not None:
             first = queue.popleft()
@@ -1134,47 +1157,62 @@ class MusicService:
         return item.display_title
 
     async def jump_to(self, guild_id: int, index: int, requester_id: int) -> str:
-        """Start a queued track now. The tracks jumped over are dropped;
-        only the interrupted current track enters the history."""
+        """Start a queued track now. The chosen track leaves the queue, the
+        rest of the queue keeps its order; only the interrupted current track
+        enters the session history."""
         self._require_player(guild_id)
         queue = self._queue(guild_id)
         if index < 0 or index >= len(queue):
             raise MusicServiceError("That queue position does not exist.")
+        item = queue[index]
+        if item.more_from_playlist is not None:
+            raise MusicServiceError("Open the playlist browser to pick a track from it.")
+        del queue[index]
         current = self.current_items.get(guild_id)
         if current is not None and current.track is not None and not current.is_autoplay:
             self._played(guild_id).append(current)
-        # Count real tracks only; a lazy playlist marker expands in place.
-        skipped = 0
-        while True:
-            if not queue:
-                raise MusicServiceError("That queue position does not exist.")
-            candidate = queue[0]
-            if candidate.more_from_playlist is not None:
-                queue.popleft()
-                window, next_index = self._expand_marker(candidate)
-                if window:
-                    queue.extendleft(list(reversed(window)))
-                    if next_index is not None:
-                        session = self.playlist_sessions.get(candidate.more_from_playlist[0])
-                        left = (len(session.entries) - next_index) if session else 0
-                        queue.append(
-                            self._playlist_marker(
-                                candidate.more_from_playlist[0], next_index, left,
-                                candidate.requested_by_id, candidate.requested_by_name,
-                            )
-                        )
-                continue
-            if skipped == index:
-                break
-            queue.popleft()
-            skipped += 1
-        item = queue.popleft()
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(
             "music.jump", guild_id=guild_id, actor_id=requester_id, details={"index": index}
         )
         return item.display_title
+
+    async def open_queue_playlist(self, guild_id: int, index: int, requester_id: int) -> dict[str, Any]:
+        """Open the browser for a lazy playlist marker row.
+
+        A live session answers from the cache. An expired one is re-read from
+        its stored link and the marker is rebound to the fresh session.
+        """
+        queue = self._queue(guild_id)
+        if index < 0 or index >= len(queue):
+            raise MusicServiceError("That queue position does not exist.")
+        marker = queue[index]
+        if marker.more_from_playlist is None:
+            raise MusicServiceError("That entry is not a playlist marker.")
+        session = self.playlist_sessions.get(marker.more_from_playlist[0])
+        if session is not None and not session.expired():
+            return self.playlist_page(session.id, 0)
+        if not marker.playlist_url:
+            raise MusicServiceError("This playlist preview has expired. Open the link again.")
+        fresh = await self.open_playlist(marker.playlist_url, marker.playlist_source or "yt")
+        next_index = marker.more_from_playlist[1]
+        queue[index] = self._playlist_marker(
+            fresh.id,
+            next_index,
+            max(0, len(fresh.entries) - next_index),
+            marker.requested_by_id,
+            marker.requested_by_name,
+            url=fresh.url,
+            source=fresh.source,
+        )
+        await self.db.audit(
+            "music.playlist_reopen",
+            guild_id=guild_id,
+            actor_id=requester_id,
+            details={"playlist": fresh.title, "remaining": len(fresh.entries) - next_index},
+        )
+        return self.playlist_page(fresh.id, 0)
 
     async def stop(self, guild_id: int, requester_id: int) -> None:
         player = self._require_player(guild_id)

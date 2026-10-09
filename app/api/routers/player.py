@@ -571,6 +571,21 @@ async def replay_played(
     return {"playing": title}
 
 
+@router.post("/queue/{index}/open")
+async def open_queued_playlist(
+    guild_id: int,
+    index: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Open the browser for a lazy playlist marker; re-read it if expired."""
+    try:
+        return await music.open_queue_playlist(guild_id, index, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.delete("/queue/{index}")
 async def remove_queued(
     guild_id: int,

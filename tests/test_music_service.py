@@ -317,7 +317,7 @@ async def test_previous_without_history_fails(music: MusicService) -> None:
         await music.previous(GUILD_ID, 1)
 
 
-async def test_jump_to_plays_target_and_drops_skipped(music: MusicService) -> None:
+async def test_jump_to_keeps_the_queue_order(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
     music.current_items[GUILD_ID] = QueueItem(make_track("playing"), 1, "u")
@@ -326,12 +326,80 @@ async def test_jump_to_plays_target_and_drops_skipped(music: MusicService) -> No
     assert await music.jump_to(GUILD_ID, 1, 1) == "b"
 
     assert player.played == ["b"]
-    assert [i.track.title for i in music.queues[GUILD_ID]] == ["c"]
-    # Only the interrupted current track enters the history; the jumped-over
-    # "a" never played, so it stays out of Recent.
+    # The chosen track leaves the queue, everything else keeps its order.
+    assert [i.track.title for i in music.queues[GUILD_ID]] == ["a", "c"]
     assert [i.track.title for i in music.played[GUILD_ID]] == ["playing"]
     with pytest.raises(MusicServiceError):
         await music.jump_to(GUILD_ID, 9, 1)
+
+
+async def test_marker_expansion_keeps_later_queue_tracks_in_place(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    session = _make_session(music, 150)
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="50 more tracks", more_from_playlist=(session.id, 100),
+        playlist_url=session.url, playlist_source="yt",
+    )
+    fill_queue(music, ["last"])
+    music.queues[GUILD_ID].append(marker)
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    music.current_items[GUILD_ID] = QueueItem(make_track("current"), 1, "u")
+    await music.play_next(GUILD_ID, "finished")  # "last" plays now
+    await music.play_next(GUILD_ID, "finished")  # marker expands, track 100 plays
+
+    titles = [i.display_title for i in music.queues[GUILD_ID]]
+    assert titles == [f"track {i}" for i in range(101, 150)]
+    # The queue tail was not lost and not reordered.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["current", "last"]
+    assert player.played == ["last", "track 100"]
+
+
+async def test_open_queue_playlist_rebinds_expired_session(music: MusicService) -> None:
+    music.get_player = lambda _gid: FakePlayer()  # type: ignore[method-assign]
+    session = _make_session(music, 120)
+    session.created = time.monotonic() - 901.0
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="20 more tracks", more_from_playlist=(session.id, 100),
+        playlist_url="https://example.com/pl", playlist_source="yt",
+    )
+    music.queues[GUILD_ID] = deque([marker])
+
+    fresh = PlaylistSession(
+        id=9, title="Test playlist", source="yt", url="https://example.com/pl",
+        entries=session.entries, created=time.monotonic(),
+    )
+
+    async def fake_open(query: str, source: str):
+        music.playlist_sessions[fresh.id] = fresh
+        return fresh
+
+    music.open_playlist = fake_open  # type: ignore[method-assign]
+    page = await music.open_queue_playlist(GUILD_ID, 0, 1)
+
+    assert page["id"] == 9 and page["total"] == 120
+    # The marker now points at the fresh session.
+    assert music.queues[GUILD_ID][0].more_from_playlist == (9, 100)
+    assert music.queues[GUILD_ID][0].display_title == "20 more tracks"
+
+
+async def test_open_queue_playlist_alive_session_answers_from_cache(music: MusicService) -> None:
+    session = _make_session(music, 30)
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="30 more tracks", more_from_playlist=(session.id, 0),
+        playlist_url=session.url, playlist_source="yt",
+    )
+    music.queues[GUILD_ID] = deque([marker])
+
+    page = await music.open_queue_playlist(GUILD_ID, 0, 1)
+    assert page["id"] == session.id and page["total"] == 30
 
 
 async def test_enqueue_interrupts_autoplay_radio(music: MusicService) -> None:
