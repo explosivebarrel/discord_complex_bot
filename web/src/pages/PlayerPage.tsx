@@ -341,7 +341,7 @@ export function PlayerPage() {
               <Typography variant="h6" gutterBottom>
                 Add music
               </Typography>
-              <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", mb: 2, rowGap: 1 }}>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 2, rowGap: 1 }}>
                 {SOURCES.map((s) => (
                   <Chip
                     key={s.id}
@@ -358,7 +358,7 @@ export function PlayerPage() {
                 ))}
               </Stack>
               {source === "radio" && (
-                <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", mb: 1.5, rowGap: 1 }}>
+                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 1.5, rowGap: 1 }}>
                   {RADIO_PRESETS.map((preset) => (
                     <Chip
                       key={preset}
@@ -880,7 +880,7 @@ export function PlayerPage() {
           )}
           <Card>
             <CardContent>
-              <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
                 <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }}>
                   Queue ({state?.queue.length ?? 0})
                 </Typography>

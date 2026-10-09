@@ -157,7 +157,7 @@ export function PlaylistBrowser({
             </Typography>
           )}
         </List>
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
           <Button
             size="small"
             variant="tonal"
@@ -178,7 +178,7 @@ export function PlaylistBrowser({
             Next
           </Button>
         </Stack>
-        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
           <Button
             size="small"
             variant="tonal"
