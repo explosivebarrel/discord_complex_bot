@@ -571,17 +571,17 @@ async def replay_played(
     return {"playing": title}
 
 
-@router.post("/queue/{index}/open")
-async def open_queued_playlist(
+@router.post("/queue/{index}/expand")
+async def expand_queued_playlist(
     guild_id: int,
     index: int,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
-    """Open the browser for a lazy playlist marker; re-read it if expired."""
+    """Splice the next page of a lazy playlist into the queue above the marker."""
     try:
-        return await music.open_queue_playlist(guild_id, index, user.discord_id)
+        return await music.expand_queue_playlist(guild_id, index, user.discord_id)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -360,7 +360,46 @@ async def test_marker_expansion_keeps_later_queue_tracks_in_place(music: MusicSe
     assert player.played == ["last", "track 100"]
 
 
-async def test_open_queue_playlist_rebinds_expired_session(music: MusicService) -> None:
+async def test_expand_splices_page_above_marker_and_keeps_order(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    session = _make_session(music, 120)
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="20 more tracks", more_from_playlist=(session.id, 100),
+        playlist_url=session.url, playlist_source="yt",
+    )
+    fill_queue(music, ["last"])
+    music.queues[GUILD_ID].append(marker)
+
+    result = await music.expand_queue_playlist(GUILD_ID, 1, 1)
+
+    # Only 20 entries remain, so the page is short and the marker is gone.
+    assert result == {"expanded": 20, "remaining": 0, "total": 120}
+    titles = [i.display_title for i in music.queues[GUILD_ID]]
+    # "last" sat before the marker and stays in front of the spliced page.
+    assert titles == ["last"] + [f"track {i}" for i in range(100, 120)]
+
+
+async def test_expand_keeps_the_marker_while_tracks_remain(music: MusicService) -> None:
+    session = _make_session(music, 120)
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="120 more tracks", more_from_playlist=(session.id, 0),
+        playlist_url=session.url, playlist_source="yt",
+    )
+    music.queues[GUILD_ID] = deque([marker])
+
+    result = await music.expand_queue_playlist(GUILD_ID, 0, 1)
+
+    assert result == {"expanded": 50, "remaining": 70, "total": 120}
+    queue = music.queues[GUILD_ID]
+    assert [i.display_title for i in queue][:50] == [f"track {i}" for i in range(50)]
+    assert queue[50].more_from_playlist == (session.id, 50)
+    assert queue[50].display_title == "70 more tracks"
+
+
+async def test_expand_rebinds_expired_session(music: MusicService) -> None:
     music.get_player = lambda _gid: FakePlayer()  # type: ignore[method-assign]
     session = _make_session(music, 120)
     session.created = time.monotonic() - 901.0
@@ -381,25 +420,12 @@ async def test_open_queue_playlist_rebinds_expired_session(music: MusicService) 
         return fresh
 
     music.open_playlist = fake_open  # type: ignore[method-assign]
-    page = await music.open_queue_playlist(GUILD_ID, 0, 1)
+    result = await music.expand_queue_playlist(GUILD_ID, 0, 1)
 
-    assert page["id"] == 9 and page["total"] == 120
-    # The marker now points at the fresh session.
-    assert music.queues[GUILD_ID][0].more_from_playlist == (9, 100)
-    assert music.queues[GUILD_ID][0].display_title == "20 more tracks"
-
-
-async def test_open_queue_playlist_alive_session_answers_from_cache(music: MusicService) -> None:
-    session = _make_session(music, 30)
-    marker = QueueItem(
-        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
-        title="30 more tracks", more_from_playlist=(session.id, 0),
-        playlist_url=session.url, playlist_source="yt",
-    )
-    music.queues[GUILD_ID] = deque([marker])
-
-    page = await music.open_queue_playlist(GUILD_ID, 0, 1)
-    assert page["id"] == session.id and page["total"] == 30
+    assert result["expanded"] == 20
+    # The spliced items come from the fresh session; the playlist is over.
+    titles = [i.display_title for i in music.queues[GUILD_ID]]
+    assert titles == [f"track {i}" for i in range(100, 120)]
 
 
 async def test_enqueue_interrupts_autoplay_radio(music: MusicService) -> None:

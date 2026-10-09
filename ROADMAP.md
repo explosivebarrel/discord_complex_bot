@@ -44,10 +44,10 @@ For "add all" on a large playlist (1500+ tracks):
 - A "load more" marker at the end of the queue pulls the next window when
   the auto-advance reaches it; an expired session drops the marker quietly.
 - The queue shows the marker as a collapsed row "N more tracks"; a click on
-  it reopens the playlist browser (an expired session is re-read from the
-  link stored in the marker and the marker is rebound). The marker expands
-  in place, so tracks queued after it keep their order. Shuffle keeps the
-  marker at the tail.
+  it splices the next page (50 tracks) into the queue right above the
+  marker, so tracks queued after it keep their order. An expired session is
+  re-read from the link stored in the marker. Shuffle keeps the marker at
+  the tail.
 
 ## 4. Personal playlists (shipped)
 

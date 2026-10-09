@@ -1178,12 +1178,10 @@ class MusicService:
         )
         return item.display_title
 
-    async def open_queue_playlist(self, guild_id: int, index: int, requester_id: int) -> dict[str, Any]:
-        """Open the browser for a lazy playlist marker row.
-
-        A live session answers from the cache. An expired one is re-read from
-        its stored link and the marker is rebound to the fresh session.
-        """
+    async def expand_queue_playlist(self, guild_id: int, index: int, requester_id: int) -> dict[str, Any]:
+        """The marker row click: splice the next page of the playlist into the
+        queue right above the marker. Tracks queued after the marker keep
+        their order. An expired session is re-read from the stored link."""
         queue = self._queue(guild_id)
         if index < 0 or index >= len(queue):
             raise MusicServiceError("That queue position does not exist.")
@@ -1191,28 +1189,45 @@ class MusicService:
         if marker.more_from_playlist is None:
             raise MusicServiceError("That entry is not a playlist marker.")
         session = self.playlist_sessions.get(marker.more_from_playlist[0])
-        if session is not None and not session.expired():
-            return self.playlist_page(session.id, 0)
-        if not marker.playlist_url:
-            raise MusicServiceError("This playlist preview has expired. Open the link again.")
-        fresh = await self.open_playlist(marker.playlist_url, marker.playlist_source or "yt")
+        if session is None or session.expired():
+            if not marker.playlist_url:
+                raise MusicServiceError("This playlist preview has expired. Open the link again.")
+            session = await self.open_playlist(marker.playlist_url, marker.playlist_source or "yt")
         next_index = marker.more_from_playlist[1]
-        queue[index] = self._playlist_marker(
-            fresh.id,
-            next_index,
-            max(0, len(fresh.entries) - next_index),
-            marker.requested_by_id,
-            marker.requested_by_name,
-            url=fresh.url,
-            source=fresh.source,
-        )
+        chunk = session.entries[next_index : next_index + PLAYLIST_PAGE_SIZE]
+        if not chunk:
+            # Everything the session holds is queued already.
+            del queue[index]
+            return {"expanded": 0, "remaining": 0, "total": len(session.entries)}
+        items = [
+            self._entry_to_item(e, session, marker.requested_by_id, marker.requested_by_name)
+            for e in chunk
+        ]
+        del queue[index]
+        for offset, it in enumerate(items):
+            queue.insert(index + offset, it)
+        new_next = next_index + len(chunk)
+        remaining = max(0, len(session.entries) - new_next)
+        if remaining > 0:
+            queue.insert(
+                index + len(items),
+                self._playlist_marker(
+                    session.id,
+                    new_next,
+                    remaining,
+                    marker.requested_by_id,
+                    marker.requested_by_name,
+                    url=session.url,
+                    source=session.source,
+                ),
+            )
         await self.db.audit(
-            "music.playlist_reopen",
+            "music.playlist_expand",
             guild_id=guild_id,
             actor_id=requester_id,
-            details={"playlist": fresh.title, "remaining": len(fresh.entries) - next_index},
+            details={"playlist": session.title, "expanded": len(items), "remaining": remaining},
         )
-        return self.playlist_page(fresh.id, 0)
+        return {"expanded": len(items), "remaining": remaining, "total": len(session.entries)}
 
     async def stop(self, guild_id: int, requester_id: int) -> None:
         player = self._require_player(guild_id)

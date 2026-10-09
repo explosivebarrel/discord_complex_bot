@@ -892,14 +892,12 @@ export function PlayerPage() {
                             key={`pl${i}`}
                             disableGutters
                             dense
-                            onClick={() => {
-                            setPlaylistBusy(true);
-                            api
-                              .openQueuedPlaylist(gid, i)
-                              .then(setPlaylist)
-                              .catch(guard)
-                              .finally(() => setPlaylistBusy(false));
-                          }}
+                            onClick={() =>
+                            plAction(
+                              () => api.expandQueuedPlaylist(gid, i),
+                              "50 more tracks queued",
+                            )
+                          }
                             sx={{
                               cursor: "pointer",
                               borderRadius: 1,

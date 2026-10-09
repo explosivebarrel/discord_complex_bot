@@ -316,9 +316,9 @@ export const api = {
       handle<{ cleared: number }>(r),
     ),
 
-  openQueuedPlaylist: (guildId: string, index: number) =>
-    fetch(`/api/guilds/${guildId}/player/queue/${index}/open`, { method: "POST" }).then((r) =>
-      handle<PlaylistPageInfo>(r),
+  expandQueuedPlaylist: (guildId: string, index: number) =>
+    fetch(`/api/guilds/${guildId}/player/queue/${index}/expand`, { method: "POST" }).then((r) =>
+      handle<{ expanded: number; remaining: number; total: number }>(r),
     ),
 
   removeQueued: (guildId: string, index: number) =>
