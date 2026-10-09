@@ -120,6 +120,7 @@ export function PlayerPage() {
   // HTML5 drag and drop of queue rows. The source index rides through the
   // dataTransfer so a re-render between dragstart and drop cannot lose it.
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [volInput, setVolInput] = useState<string | null>(null);
   const [myPls, setMyPls] = useState<UserPlaylistBrief[]>([]);
   const [openPl, setOpenPl] = useState<UserPlaylistFull | null>(null);
   const [newPlName, setNewPlName] = useState("");
@@ -253,6 +254,18 @@ export function PlayerPage() {
       })
       .catch(guard)
       .finally(() => setPlaylistBusy(false));
+  };
+
+  const commitVolume = () => {
+    const parsed = Number(volInput);
+    if (Number.isNaN(parsed)) {
+      setVolInput(null);
+      return;
+    }
+    const clamped = Math.max(0, Math.min(200, Math.round(parsed)));
+    setVolInput(null);
+    setVolume(clamped);
+    act(() => api.volume(gid, clamped), `Volume: ${clamped}%`);
   };
 
   const loadMyPls = () =>
@@ -815,7 +828,8 @@ export function PlayerPage() {
 
           {state?.connected && (
             <Card>
-              <CardContent>
+              {/* CardContent pads the last child to 24px; keep this compact card even. */}
+              <CardContent sx={{ py: 1.25, "&:last-child": { pb: 1.25 } }}>
                 <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                   <VolumeUp sx={{ color: "text.secondary" }} />
                   <Slider
@@ -825,8 +839,20 @@ export function PlayerPage() {
                     value={volume ?? 100}
                     onChange={(_event, v) => setVolume(v as number)}
                     onChangeCommitted={(_event, v) => act(() => api.volume(gid, v as number))}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(v) => `${v}%`}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={volInput ?? String(volume ?? 100)}
+                    onChange={(e) => setVolInput(e.target.value)}
+                    onBlur={commitVolume}
+                    onKeyDown={(e) => e.key === "Enter" && commitVolume()}
+                    slotProps={{
+                      htmlInput: { min: 0, max: 200, style: { textAlign: "center" } },
+                      input: { className: "volume-input", endAdornment: <InputAdornment position="end">%</InputAdornment> },
+                    }}
+                    sx={{ width: 92 }}
                   />
                 </Stack>
               </CardContent>
