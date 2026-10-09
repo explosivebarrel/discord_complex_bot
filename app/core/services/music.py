@@ -84,10 +84,12 @@ class QueueItem:
             "artwork": self.artwork,
             "source": self.source,
             "requested_by": self.requested_by_name,
+            "requested_by_id": self.requested_by_id,
         }
         if self.more_from_playlist is not None:
             base["source"] = "playlist"
             base["playlist_id"] = self.more_from_playlist[0]
+            base["playlist_next"] = self.more_from_playlist[1]
             base["playlist_url"] = self.playlist_url
             base["playlist_source"] = self.playlist_source
         return base
@@ -1287,3 +1289,131 @@ class MusicService:
             # Newest first, for the Recent view of the queue panel.
             "played": [item.to_dict() for item in reversed(self._played(guild_id))],
         }
+
+    # --- state persistence across restarts ---
+
+    @staticmethod
+    def _item_from_payload(d: dict[str, Any]) -> QueueItem:
+        if d.get("source") == "playlist" and d.get("playlist_id") is not None:
+            return QueueItem(
+                track=None,
+                requested_by_id=int(d.get("requested_by_id") or 0),
+                requested_by_name=str(d.get("requested_by") or ""),
+                source="playlist",
+                title=str(d.get("title") or ""),
+                more_from_playlist=(int(d["playlist_id"]), int(d.get("playlist_next") or 0)),
+                playlist_url=str(d.get("playlist_url") or ""),
+                playlist_source=str(d.get("playlist_source") or ""),
+            )
+        return QueueItem(
+            track=None,
+            requested_by_id=int(d.get("requested_by_id") or 0),
+            requested_by_name=str(d.get("requested_by") or ""),
+            source=str(d.get("source") or ""),
+            pending_url=str(d.get("uri") or ""),
+            title=str(d.get("title") or ""),
+            author=str(d.get("author") or ""),
+            length=int(d.get("length") or 0),
+            artwork=d.get("artwork"),
+        )
+
+    def _guild_state_payload(self, guild_id: int) -> dict[str, Any] | None:
+        """The snapshot to save, or None when the guild has nothing worth keeping."""
+        queue_items = list(self.queues.get(guild_id) or [])
+        current = self.current_items.get(guild_id)
+        if (
+            current is not None
+            and current.track is not None
+            and not current.is_autoplay
+            and current.more_from_playlist is None
+        ):
+            # The interrupted track returns as the queue head on restore.
+            queue_items = [current] + queue_items
+        history = list(self.played.get(guild_id) or [])
+        repeat = self.repeat_modes.get(guild_id, "off")
+        if not queue_items and not history and repeat == "off":
+            return None
+        return {
+            "queue": [i.to_dict() for i in queue_items],
+            # Newest first, matching the panel view.
+            "played": [i.to_dict() for i in reversed(history)],
+            "repeat": repeat,
+        }
+
+    async def persist_state(self) -> None:
+        """Write the music state of every guild into the database."""
+        guilds = set(self.queues) | set(self.current_items) | set(self.played) | {
+            g for g, m in self.repeat_modes.items() if m != "off"
+        }
+        saved: set[int] = set()
+        for gid in guilds:
+            payload = self._guild_state_payload(gid)
+            if payload is None:
+                continue
+            await self.db.save_music_snapshot(gid, payload)
+            saved.add(gid)
+        for gid in await self.db.load_music_snapshots():
+            if gid not in saved:
+                await self.db.delete_music_snapshot(gid)
+
+    async def restore_state(self) -> None:
+        """Rebuild queues, history and repeat modes saved before a restart."""
+        snapshots = await self.db.load_music_snapshots()
+        markers: list[tuple[int, QueueItem]] = []
+        for raw_gid, data in snapshots.items():
+            gid = int(raw_gid)
+            queue_items = [self._item_from_payload(d) for d in data.get("queue") or []]
+            if queue_items:
+                self.queues[gid] = deque(queue_items)
+                markers.extend((gid, it) for it in queue_items if it.more_from_playlist is not None)
+            history = [self._item_from_payload(d) for d in reversed(data.get("played") or [])]
+            if history:
+                self.played[gid] = deque(history[-PLAYED_LIMIT:], maxlen=PLAYED_LIMIT)
+            repeat = data.get("repeat")
+            if repeat in ("off", "one", "all") and repeat != "off":
+                self.repeat_modes[gid] = repeat
+        if markers:
+            # Lazy markers point at in-memory sessions that a restart wiped;
+            # re-read their playlists to hand the markers fresh sessions.
+            task = asyncio.create_task(self._rebind_markers(markers))
+            task.add_done_callback(lambda t: t.exception() and logger.exception("Marker rebind failed"))
+
+    async def _rebind_markers(self, pairs: list[tuple[int, QueueItem]]) -> None:
+        changed = False
+        for gid, marker in pairs:
+            try:
+                fresh = await self.open_playlist(marker.playlist_url, marker.playlist_source or "yt")
+            except Exception:  # noqa: BLE001 - a dead link drops the marker, not the queue
+                logger.warning("Could not re-read playlist %s for a marker", marker.playlist_url)
+                continue
+            queue = self.queues.get(gid)
+            if not queue:
+                continue
+            next_index = marker.more_from_playlist[1]
+            for i, it in enumerate(queue):
+                if (
+                    it.more_from_playlist is not None
+                    and it.playlist_url == marker.playlist_url
+                    and it.more_from_playlist[1] == next_index
+                ):
+                    queue[i] = self._playlist_marker(
+                        fresh.id,
+                        next_index,
+                        max(0, len(fresh.entries) - next_index),
+                        it.requested_by_id,
+                        it.requested_by_name,
+                        url=fresh.url,
+                        source=fresh.source,
+                    )
+                    changed = True
+                    break
+        if changed:
+            await self.persist_state()
+
+    async def periodic_persist(self, interval: float = 15.0) -> None:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self.persist_state()
+            except Exception:  # noqa: BLE001 - persistence must never crash the loop
+                logger.exception("Failed to persist the music state")

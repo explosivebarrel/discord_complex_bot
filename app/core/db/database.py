@@ -15,6 +15,7 @@ from app.core.db.models import (
     GuildAdmin,
     GuildSettings,
     ModWarning,
+    MusicSnapshot,
     PlayHistory,
     SystemSetting,
     UserPlaylist,
@@ -570,3 +571,43 @@ class Database:
             await session.delete(row)
             await session.commit()
             return True
+
+
+    # --- music state snapshots (queue persistence) ---
+
+    async def save_music_snapshot(self, guild_id: int, data: dict[str, Any]) -> None:
+        import json as _json
+
+        from app.core.db.models import utcnow
+
+        async with self.session_factory() as session:
+            row = await session.get(MusicSnapshot, guild_id)
+            if row is None:
+                row = MusicSnapshot(guild_id=guild_id)
+                session.add(row)
+            row.queue = _json.dumps(data.get("queue") or [], ensure_ascii=False)
+            row.played = _json.dumps(data.get("played") or [], ensure_ascii=False)
+            row.repeat = str(data.get("repeat") or "off")
+            row.saved_at = utcnow()
+            await session.commit()
+
+    async def delete_music_snapshot(self, guild_id: int) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(MusicSnapshot, guild_id)
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
+
+    async def load_music_snapshots(self) -> dict[int, dict[str, Any]]:
+        import json as _json
+
+        async with self.session_factory() as session:
+            rows = (await session.execute(select(MusicSnapshot))).scalars().all()
+            return {
+                row.guild_id: {
+                    "queue": _json.loads(row.queue or "[]"),
+                    "played": _json.loads(row.played or "[]"),
+                    "repeat": row.repeat,
+                }
+                for row in rows
+            }

@@ -147,3 +147,19 @@ class UserPlaylistTrack(Base):
     source: Mapped[str] = mapped_column(String(32), default="")
     length_ms: Mapped[int] = mapped_column(Integer, default=0)
     artwork: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class MusicSnapshot(Base):
+    """Per-guild music state saved periodically so a restart keeps the queue.
+
+    queue/played hold JSON lists of item payloads (see MusicService);
+    the interrupted current track is stored as the first queue entry.
+    """
+
+    __tablename__ = "music_snapshots"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    queue: Mapped[str] = mapped_column(Text, default="[]")
+    played: Mapped[str] = mapped_column(Text, default="[]")
+    repeat: Mapped[str] = mapped_column(String(8), default="off")
+    saved_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)

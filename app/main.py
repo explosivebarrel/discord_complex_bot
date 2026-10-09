@@ -59,11 +59,15 @@ def create_app() -> FastAPI:
         app.state.music = music
         app.state.bot = bot
         app.state.oauth = DiscordOAuthClient(config)
+        # Queues saved by the previous run come back before the bot goes online.
+        await music.restore_state()
+        persist_task = asyncio.create_task(music.periodic_persist(), name="music-persist")
         bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
         cleanup_task = asyncio.create_task(_session_cleanup_loop(db), name="session-cleanup")
         try:
             yield
         finally:
+            persist_task.cancel()
             cleanup_task.cancel()
             await bot.close()
             bot_task.cancel()

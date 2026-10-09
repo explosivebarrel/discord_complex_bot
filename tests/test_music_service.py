@@ -5,6 +5,7 @@ from collections import deque
 
 import pytest
 
+from app.core.db import Database
 from app.core.services.music import MusicService, MusicServiceError, PlaylistSession, QueueItem
 
 from .conftest import GUILD_ID, FakePlayer, fill_queue, make_track
@@ -628,3 +629,67 @@ async def test_play_playlist_track_moves_current_to_played(music: MusicService) 
     assert [i.track.title for i in music.played[GUILD_ID]] == ["playing now"]
     with pytest.raises(MusicServiceError):
         await music.play_playlist_track(GUILD_ID, session.id, 99, 1, "u")
+
+
+async def test_persist_and_restore_round_trip(music: MusicService, db: Database) -> None:
+    music.current_items[GUILD_ID] = QueueItem(make_track("now playing"), 1, "u")
+    fill_queue(music, ["next one", "after"])
+    music.set_repeat(GUILD_ID, "all")
+    music.played[GUILD_ID] = deque([QueueItem(make_track("older"), 1, "u")], maxlen=20)
+    music.played[GUILD_ID].append(QueueItem(make_track("recent"), 1, "u"))
+
+    await music.persist_state()
+
+    # A fresh service instance reads the same database: a restart simulation.
+    restored = MusicService(None, db, music.config)
+    await restored.restore_state()
+
+    assert [i.display_title for i in restored.queues[GUILD_ID]] == [
+        "now playing",  # the interrupted track returns as the queue head
+        "next one",
+        "after",
+    ]
+    assert all(i.track is None for i in restored.queues[GUILD_ID])  # deferred resolve
+    assert restored.repeat_modes[GUILD_ID] == "all"
+    # History comes back newest last, so the panel view shows "recent" first.
+    assert [i.display_title for i in restored.played[GUILD_ID]] == ["older", "recent"]
+
+
+async def test_persist_clears_snapshot_of_idle_guild(music: MusicService) -> None:
+    fill_queue(music, ["a"])
+    await music.persist_state()
+    assert await music.db.load_music_snapshots()
+
+    music.queues.pop(GUILD_ID)
+    music.repeat_modes[GUILD_ID] = "off"
+    await music.persist_state()
+    assert not await music.db.load_music_snapshots()
+
+
+async def test_restore_rebinds_lazy_marker_to_fresh_session(music: MusicService, db: Database) -> None:
+    stale = _make_session(music, 120)
+    marker = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="playlist",
+        title="20 more tracks", more_from_playlist=(stale.id, 100),
+        playlist_url=stale.url, playlist_source="yt",
+    )
+    music.queues[GUILD_ID] = deque([marker])
+    await music.persist_state()
+
+    restored = MusicService(None, db, music.config)
+    fresh = PlaylistSession(
+        id=9, title="Test playlist", source="yt", url=stale.url,
+        entries=stale.entries, created=time.monotonic(),
+    )
+
+    async def fake_open(query: str, source: str):
+        restored.playlist_sessions[fresh.id] = fresh
+        return fresh
+
+    restored.open_playlist = fake_open  # type: ignore[method-assign]
+    await restored.restore_state()
+    await restored._rebind_markers([(GUILD_ID, restored.queues[GUILD_ID][0])])  # noqa: SLF001
+
+    rebound = restored.queues[GUILD_ID][0]
+    assert rebound.more_from_playlist == (9, 100)
+    assert rebound.display_title == "20 more tracks"
