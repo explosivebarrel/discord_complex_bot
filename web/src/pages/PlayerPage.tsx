@@ -19,6 +19,7 @@ import {
   Slider,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -425,6 +426,13 @@ export function PlayerPage() {
                           disablePadding
                           secondaryAction={
                             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                              <Tooltip
+                                title={
+                                  favorites.some((f) => f.uri === t.uri)
+                                    ? "Remove from favorites"
+                                    : "Add to favorites"
+                                }
+                              >
                               <IconButton
                                 size="small"
                                 onClick={() => toggleFavorite(t)}
@@ -440,6 +448,7 @@ export function PlayerPage() {
                                   <FavoriteBorder fontSize="small" />
                                 )}
                               </IconButton>
+                              </Tooltip>
                               {t.issue && (
                                 <Chip
                                   size="small"
@@ -536,27 +545,31 @@ export function PlayerPage() {
                       dense
                       secondaryAction={
                         <Stack direction="row" spacing={0.5}>
-                          <IconButton
-                            size="small"
-                            onClick={() =>
-                              enqueue(`f${f.id}`, {
-                                query: f.uri,
-                                source: f.source || "yt",
-                                title: f.title,
-                                author: f.author,
-                                length_ms: f.length_ms,
-                                artwork: f.artwork,
-                              })
-                            }
-                          >
-                            <PlayArrow fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => api.removeFavorite(f.id).then(loadFavorites).catch(guard)}
-                          >
-                            <Favorite fontSize="small" sx={{ color: "primary.main" }} />
-                          </IconButton>
+                          <Tooltip title="Play now">
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                enqueue(`f${f.id}`, {
+                                  query: f.uri,
+                                  source: f.source || "yt",
+                                  title: f.title,
+                                  author: f.author,
+                                  length_ms: f.length_ms,
+                                  artwork: f.artwork,
+                                })
+                              }
+                            >
+                              <PlayArrow fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Remove from favorites">
+                            <IconButton
+                              size="small"
+                              onClick={() => api.removeFavorite(f.id).then(loadFavorites).catch(guard)}
+                            >
+                              <Favorite fontSize="small" sx={{ color: "primary.main" }} />
+                            </IconButton>
+                          </Tooltip>
                           <PlaylistAddMenu
                             track={{
                               title: f.title,
@@ -619,30 +632,34 @@ export function PlayerPage() {
                         dense
                         secondaryAction={
                           <Stack direction="row" spacing={0.5}>
-                            <IconButton
-                              size="small"
-                              disabled={plBusy}
-                              onClick={() =>
-                                plAction(
-                                  () => api.playUserPlaylistTrack(gid, openPl.id, i),
-                                  `Now playing: ${t.title}`,
-                                )
-                              }
-                            >
-                              <PlayArrow fontSize="small" />
-                            </IconButton>
-                            <IconButton
-                              size="small"
-                              disabled={plBusy}
-                              onClick={() =>
-                                plAction(async () => {
-                                  await api.removeUserPlaylistTrack(openPl.id, t.id);
-                                  setOpenPl(await api.userPlaylist(openPl.id));
-                                })
-                              }
-                            >
-                              <DeleteOutlined fontSize="small" />
-                            </IconButton>
+                            <Tooltip title="Play now">
+                              <IconButton
+                                size="small"
+                                disabled={plBusy}
+                                onClick={() =>
+                                  plAction(
+                                    () => api.playUserPlaylistTrack(gid, openPl.id, i),
+                                    `Now playing: ${t.title}`,
+                                  )
+                                }
+                              >
+                                <PlayArrow fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Remove from playlist">
+                              <IconButton
+                                size="small"
+                                disabled={plBusy}
+                                onClick={() =>
+                                  plAction(async () => {
+                                    await api.removeUserPlaylistTrack(openPl.id, t.id);
+                                    setOpenPl(await api.userPlaylist(openPl.id));
+                                  })
+                                }
+                              >
+                                <DeleteOutlined fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           </Stack>
                         }
                       >
@@ -695,22 +712,26 @@ export function PlayerPage() {
                           dense
                           secondaryAction={
                             <Stack direction="row" spacing={0.5}>
-                              <IconButton size="small" disabled={plBusy} onClick={() => openPlaylistTracks(p.id)}>
-                                <PlayArrow fontSize="small" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                disabled={plBusy}
-                                onClick={() =>
-                                  plAction(
-                                    () => api.deleteUserPlaylist(p.id),
-                                    `Playlist "${p.name}" deleted`,
-                                    loadMyPls,
-                                  )
-                                }
-                              >
-                                <DeleteOutlined fontSize="small" />
-                              </IconButton>
+                              <Tooltip title="Open playlist">
+                                <IconButton size="small" disabled={plBusy} onClick={() => openPlaylistTracks(p.id)}>
+                                  <PlayArrow fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Delete playlist">
+                                <IconButton
+                                  size="small"
+                                  disabled={plBusy}
+                                  onClick={() =>
+                                    plAction(
+                                      () => api.deleteUserPlaylist(p.id),
+                                      `Playlist "${p.name}" deleted`,
+                                      loadMyPls,
+                                    )
+                                  }
+                                >
+                                  <DeleteOutlined fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                             </Stack>
                           }
                         >
@@ -961,38 +982,44 @@ export function PlayerPage() {
                               ["@media (hover: none)"]: { visibility: "visible" },
                             }}
                           >
-                            <IconButton
-                              size="small"
-                              disabled={i === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                act(() => api.moveQueued(gid, i, i - 1));
-                              }}
-                              sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
-                            >
-                              <KeyboardArrowUp fontSize="small" />
-                            </IconButton>
-                            <IconButton
-                              size="small"
-                              disabled={i === state.queue.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                act(() => api.moveQueued(gid, i, i + 1));
-                              }}
-                              sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
-                            >
-                              <KeyboardArrowDown fontSize="small" />
-                            </IconButton>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                act(() => api.removeQueued(gid, i));
-                              }}
-                              sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#4A3038", color: "error.main" }, ml: 0.25 }}
-                            >
-                              <DeleteOutlined fontSize="small" />
-                            </IconButton>
+                            <Tooltip title="Move up">
+                              <IconButton
+                                size="small"
+                                disabled={i === 0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  act(() => api.moveQueued(gid, i, i - 1));
+                                }}
+                                sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
+                              >
+                                <KeyboardArrowUp fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Move down">
+                              <IconButton
+                                size="small"
+                                disabled={i === state.queue.length - 1}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  act(() => api.moveQueued(gid, i, i + 1));
+                                }}
+                                sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
+                              >
+                                <KeyboardArrowDown fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Remove from queue">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  act(() => api.removeQueued(gid, i));
+                                }}
+                                sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#4A3038", color: "error.main" }, ml: 0.25 }}
+                              >
+                                <DeleteOutlined fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                             <Box sx={{ ml: 0.25 }} onClick={(e) => e.stopPropagation()}>
                               <PlaylistAddMenu
                                 track={{

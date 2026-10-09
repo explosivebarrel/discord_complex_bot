@@ -15,6 +15,7 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import Delete from "@mui/icons-material/Delete";
@@ -329,17 +330,19 @@ export function AdminPage() {
                       key={a}
                       disableGutters
                       secondaryAction={
-                        <IconButton
-                          edge="end"
-                          onClick={() =>
-                            api
-                              .removeGuildAdmin(gid, a)
-                              .then((r) => setSettings({ ...settings, admins: r.admins }))
-                              .catch(guard)
-                          }
-                        >
-                          <Delete />
-                        </IconButton>
+                        <Tooltip title="Remove admin">
+                          <IconButton
+                            edge="end"
+                            onClick={() =>
+                              api
+                                .removeGuildAdmin(gid, a)
+                                .then((r) => setSettings({ ...settings, admins: r.admins }))
+                                .catch(guard)
+                            }
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Tooltip>
                       }
                     >
                       <ListItemText primary={a} />

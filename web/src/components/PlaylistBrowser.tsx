@@ -11,6 +11,7 @@ import {
   ListItemText,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddQueue from "@mui/icons-material/Queue";
@@ -65,9 +66,11 @@ export function PlaylistBrowser({
           <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }} noWrap>
             {playlist.title}
           </Typography>
-          <IconButton size="small" onClick={onClose} aria-label="Close playlist browser">
-            <Close fontSize="small" />
-          </IconButton>
+          <Tooltip title="Close">
+            <IconButton size="small" onClick={onClose} aria-label="Close playlist browser">
+              <Close fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Stack>
         <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mb: 1 }}>
           {playlist.matched === playlist.total
@@ -96,24 +99,28 @@ export function PlaylistBrowser({
               dense
               secondaryAction={
                 <Box sx={{ display: "flex", alignItems: "center" }}>
-                  <IconButton
-                    size="small"
-                    disabled={busy}
-                    onClick={() => onPlay(t.index)}
-                    sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
-                    aria-label="Play now"
-                  >
-                    <PlayArrow fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    disabled={busy}
-                    onClick={() => onAdd([t.index])}
-                    sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
-                    aria-label="Add to queue"
-                  >
-                    <AddQueue fontSize="small" />
-                  </IconButton>
+                  <Tooltip title="Play now">
+                    <IconButton
+                      size="small"
+                      disabled={busy}
+                      onClick={() => onPlay(t.index)}
+                      sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
+                      aria-label="Play now"
+                    >
+                      <PlayArrow fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Add to queue">
+                    <IconButton
+                      size="small"
+                      disabled={busy}
+                      onClick={() => onAdd([t.index])}
+                      sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
+                      aria-label="Add to queue"
+                    >
+                      <AddQueue fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   <Box sx={{ ml: 0.25 }}>
                     <PlaylistAddMenu
                       track={{
