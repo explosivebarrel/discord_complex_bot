@@ -494,6 +494,23 @@ def test_shuffle_queue_keeps_all_tracks(music: MusicService) -> None:
     assert sorted(i.track.title for i in music.queues[GUILD_ID]) == ["a", "b", "c", "d"]
 
 
+async def test_requeue_played_appends_without_touching_history(music: MusicService) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    music.current_items[GUILD_ID] = QueueItem(make_track("current"), 1, "u")
+    fill_queue(music, ["old"])
+    await music.play_next(GUILD_ID, "finished")  # "old" plays, "current" -> history
+
+    assert await music.requeue_played(GUILD_ID, 0, 1) == "current"
+
+    # The queue gets a copy; the history entry stays put (repeatable action).
+    assert [i.track.title for i in music.queues[GUILD_ID]] == ["current"]
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["current"]
+    assert player.played == ["old"]  # playback was not interrupted
+    with pytest.raises(MusicServiceError):
+        await music.requeue_played(GUILD_ID, 5, 1)
+
+
 def test_for_replay_rebuilds_page_url_for_yt(music: MusicService) -> None:
     item = QueueItem(make_track("a"), 1, "u", source="yt")
     out = music._for_replay(item)  # noqa: SLF001

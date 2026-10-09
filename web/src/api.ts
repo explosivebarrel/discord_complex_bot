@@ -352,6 +352,13 @@ export const api = {
       body: JSON.stringify({ position }),
     }).then((r) => handle<{ playing: string }>(r)),
 
+  requeuePlayed: (guildId: string, position: number) =>
+    fetch(`/api/guilds/${guildId}/player/played/requeue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position }),
+    }).then((r) => handle<{ queued: string }>(r)),
+
   playlistPreview: (guildId: string, query: string, source: string) =>
     fetch(`/api/guilds/${guildId}/player/playlist/preview`, {
       method: "POST",

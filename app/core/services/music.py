@@ -5,7 +5,7 @@ import json
 import logging
 import random
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -1155,6 +1155,21 @@ class MusicService:
         await self._play_item(guild_id, item)
         await self.db.audit(
             "music.replay", guild_id=guild_id, actor_id=requester_id, details={"position": position}
+        )
+        return item.display_title
+
+    async def requeue_played(self, guild_id: int, position: int, requester_id: int) -> str:
+        """Append a session history entry back to the queue; playback keeps
+        going and the entry stays in the history (re-add works repeatedly)."""
+        self._require_player(guild_id)
+        played = self._played(guild_id)
+        if position < 0 or position >= len(played):
+            raise MusicServiceError("That history entry does not exist.")
+        # Work on a copy: the history entry itself must keep its resolved track.
+        item = self._for_replay(replace(played[len(played) - 1 - position]))
+        self._queue(guild_id).append(item)
+        await self.db.audit(
+            "music.requeue", guild_id=guild_id, actor_id=requester_id, details={"position": position}
         )
         return item.display_title
 

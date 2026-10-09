@@ -571,6 +571,21 @@ async def replay_played(
     return {"playing": title}
 
 
+@router.post("/played/requeue")
+async def requeue_played(
+    guild_id: int,
+    body: ReplayBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        title = await music.requeue_played(guild_id, body.position, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"queued": title}
+
+
 @router.post("/queue/{index}/expand")
 async def expand_queued_playlist(
     guild_id: int,

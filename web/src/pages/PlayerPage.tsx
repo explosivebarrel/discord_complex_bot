@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import AddQueue from "@mui/icons-material/Queue";
+import PlaylistAdd from "@mui/icons-material/PlaylistAdd";
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import MusicNote from "@mui/icons-material/MusicNote";
 import CloudQueue from "@mui/icons-material/CloudQueue";
@@ -1099,21 +1100,44 @@ export function PlayerPage() {
                       onMouseEnter={() => setHoveredRow(`r${i}`)}
                       onMouseLeave={() => setHoveredRow((h) => (h === `r${i}` ? null : h))}
                       secondaryAction={
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`);
-                          }}
-                          sx={{
-                            bgcolor: "#313038",
-                            "&:hover": { bgcolor: "#3D3847" },
-                            visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
-                            ["@media (hover: none)"]: { visibility: "visible" },
-                          }}
-                        >
-                          <PlayArrow fontSize="small" />
-                        </IconButton>
+                        <Box sx={{ display: "flex", gap: 0.5 }}>
+                          <Tooltip title="Add to queue">
+                            <IconButton
+                              size="small"
+                              aria-label="Add to queue"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`);
+                              }}
+                              sx={{
+                                bgcolor: "#313038",
+                                "&:hover": { bgcolor: "#3D3847" },
+                                visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
+                                ["@media (hover: none)"]: { visibility: "visible" },
+                              }}
+                            >
+                              <PlaylistAdd fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Play now">
+                            <IconButton
+                              size="small"
+                              aria-label="Play now"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`);
+                              }}
+                              sx={{
+                                bgcolor: "#313038",
+                                "&:hover": { bgcolor: "#3D3847" },
+                                visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
+                                ["@media (hover: none)"]: { visibility: "visible" },
+                              }}
+                            >
+                              <PlayArrow fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
                       }
                     >
                       <ListItemAvatar sx={{ minWidth: 36 }}>
