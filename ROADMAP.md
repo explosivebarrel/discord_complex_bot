@@ -59,13 +59,14 @@ Named playlists owned by a panel user and stored in the bot database:
   the list is available in every guild the bot is in.
 - Optional later: guild-shared playlists managed by the admins.
 
-## 5. Queue persistence (planned)
+## 5. Queue persistence (shipped)
 
-The queue and the session history live in memory and disappear on a restart:
+The queue, the session history and the repeat mode survive a restart:
 
-- Store the queue as pending items (the deferred resolve mechanism already
-  fits) and restore it when the bot starts.
-- Restore the repeat mode and the session history the same way.
+- A snapshot per guild lands in the database every 15 seconds (and covers
+  the interrupted track as the queue head).
+- On start the service rebuilds deferred items from the snapshot; lazy
+  playlist markers re-read their playlist and get fresh sessions.
 
 ## 6. Unbounded Yandex playlists (planned, when needed)
 
