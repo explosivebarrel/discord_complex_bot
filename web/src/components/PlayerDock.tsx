@@ -147,12 +147,12 @@ export function PlayerDock({
       ) : null)}
 
       {/* Left column takes the same flex width as the right one, so the
-          transport cluster stays centered in the dock. On phones it takes
-          the whole first row instead. */}
+          transport cluster stays centered in the dock. On phones the
+          description drops below the controls row. */}
       <Stack
         direction="row"
         spacing={2}
-        sx={{ flex: 1, minWidth: 0, alignItems: "center", flexBasis: { xs: "100%", md: "auto" } }}
+        sx={{ flex: 1, minWidth: 0, alignItems: "center", order: { xs: 1, md: 0 } }}
       >
       <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
         {current?.artwork ? (
@@ -206,9 +206,11 @@ export function PlayerDock({
         sx={{
           alignItems: "flex-start",
           flexShrink: 0,
-          // Phones: the transport shares row 2 with the utility buttons.
-          flex: { xs: 1, md: "0 0 auto" },
+          // Phones: the controls take the first row (FAB protrudes over the
+          // dock's top edge, like on desktop) with the description below.
+          flex: { xs: "1 1 100%", md: "0 0 auto" },
           justifyContent: { xs: "center", md: "flex-start" },
+          order: { xs: 0, md: 0 },
         }}
       >
         <Tooltip title="Previous track">
@@ -249,7 +251,16 @@ export function PlayerDock({
         </Tooltip>
       </Stack>
 
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flex: 1, justifyContent: "flex-end" }}>
+      <Stack
+        direction="row"
+        spacing={0.5}
+        sx={{
+          alignItems: { xs: "center", md: "flex-start" },
+          flex: { xs: "0 0 auto", md: 1 },
+          justifyContent: { xs: "flex-start", md: "flex-end" },
+          order: { xs: 2, md: 0 },
+        }}
+      >
         <Tooltip title={`Repeat: ${repeat === "off" ? "off (click for queue)" : repeat === "all" ? "whole queue (click for one track)" : "one track (click to turn off)"}`}>
           <IconButton
             onClick={onRepeatCycle}
