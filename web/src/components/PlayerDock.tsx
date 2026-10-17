@@ -221,6 +221,8 @@ export function PlayerDock({
                 color: "primary.contrastText",
                 boxShadow: "0 6px 16px rgba(0,0,0,.4)",
                 "&:hover": { bgcolor: "primary.main", filter: "brightness(1.08)" },
+                // Keep the raised disc lavender while disabled (idle).
+                "&.Mui-disabled": { bgcolor: "primary.main", color: "primary.contrastText", opacity: 0.45 },
               }}
             >
               {paused || !current ? <PlayArrow /> : <Pause />}

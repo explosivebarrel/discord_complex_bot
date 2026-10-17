@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { CssBaseline, ThemeProvider } from "@mui/material";
+import { CssBaseline, GlobalStyles, ThemeProvider } from "@mui/material";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import theme from "./theme";
 import "@fontsource/roboto/400.css";
@@ -31,6 +31,20 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
+        {/* Local subset of Material Symbols Rounded (Google Material icons,
+            https://fonts.google.com/icons): only the glyph names used by
+            MsIcon, served from /fonts. */}
+        <GlobalStyles
+          styles={{
+            "@font-face": {
+              fontFamily: '"Material Symbols Rounded"',
+              fontStyle: "normal",
+              fontWeight: "100 700",
+              fontDisplay: "block",
+              src: 'url("/fonts/material-symbols-rounded-subset.woff2") format("woff2")',
+            },
+          }}
+        />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<GuildsPage />} />

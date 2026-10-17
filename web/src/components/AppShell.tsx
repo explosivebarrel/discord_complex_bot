@@ -1,18 +1,8 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
-import ArrowBack from "@mui/icons-material/ArrowBack";
-import BarChart from "@mui/icons-material/BarChart";
-import ChevronLeft from "@mui/icons-material/ChevronLeft";
-import Forum from "@mui/icons-material/Forum";
-import Gavel from "@mui/icons-material/Gavel";
 import GraphicEq from "@mui/icons-material/GraphicEq";
-import PlayCircle from "@mui/icons-material/PlayCircle";
-import QueueMusic from "@mui/icons-material/QueueMusic";
-import Settings from "@mui/icons-material/Settings";
-import Logout from "@mui/icons-material/Logout";
-import MenuRounded from "@mui/icons-material/Menu";
-import ViewSidebar from "@mui/icons-material/ViewSidebar";
+import { MsIcon } from "./MsIcon";
 import type { GuildBrief, Me } from "../api";
 import { api } from "../api";
 import { useGuilds } from "../queries";
@@ -66,6 +56,23 @@ function GuildTab({
   );
 }
 
+// Shared Material Symbols glyphs of the shell (https://fonts.google.com/icons).
+const Ic = {
+  player: <MsIcon name="play_circle" />,
+  stats: <MsIcon name="bar_chart" />,
+  posts: <MsIcon name="forum" />,
+  moderation: <MsIcon name="gavel" />,
+  settings: <MsIcon name="settings" />,
+  logout: <MsIcon name="logout" />,
+  menu: <MsIcon name="menu" />,
+  back: <MsIcon name="arrow_back" />,
+  leftClose: <MsIcon name="left_panel_close" />,
+  leftOpen: <MsIcon name="left_panel_open" />,
+  rightClose: <MsIcon name="right_panel_close" />,
+  rightOpen: <MsIcon name="right_panel_open" />,
+  queue: <MsIcon name="queue_music" />,
+};
+
 function DrawerContent({
   me,
   guilds,
@@ -93,8 +100,8 @@ function DrawerContent({
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <Toolbar sx={{ gap: 1.5, px: collapsed ? 1 : 2.5, justifyContent: collapsed ? "center" : "flex-start" }}>
         {collapsed ? (
-          <IconButton onClick={onToggleCollapse} size="small" aria-label="Expand navigation">
-            <GraphicEq sx={{ color: "primary.main" }} />
+          <IconButton onClick={onToggleCollapse} aria-label="Expand navigation">
+            {Ic.leftOpen}
           </IconButton>
         ) : (
           <>
@@ -109,8 +116,8 @@ function DrawerContent({
             </Typography>
             {onToggleCollapse && (
               <Tooltip title="Collapse menu">
-                <IconButton onClick={onToggleCollapse} size="small" aria-label="Collapse menu">
-                  <ChevronLeft />
+                <IconButton onClick={onToggleCollapse} aria-label="Collapse menu">
+                  {Ic.leftClose}
                 </IconButton>
               </Tooltip>
             )}
@@ -123,7 +130,7 @@ function DrawerContent({
           <>
             <GuildTab
               to={`/guild/${active.id}`}
-              icon={<PlayCircle fontSize="small" />}
+              icon={Ic.player}
               label="Player"
               collapsed={collapsed}
               onClick={onNavigate}
@@ -131,7 +138,7 @@ function DrawerContent({
             {active.access.stats && (
               <GuildTab
                 to={`/guild/${active.id}/stats`}
-                icon={<BarChart fontSize="small" />}
+                icon={Ic.stats}
                 label="Stats"
                 collapsed={collapsed}
                 onClick={onNavigate}
@@ -140,7 +147,7 @@ function DrawerContent({
             {active.access.posts && (
               <GuildTab
                 to={`/guild/${active.id}/posts`}
-                icon={<Forum fontSize="small" />}
+                icon={Ic.posts}
                 label="Posts"
                 collapsed={collapsed}
                 onClick={onNavigate}
@@ -149,7 +156,7 @@ function DrawerContent({
             {active.access.moderation && (
               <GuildTab
                 to={`/guild/${active.id}/moderation`}
-                icon={<Gavel fontSize="small" />}
+                icon={Ic.moderation}
                 label="Moderation"
                 collapsed={collapsed}
                 onClick={onNavigate}
@@ -194,7 +201,7 @@ function DrawerContent({
       <Divider />
       <List component="nav" disablePadding sx={{ py: 1 }}>
         {me?.is_superadmin && (
-          <GuildTab to="/settings" icon={<Settings fontSize="small" />} label="Settings" collapsed={collapsed} onClick={onNavigate} />
+          <GuildTab to="/settings" icon={Ic.settings} label="Settings" collapsed={collapsed} onClick={onNavigate} />
         )}
         {me && !collapsed && (
           <ListItemButton onClick={doLogout} sx={{ borderRadius: 999, mx: 1.25, mb: 0.5, px: 2, minHeight: 44 }}>
@@ -206,7 +213,7 @@ function DrawerContent({
               secondary="Logout"
               slotProps={{ primary: { noWrap: true, variant: "body1" }, secondary: { variant: "caption" } }}
             />
-            <Logout fontSize="small" sx={{ color: "text.secondary", mr: 1 }} />
+            <Box sx={{ color: "text.secondary", mr: 1, display: "flex" }}>{Ic.logout}</Box>
           </ListItemButton>
         )}
         {me && collapsed && (
@@ -342,8 +349,8 @@ export function AppShell({
               Player
             </Typography>
             <Tooltip title="Hide player sidebar">
-              <IconButton size="small" onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
-                <ViewSidebar fontSize="small" />
+              <IconButton onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
+                {Ic.rightClose}
               </IconButton>
             </Tooltip>
           </Stack>
@@ -390,14 +397,14 @@ export function AppShell({
           <Box sx={{ px: 3, pt: 2, pb: 1.5, flexShrink: 0 }}>
             <Box sx={{ maxWidth: 1400, mx: "auto", display: "flex", alignItems: "center", gap: 1 }}>
             {!isWide && me && (
-              <IconButton size="small" onClick={() => setModalOpen(true)} aria-label="Open navigation">
-                <MenuRounded />
+              <IconButton onClick={() => setModalOpen(true)} aria-label="Open navigation">
+                {Ic.menu}
               </IconButton>
             )}
             {back && (
               <Tooltip title="Back to servers">
-                <IconButton component={RouterLink} to="/" size="small">
-                  <ArrowBack />
+                <IconButton component={RouterLink} to="/">
+                  {Ic.back}
                 </IconButton>
               </Tooltip>
             )}
@@ -408,15 +415,15 @@ export function AppShell({
                 carries its restore button; on lg+ the rail does that. */}
             {right && !rightOpen && !isLarge && (
               <Tooltip title="Show player sidebar">
-                <IconButton size="small" onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
-                  <ViewSidebar />
+                <IconButton onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
+                  {Ic.rightOpen}
                 </IconButton>
               </Tooltip>
             )}
             {me?.is_superadmin && !isWide && (
               <Tooltip title="System settings">
-                <IconButton component={RouterLink} to="/settings" size="small">
-                  <Settings />
+                <IconButton component={RouterLink} to="/settings">
+                  {Ic.settings}
                 </IconButton>
               </Tooltip>
             )}
@@ -449,8 +456,8 @@ export function AppShell({
                   Player
                 </Typography>
                 <Tooltip title="Hide player sidebar">
-                  <IconButton size="small" onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
-                    <ViewSidebar fontSize="small" />
+                  <IconButton onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
+                    {Ic.rightClose}
                   </IconButton>
                 </Tooltip>
               </Stack>
@@ -471,13 +478,13 @@ export function AppShell({
             >
               <Tooltip title="Show player sidebar">
                 <IconButton onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
-                  <ViewSidebar />
+                  {Ic.rightOpen}
                 </IconButton>
               </Tooltip>
               <Tooltip title="Queue">
                 <IconButton onClick={() => setRightOpen(true)} aria-label="Show queue">
                   <Badge badgeContent={rightBadge ?? 0} color="primary">
-                    <QueueMusic />
+                    {Ic.queue}
                   </Badge>
                 </IconButton>
               </Tooltip>
