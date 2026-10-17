@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { AppBar, Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import ArrowBack from "@mui/icons-material/ArrowBack";
@@ -247,8 +247,22 @@ export function AppShell({
 }) {
   const theme = useTheme();
   const isWide = useMediaQuery(theme.breakpoints.up("md"));
+  // lg and up: the player sidebar is a pinned side sheet; below lg it is a
+  // modal drawer so it never jumps under the page content.
+  const isLarge = useMediaQuery(theme.breakpoints.up("lg"));
   const [navCollapsed, setNavCollapsed] = useLocalPref("ui.navCollapsed", false);
-  const [rightOpen, setRightOpen] = useLocalPref("ui.rightOpen", true);
+  const [sheetOpen, setSheetOpen] = useLocalPref("ui.rightOpen", true);
+  // On wide screens the sheet open/closed state persists; below lg the
+  // modal drawer is ephemeral so it does not pop up on every navigation.
+  const [modalRightOpen, setModalRightOpen] = useState(false);
+  const rightOpen = isLarge ? sheetOpen : modalRightOpen;
+  const setRightOpen = useCallback(
+    (v: boolean) => {
+      if (isLarge) setSheetOpen(v);
+      else setModalRightOpen(v);
+    },
+    [isLarge, setSheetOpen],
+  );
   const [modalOpen, setModalOpen] = useState(false);
   // Shared cache with GuildsPage: the drawer renders instantly on revisit.
   const guildsQuery = useGuilds();
@@ -388,10 +402,10 @@ export function AppShell({
             <Box sx={{ flex: 1, minWidth: 0, pt: { xs: 10, sm: 11 }, pb: right ? { xs: 22, sm: 18 } : 4 }}>
               {children}
             </Box>
-            {right && !rightOpen && (
+            {right && !rightOpen && isLarge && (
               <Box
                 sx={{
-                  display: { xs: "none", lg: "flex" },
+                  display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   gap: 1,
@@ -418,25 +432,25 @@ export function AppShell({
                 </Tooltip>
               </Box>
             )}
-            {right && rightOpen && (
+            {right && rightOpen && isLarge && (
               <Box
                 sx={{
-                  width: { xs: "100%", lg: 340 },
+                  width: { lg: 320, xl: 340 },
                   flexShrink: 0,
                   // A real side sheet on wide screens: full viewport height,
                   // own scroll and surface, independent of the page scroll.
-                  position: { lg: "sticky" },
+                  position: "sticky",
                   top: 0,
-                  height: { lg: "100dvh" },
-                  overflowY: { lg: "auto" },
+                  height: "100dvh",
+                  overflowY: "auto",
                   bgcolor: m3.surfaceContainerLow,
-                  borderLeft: { lg: `1px solid ${m3.outlineVariant}` },
-                  px: { xs: 0, sm: 2 },
-                  pt: { xs: 2, sm: 10 },
-                  pb: { xs: 22, sm: 18 },
+                  borderLeft: `1px solid ${m3.outlineVariant}`,
+                  px: 2,
+                  pt: { sm: 10 },
+                  pb: { sm: 18 },
                 }}
               >
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: { xs: 1.5 }, mb: 1.5 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
                   <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
                     Player
                   </Typography>
@@ -452,6 +466,30 @@ export function AppShell({
           </Box>
         </Box>
       </Box>
+
+      {/* Below lg the same content becomes a modal side drawer instead of
+          jumping under the page content. */}
+      {right && !isLarge && (
+        <Drawer
+          variant="temporary"
+          anchor="right"
+          open={rightOpen}
+          onClose={() => setRightOpen(false)}
+          sx={{ display: { lg: "none" }, "& .MuiDrawer-paper": { bgcolor: m3.surfaceContainerLow, px: 2, pt: 2, width: 360, maxWidth: "88vw", boxSizing: "border-box" } }}
+        >
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
+            <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
+              Player
+            </Typography>
+            <Tooltip title="Hide player sidebar">
+              <IconButton size="small" onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
+                <ViewSidebar fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+          {right}
+        </Drawer>
+      )}
     </Box>
   );
 }
