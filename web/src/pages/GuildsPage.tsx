@@ -22,7 +22,7 @@ export function GuildsPage() {
   }
 
   const shell = (children: React.ReactNode) => (
-    <AppShell me={me} onLogout={() => api.logout().then(() => window.location.reload())}>
+    <AppShell me={me} title="Servers" onLogout={() => api.logout().then(() => window.location.reload())}>
       {children}
     </AppShell>
   );

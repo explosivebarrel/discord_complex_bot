@@ -720,6 +720,7 @@ export function PlayerPage() {
       back
       title={state?.guild_name ?? undefined}
       right={rightPanel}
+      rightBadge={state?.queue.length ?? 0}
     >
       <Stack spacing={2} sx={{ minWidth: 0 }}>
           <Card>
