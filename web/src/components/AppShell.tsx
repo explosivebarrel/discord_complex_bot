@@ -24,21 +24,36 @@ function GuildTab({
   icon,
   label,
   collapsed,
+  disabled,
   onClick,
 }: {
   to: string;
   icon: ReactNode;
   label: string;
   collapsed: boolean;
+  disabled?: boolean;
   onClick?: () => void;
 }) {
   const { pathname } = useLocation();
   return (
-    <Tooltip title={collapsed ? label : undefined} placement="right" disableInteractive>
+    <Tooltip
+      title={
+        disabled
+          ? collapsed
+            ? `${label} — no access`
+            : "You don't have access to this section"
+          : collapsed
+            ? label
+            : undefined
+      }
+      placement="right"
+      disableInteractive
+    >
       <ListItemButton
         component={RouterLink}
         to={to}
         selected={pathname === to}
+        disabled={disabled}
         onClick={onClick}
         sx={{
           borderRadius: collapsed ? "50%" : 999,
@@ -126,33 +141,30 @@ function DrawerContent({
               collapsed={collapsed}
               onClick={onNavigate}
             />
-            {active.access.stats && (
-              <GuildTab
-                to={`/guild/${active.id}/stats`}
-                icon={Ic.stats}
-                label="Stats"
-                collapsed={collapsed}
-                onClick={onNavigate}
-              />
-            )}
-            {active.access.posts && (
-              <GuildTab
-                to={`/guild/${active.id}/posts`}
-                icon={Ic.posts}
-                label="Posts"
-                collapsed={collapsed}
-                onClick={onNavigate}
-              />
-            )}
-            {active.access.moderation && (
-              <GuildTab
-                to={`/guild/${active.id}/moderation`}
-                icon={Ic.moderation}
-                label="Moderation"
-                collapsed={collapsed}
-                onClick={onNavigate}
-              />
-            )}
+            <GuildTab
+              to={`/guild/${active.id}/stats`}
+              icon={Ic.stats}
+              label="Stats"
+              collapsed={collapsed}
+              disabled={!active.access.stats}
+              onClick={onNavigate}
+            />
+            <GuildTab
+              to={`/guild/${active.id}/posts`}
+              icon={Ic.posts}
+              label="Posts"
+              collapsed={collapsed}
+              disabled={!active.access.posts}
+              onClick={onNavigate}
+            />
+            <GuildTab
+              to={`/guild/${active.id}/moderation`}
+              icon={Ic.moderation}
+              label="Moderation"
+              collapsed={collapsed}
+              disabled={!active.access.moderation}
+              onClick={onNavigate}
+            />
             <Divider sx={{ mx: 2, my: 1.5 }} />
           </>
         )}

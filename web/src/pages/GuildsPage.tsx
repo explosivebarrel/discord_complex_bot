@@ -1,10 +1,24 @@
-import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Typography } from "@mui/material";
+import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Tooltip, Typography } from "@mui/material";
 import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
 import { api } from "../api";
 import { useGuilds } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { m3 } from "../theme";
+
+/** Guild card section button: disabled with a hint when no access. */
+function SectionButton({ label, icon, href, enabled }: { label: string; icon: React.ReactNode; href: string; enabled: boolean }) {
+  const button = (
+    <Button href={href} variant="tonal" size="small" startIcon={icon} disabled={!enabled} sx={{ flex: 1 }}>
+      {label}
+    </Button>
+  );
+  return (
+    <Tooltip title={enabled ? undefined : "You don't have access to this section"}>
+      <span style={{ display: "flex", flex: 1 }}>{button}</span>
+    </Tooltip>
+  );
+}
 
 export function GuildsPage() {
   const { me, loading } = useAuth();
@@ -89,42 +103,40 @@ export function GuildsPage() {
                   </Typography>
                 </Box>
                 {g.is_admin && <Chip size="small" label="admin" color="primary" sx={{ alignSelf: "flex-start" }} />}
-                <Box sx={{ mt: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   <Button href={`/guild/${g.id}`} variant="contained" size="small">
                     Open player
                   </Button>
-                  {(g.access?.manage || g.access?.stats || g.access?.posts || g.access?.moderation || g.is_superadmin) && (
                   <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                    {(g.access?.manage || g.access?.stats) && (
-                      <Box sx={{ display: "flex", gap: 1 }}>
-                        {g.access?.manage && (
-                          <Button href={`/guild/${g.id}/admin`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Settings />}>
-                            Manage
-                          </Button>
-                        )}
-                        {g.access?.stats && (
-                          <Button href={`/guild/${g.id}/stats`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<BarChart />}>
-                            Stats
-                          </Button>
-                        )}
-                      </Box>
-                    )}
-                    {(g.access?.posts || g.access?.moderation) && (
-                      <Box sx={{ display: "flex", gap: 1 }}>
-                        {g.access?.posts && (
-                          <Button href={`/guild/${g.id}/posts`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<PostAdd />}>
-                            Post
-                          </Button>
-                        )}
-                        {g.access?.moderation && (
-                          <Button href={`/guild/${g.id}/moderation`} variant="tonal" size="small" sx={{ flex: 1 }} startIcon={<Gavel />}>
-                            Mod
-                          </Button>
-                        )}
-                      </Box>
-                    )}
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <SectionButton
+                        label="Manage"
+                        icon={<Settings />}
+                        href={`/guild/${g.id}/admin`}
+                        enabled={!!(g.access?.manage || g.is_superadmin)}
+                      />
+                      <SectionButton
+                        label="Stats"
+                        icon={<BarChart />}
+                        href={`/guild/${g.id}/stats`}
+                        enabled={!!(g.access?.stats || g.is_superadmin)}
+                      />
+                    </Box>
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <SectionButton
+                        label="Post"
+                        icon={<PostAdd />}
+                        href={`/guild/${g.id}/posts`}
+                        enabled={!!(g.access?.posts || g.is_superadmin)}
+                      />
+                      <SectionButton
+                        label="Mod"
+                        icon={<Gavel />}
+                        href={`/guild/${g.id}/moderation`}
+                        enabled={!!(g.access?.moderation || g.is_superadmin)}
+                      />
+                    </Box>
                   </Box>
-                )}
                 </Box>
               </CardContent>
             </Card>
