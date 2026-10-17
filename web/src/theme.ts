@@ -62,7 +62,9 @@ const theme = createTheme({
     fontFamily: "Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif",
     h4: { fontWeight: 500 },
     h5: { fontWeight: 500 },
-    h6: { fontWeight: 500, fontSize: "1.05rem" },
+    // Card and section titles. Page titles render once, in the AppShell
+    // header, at 22px/500 — see the header Typography there.
+    h6: { fontWeight: 600, fontSize: "1rem" },
     button: { textTransform: "none", fontWeight: 500 },
   },
   components: {

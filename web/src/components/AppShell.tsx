@@ -278,7 +278,7 @@ function DrawerContent({
             <ListItemText
               primary={me.global_name}
               secondary="Logout"
-              slotProps={{ primary: { noWrap: true, variant: "body1" }, secondary: { variant: "caption" } }}
+              slotProps={{ primary: { noWrap: true, variant: "body1" }, secondary: { noWrap: true } }}
             />
             <Box sx={{ color: "text.secondary", mr: 1, display: "flex" }}>{Ic.logout}</Box>
           </ListItemButton>
@@ -529,7 +529,9 @@ export function AppShell({
                 </IconButton>
               </Tooltip>
             )}
-            <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
+            {/* The only page title in the app: everything else uses the
+                card-level h6 from the theme. */}
+            <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0, fontSize: 22, fontWeight: 500, lineHeight: 1.3 }}>
               {title ?? ""}
             </Typography>
             {/* Below lg the queue lives in a modal drawer, so the header

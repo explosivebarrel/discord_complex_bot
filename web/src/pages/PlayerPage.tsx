@@ -347,7 +347,7 @@ export function PlayerPage() {
                       const channel = channels.find((c) => c.id === value);
                       return (
                         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                          <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
+                          <MsIcon name="volume_up" fontSize={20} sx={{ color: "text.secondary" }} />
                           <Box
                             component="span"
                             sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -361,7 +361,7 @@ export function PlayerPage() {
                     {channels.map((c) => (
                       <MenuItem key={c.id} value={c.id}>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                          <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
+                          <MsIcon name="volume_up" fontSize={20} sx={{ color: "text.secondary" }} />
                           <Box
                             component="span"
                             sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}

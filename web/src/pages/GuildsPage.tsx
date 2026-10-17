@@ -46,7 +46,7 @@ function MockMenu({ guild, mock }: { guild: GuildBrief; mock: AccessMockTier | n
           onClick={(e) => setAnchor(e.currentTarget)}
           sx={{ color: mock ? "primary.main" : "text.secondary" }}
         >
-          <MsIcon name="switch_account" fontSize={18} />
+          <MsIcon name="switch_account" fontSize={20} />
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>

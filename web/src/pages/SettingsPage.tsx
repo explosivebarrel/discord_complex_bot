@@ -78,9 +78,6 @@ export function SettingsPage() {
 
   return (
     <AppShell me={me} back title="Settings">
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        System settings
-      </Typography>
       {error && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
           {error}

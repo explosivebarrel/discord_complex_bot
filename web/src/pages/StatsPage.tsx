@@ -49,9 +49,6 @@ export function StatsPage() {
 
   return (
     <AppShell me={me} back title="Stats">
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Server statistics
-      </Typography>
       {error && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
           {(error as Error).message}
@@ -96,7 +93,7 @@ export function StatsPage() {
                         secondary={t.author}
                         slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
                       />
-                      <BarChart sx={{ color: "primary.main", fontSize: 18, mr: 1 }} />
+                      <BarChart sx={{ color: "primary.main", fontSize: 20, mr: 1 }} />
                       <Typography variant="body2">{t.plays}</Typography>
                     </ListItem>
                   ))}
