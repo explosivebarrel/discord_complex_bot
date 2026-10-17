@@ -183,6 +183,7 @@ function DrawerContent({
               sx={{
                 borderRadius: collapsed ? "50%" : 999,
                 mb: 0.5,
+                justifyContent: "center",
                 // Collapsed rail: circular highlight; expanded: capsule.
                 ...(collapsed
                   ? { width: 48, height: 48, minHeight: 48, px: 0, mx: "auto" }
