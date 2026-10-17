@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import secrets
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
 from app.api.deps import (
+    MOCK_TIERS,
     SESSION_COOKIE,
     STATE_COOKIE,
     CurrentUser,
     create_session,
+    get_access_mock,
+    get_access_mock_all,
     get_bot,
     get_config,
     get_current_user,
@@ -18,6 +22,7 @@ from app.api.deps import (
     get_oauth,
     revoke_session,
     section_allows,
+    set_access_mock,
 )
 from app.api.discord_oauth import DiscordAPIError, DiscordOAuthClient
 from app.api.sessions import SessionExpiredError, fetch_guilds_with_retry
@@ -115,6 +120,7 @@ async def me(user: CurrentUser = Depends(get_current_user)) -> dict[str, Any]:
         "global_name": user.global_name,
         "avatar_url": avatar_url,
         "is_superadmin": user.is_superadmin,
+        "access_mock": {str(gid): tier for gid, tier in get_access_mock_all(user.session_id).items()},
     }
 
 
@@ -142,7 +148,27 @@ async def my_guilds(
         is_discord_admin = is_owner or bool(permissions & 0x20)
         is_admin = is_discord_admin or gid in await db.list_guild_admins(gid)
         tier = is_admin or user.is_superadmin
+        # A mock overrides the real Discord tier for this session.
+        mock = get_access_mock(user.session_id, gid)
+        if mock is not None:
+            tier = mock == "admin"
+            is_admin = tier
         settings = await db.get_guild_settings(gid)
+        # The super-admin passes every gate on the backend, so the flags the
+        # panel shows must say the same (a mock wins over the shortcut).
+        # "player" mirrors require_guild_member: any member may listen.
+        if mock == "guest":
+            access = {"player": False, "manage": False, "stats": False, "posts": False, "moderation": False}
+        elif user.is_superadmin and mock is None:
+            access = {"player": True, "manage": True, "stats": True, "posts": True, "moderation": True}
+        else:
+            access = {
+                "player": True,
+                "manage": tier,
+                "stats": section_allows(settings.stats_access, tier),
+                "posts": section_allows(settings.posts_access, tier),
+                "moderation": section_allows(settings.moderation_access, tier),
+            }
         result.append(
             {
                 "id": str(gid),
@@ -150,13 +176,35 @@ async def my_guilds(
                 "icon": g.get("icon"),
                 "is_admin": is_admin,
                 "is_superadmin": user.is_superadmin,
-                "access": {
-                    "manage": tier,
-                    "stats": section_allows(settings.stats_access, tier),
-                    "posts": section_allows(settings.posts_access, tier),
-                    "moderation": section_allows(settings.moderation_access, tier),
-                },
+                "access": access,
             }
         )
     result.sort(key=lambda item: item["name"].lower())
     return result
+
+
+class AccessMockBody(BaseModel):
+    guild_id: str
+    tier: Literal["admin", "member", "guest"] | None = None
+
+
+@router.get("/access-mock")
+async def access_mock_list(user: CurrentUser = Depends(get_current_user)) -> dict[str, dict[str, str]]:
+    if not user.is_superadmin:
+        raise HTTPException(status_code=403, detail="Super-admin only")
+    return {"mocks": {str(gid): tier for gid, tier in get_access_mock_all(user.session_id).items()}}
+
+
+@router.put("/access-mock")
+async def access_mock_put(
+    body: AccessMockBody,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, str]:
+    """Pretend a tier in one guild for this session: the panel and the API
+    gates both evaluate permissions as if the user had it."""
+    if not user.is_superadmin:
+        raise HTTPException(status_code=403, detail="Super-admin only")
+    if body.tier is not None and body.tier not in MOCK_TIERS:
+        raise HTTPException(status_code=400, detail=f"tier must be one of {MOCK_TIERS} or null")
+    set_access_mock(user.session_id, int(body.guild_id), body.tier)
+    return {"status": "ok"}

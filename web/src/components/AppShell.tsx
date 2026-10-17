@@ -4,8 +4,8 @@ import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import { IconGraphicEq } from "./icons";
 import { MsIcon } from "./MsIcon";
 import type { GuildBrief, Me } from "../api";
-import { api } from "../api";
-import { useGuilds } from "../queries";
+import { api, guildAllows } from "../api";
+import { useGuilds, useMe } from "../queries";
 import { useBotName } from "../useMeta";
 import { useLocalPref } from "../useLocalPref";
 import { m3 } from "../theme";
@@ -111,6 +111,9 @@ function DrawerContent({
   // Every page gets logout through the drawer; a page may override it.
   const doLogout = onLogout ?? (() => api.logout().then(() => window.location.reload()));
   const active = guilds.find((g) => g.id === activeGuildId) ?? null;
+  // Super-admin testing override for the current guild, if any.
+  const meQuery = useMe();
+  const activeMock = active ? meQuery.data?.access_mock?.[active.id] ?? null : null;
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* The expand/collapse toggle lives in AppShell, pinned to the top
@@ -139,6 +142,7 @@ function DrawerContent({
               icon={Ic.player}
               label="Player"
               collapsed={collapsed}
+              disabled={!guildAllows(active, "player")}
               onClick={onNavigate}
             />
             <GuildTab
@@ -146,7 +150,7 @@ function DrawerContent({
               icon={Ic.stats}
               label="Stats"
               collapsed={collapsed}
-              disabled={!active.access.stats}
+              disabled={!guildAllows(active, "stats")}
               onClick={onNavigate}
             />
             <GuildTab
@@ -154,7 +158,7 @@ function DrawerContent({
               icon={Ic.posts}
               label="Posts"
               collapsed={collapsed}
-              disabled={!active.access.posts}
+              disabled={!guildAllows(active, "posts")}
               onClick={onNavigate}
             />
             <GuildTab
@@ -162,9 +166,17 @@ function DrawerContent({
               icon={Ic.moderation}
               label="Moderation"
               collapsed={collapsed}
-              disabled={!active.access.moderation}
+              disabled={!guildAllows(active, "moderation")}
               onClick={onNavigate}
             />
+            {activeMock && !collapsed && (
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 2.75, pt: 0.5 }}>
+                <MsIcon name="switch_account" fontSize={16} sx={{ color: "secondary.main" }} />
+                <Typography variant="caption" sx={{ color: "secondary.main" }}>
+                  Previewing as {activeMock}
+                </Typography>
+              </Stack>
+            )}
             <Divider sx={{ mx: 2, my: 1.5 }} />
           </>
         )}

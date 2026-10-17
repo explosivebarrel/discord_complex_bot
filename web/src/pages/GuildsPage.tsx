@@ -1,15 +1,17 @@
-import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Tooltip, Typography } from "@mui/material";
+import { useState } from "react";
+import { Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
 import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
-import { api } from "../api";
-import { useGuilds } from "../queries";
+import { api, guildAllows, type AccessMockTier, type GuildBrief } from "../api";
+import { useGuilds, useMe, useSetAccessMock } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
+import { MsIcon } from "../components/MsIcon";
 import { m3 } from "../theme";
 
 /** Guild card section button: disabled with a hint when no access. */
-function SectionButton({ label, icon, href, enabled }: { label: string; icon: React.ReactNode; href: string; enabled: boolean }) {
+function SectionButton({ label, icon, href, enabled, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; primary?: boolean }) {
   const button = (
-    <Button href={href} variant="tonal" size="small" startIcon={icon} disabled={!enabled} sx={{ flex: 1 }}>
+    <Button href={href} variant={primary ? "contained" : "tonal"} size="small" startIcon={icon} disabled={!enabled} sx={{ flex: 1 }}>
       {label}
     </Button>
   );
@@ -20,9 +22,52 @@ function SectionButton({ label, icon, href, enabled }: { label: string; icon: Re
   );
 }
 
+const MOCK_LABELS: Record<AccessMockTier | "real", string> = {
+  real: "Real permissions",
+  admin: "As admin",
+  member: "As member",
+  guest: "As guest",
+};
+
+/** Super-admin-only menu on a guild card: preview the panel as another tier. */
+function MockMenu({ guild, mock }: { guild: GuildBrief; mock: AccessMockTier | null }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const setMock = useSetAccessMock();
+  const choose = (tier: AccessMockTier | null) => {
+    setAnchor(null);
+    setMock.mutate({ guildId: guild.id, tier });
+  };
+  return (
+    <>
+      <Tooltip title="Preview as another tier">
+        <IconButton
+          size="small"
+          aria-label="Preview as another tier"
+          onClick={(e) => setAnchor(e.currentTarget)}
+          sx={{ color: mock ? "primary.main" : "text.secondary" }}
+        >
+          <MsIcon name="switch_account" fontSize={18} />
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+        {(["real", "admin", "member", "guest"] as const).map((tier) => (
+          <MenuItem
+            key={tier}
+            selected={tier === "real" ? !mock : mock === tier}
+            onClick={() => choose(tier === "real" ? null : tier)}
+          >
+            <ListItemText primary={MOCK_LABELS[tier]} />
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
+  );
+}
+
 export function GuildsPage() {
   const { me, loading } = useAuth();
   const guildsQuery = useGuilds();
+  const meQuery = useMe();
   const guilds = guildsQuery.data;
   const guildsError = guildsQuery.error ? (guildsQuery.error as Error).message : null;
 
@@ -80,7 +125,9 @@ export function GuildsPage() {
         </Typography>
       )}
       <Grid container spacing={2}>
-        {guilds?.map((g) => (
+        {guilds?.map((g) => {
+          const mock = meQuery.data?.access_mock?.[g.id] ?? null;
+          return (
           <Grid key={g.id} size={{ xs: 12, sm: 6, md: 4 }}>
             <Card sx={{ height: "100%" }}>
               <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, height: "100%" }}>
@@ -101,25 +148,33 @@ export function GuildsPage() {
                   <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
                     {g.name}
                   </Typography>
+                  {me?.is_superadmin && <MockMenu guild={g} mock={mock} />}
                 </Box>
-                {g.is_admin && <Chip size="small" label="admin" color="primary" sx={{ alignSelf: "flex-start" }} />}
+                <Box sx={{ display: "flex", gap: 1, alignSelf: "flex-start" }}>
+                  {g.is_admin && <Chip size="small" label="admin" color="primary" />}
+                  {mock && <Chip size="small" label={`as ${mock}`} color="secondary" />}
+                </Box>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  <Button href={`/guild/${g.id}`} variant="contained" size="small">
-                    Open player
-                  </Button>
+                  <SectionButton
+                    label="Open player"
+                    icon={<GraphicEq />}
+                    href={`/guild/${g.id}`}
+                    enabled={guildAllows(g, "player")}
+                    primary
+                  />
                   <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                     <Box sx={{ display: "flex", gap: 1 }}>
                       <SectionButton
                         label="Manage"
                         icon={<Settings />}
                         href={`/guild/${g.id}/admin`}
-                        enabled={!!(g.access?.manage || g.is_superadmin)}
+                        enabled={guildAllows(g, "manage")}
                       />
                       <SectionButton
                         label="Stats"
                         icon={<BarChart />}
                         href={`/guild/${g.id}/stats`}
-                        enabled={!!(g.access?.stats || g.is_superadmin)}
+                        enabled={guildAllows(g, "stats")}
                       />
                     </Box>
                     <Box sx={{ display: "flex", gap: 1 }}>
@@ -127,13 +182,13 @@ export function GuildsPage() {
                         label="Post"
                         icon={<PostAdd />}
                         href={`/guild/${g.id}/posts`}
-                        enabled={!!(g.access?.posts || g.is_superadmin)}
+                        enabled={guildAllows(g, "posts")}
                       />
                       <SectionButton
                         label="Mod"
                         icon={<Gavel />}
                         href={`/guild/${g.id}/moderation`}
-                        enabled={!!(g.access?.moderation || g.is_superadmin)}
+                        enabled={guildAllows(g, "moderation")}
                       />
                     </Box>
                   </Box>
@@ -141,7 +196,8 @@ export function GuildsPage() {
               </CardContent>
             </Card>
           </Grid>
-        ))}
+          );
+        })}
       </Grid>
     </Box>,
   );

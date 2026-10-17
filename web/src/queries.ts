@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, type AccessMockTier } from "./api";
 
 /**
  * Server-state hooks over the plain api client. Pages read loading/error/data
@@ -14,6 +14,20 @@ export function useMe() {
 
 export function useGuilds() {
   return useQuery({ queryKey: ["guilds"], queryFn: api.myGuilds, staleTime: 60_000 });
+}
+
+/** Super-admin testing override: pretend a tier in one guild. Refreshes the
+    guild list and me so the home cards and the sidebar follow at once. */
+export function useSetAccessMock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ guildId, tier }: { guildId: string; tier: AccessMockTier | null }) =>
+      api.setAccessMock(guildId, tier),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["guilds"] });
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
 }
 
 export function usePlayerState(guildId: string) {

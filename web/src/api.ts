@@ -1,10 +1,16 @@
+export type AccessMockTier = "admin" | "member" | "guest";
+
 export interface Me {
   discord_id: string;
   username: string;
   global_name: string;
   avatar_url: string;
   is_superadmin: boolean;
+  /** Super-admin testing override: guild id -> pretended tier. */
+  access_mock?: Record<string, AccessMockTier>;
 }
+
+export type GuildSection = keyof GuildBrief["access"];
 
 export interface GuildBrief {
   id: string;
@@ -13,11 +19,19 @@ export interface GuildBrief {
   is_admin: boolean;
   is_superadmin?: boolean;
   access: {
+    player: boolean;
     manage: boolean;
     stats: boolean;
     posts: boolean;
     moderation: boolean;
   };
+}
+
+/** Single source of truth for section availability, shared by the home
+    cards and the sidebar so the two can never disagree. The API already
+    bakes the super-admin shortcut and any access mock into the flags. */
+export function guildAllows(guild: GuildBrief, section: GuildSection): boolean {
+  return !!guild.access?.[section];
 }
 
 export interface ModerationWarning {
@@ -213,6 +227,13 @@ export const api = {
   logout: () => fetch("/api/auth/logout", { method: "POST" }),
 
   myGuilds: () => fetch("/api/auth/guilds").then((r) => handle<GuildBrief[]>(r)),
+
+  setAccessMock: (guildId: string, tier: AccessMockTier | null) =>
+    fetch("/api/auth/access-mock", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ guild_id: guildId, tier }),
+    }).then((r) => handle<{ status: string }>(r)),
 
   playerState: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/state`).then((r) => handle<PlayerState>(r)),

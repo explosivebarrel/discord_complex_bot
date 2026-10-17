@@ -138,6 +138,33 @@ _MEMBER_CACHE_TTL = 600.0
 _member_cache: dict[tuple[int, int], tuple[float, bool, bool]] = {}
 
 
+# --- access mock (super-admin testing) ---
+
+# Pretend tiers for the panel: "admin" (owner/MANAGE_GUILD), "member" (plain
+# member) and "guest" (not a member). Key: session id, value: {guild_id: tier}.
+# In memory on purpose: a restart resets every mock to the real permissions.
+MOCK_TIERS = ("admin", "member", "guest")
+_access_mock: dict[int, dict[int, str]] = {}
+
+
+def get_access_mock(session_id: int, guild_id: int) -> str | None:
+    return _access_mock.get(session_id, {}).get(guild_id)
+
+
+def get_access_mock_all(session_id: int) -> dict[int, str]:
+    return _access_mock.get(session_id, {})
+
+
+def set_access_mock(session_id: int, guild_id: int, tier: str | None) -> None:
+    guilds = _access_mock.setdefault(session_id, {})
+    if tier is None:
+        guilds.pop(guild_id, None)
+        if not guilds:
+            _access_mock.pop(session_id, None)
+    else:
+        guilds[guild_id] = tier
+
+
 def _cached_access(user: CurrentUser, guild_id: int) -> tuple[bool, bool] | None:
     import time
 
@@ -177,6 +204,11 @@ async def _guild_access(
     cached = _cached_access(user, guild_id)
     if cached is not None:
         return cached
+    # An active mock replaces the Discord lookups entirely, so the panel
+    # gates behave exactly as they would for the pretended tier.
+    mock = get_access_mock(user.session_id, guild_id)
+    if mock is not None:
+        return mock != "guest", mock == "admin"
     try:
         from app.api.sessions import fetch_guilds_with_retry
 
@@ -204,6 +236,11 @@ async def _is_guild_member(
     return is_member
 
 
+def _superadmin_unmocked(user: CurrentUser, guild_id: int) -> bool:
+    """The super-admin shortcut applies only without an active access mock."""
+    return user.is_superadmin and get_access_mock(user.session_id, guild_id) is None
+
+
 async def require_guild_member(
     guild_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -211,7 +248,7 @@ async def require_guild_member(
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> CurrentUser:
-    if user.is_superadmin:
+    if _superadmin_unmocked(user, guild_id):
         return user
     if bot.get_guild(guild_id) is None:
         raise HTTPException(status_code=404, detail="Bot is not on this server")
@@ -239,7 +276,7 @@ async def is_admin_tier(
     db: Database = Depends(get_db),
 ) -> bool:
     """Super-admin, Discord owner/MANAGE_GUILD, or a panel-added admin."""
-    if user.is_superadmin:
+    if _superadmin_unmocked(user, guild_id):
         return True
     _, is_discord_admin = await _guild_access(user, oauth, bot, db, guild_id)
     return is_discord_admin or await is_guild_admin(db, user, guild_id)
@@ -257,7 +294,7 @@ def require_section_access(section: str):
     ) -> Any:
         # Any, not CurrentUser: FastAPI >= 0.14x builds a response model from a
         # dependency return annotation, and CurrentUser is not a Pydantic model.
-        if user.is_superadmin:
+        if _superadmin_unmocked(user, guild_id):
             return user
         if bot.get_guild(guild_id) is None:
             raise HTTPException(status_code=404, detail="Bot is not on this server")
@@ -280,7 +317,7 @@ async def require_guild_admin(
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> CurrentUser:
-    if user.is_superadmin:
+    if _superadmin_unmocked(user, guild_id):
         return user
     if bot.get_guild(guild_id) is None:
         raise HTTPException(status_code=404, detail="Bot is not on this server")
