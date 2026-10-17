@@ -6,6 +6,7 @@ from collections import deque
 import pytest
 
 from app.core.db import Database
+from app.core.services import vk_music
 from app.core.services.music import MusicService, MusicServiceError, PlaylistSession, QueueItem
 
 from .conftest import GUILD_ID, FakePlayer, fill_queue, make_track
@@ -20,6 +21,10 @@ from .conftest import GUILD_ID, FakePlayer, fill_queue, make_track
         ("https://soundcloud.com/artist/track", "sc"),
         ("https://on.soundcloud.com/abcd", "sc"),
         ("https://music.yandex.ru/album/1/track/2", "ym"),
+        ("https://vk.com/audio123_456", "vk"),
+        ("https://m.vk.com/audio123_456", "vk"),
+        ("https://music.vk.com/playlist/123_45", "vk"),
+        ("https://vk.ru/audios123", "vk"),
         ("https://archive.org/details/nitem", "archive"),
         # Unknown URL hosts keep the tag the panel sent.
         ("http://ice1.somafm.com/groovesalad-128-mp3", "ym"),
@@ -710,3 +715,145 @@ async def test_restore_rebinds_lazy_marker_to_fresh_session(music: MusicService,
     rebound = restored.queues[GUILD_ID][0]
     assert rebound.more_from_playlist == (9, 100)
     assert rebound.display_title == "20 more tracks"
+
+
+# --- VK Music ---
+
+def _vk_token_stub(music: MusicService) -> None:
+    async def token() -> str:
+        return "vk-test-token"
+
+    music._vk_token = token  # type: ignore[method-assign]
+
+
+def test_vk_playlist_url_detection(music: MusicService) -> None:
+    assert music._is_playlist_url("https://vk.com/audios123") is True  # noqa: SLF001
+    assert music._is_playlist_url("https://music.vk.com/playlist/123_45") is True  # noqa: SLF001
+    assert music._is_playlist_url("https://vk.com/album/123_45") is True  # noqa: SLF001
+    assert music._is_playlist_url("https://vk.com/audio123_456") is False  # noqa: SLF001
+    assert music.looks_like_playlist("https://vk.com/audios123", "vk") is True
+    assert music.looks_like_playlist("https://vk.com/audio123_456", "vk") is False
+
+
+async def test_vk_enqueue_plain_text_takes_first_search_hit(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    _vk_token_stub(music)
+
+    async def fake_search(_token: str, _query: str, _limit: int):
+        return [
+            {
+                "title": "Song", "author": "Artist",
+                "uri": "https://vk.com/audio1_2", "length": 30_000,
+                "artwork": None, "source": "vk", "requested_by": "", "encoded": None,
+            }
+        ]
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    monkeypatch.setattr(vk_music, "search", fake_search)
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    result = await music.enqueue(GUILD_ID, "some song", 1, "u", source="vk")
+
+    assert result["now_playing"] is True
+    item = music.current_items[GUILD_ID]
+    assert item.source == "vk"
+    assert item.pending_url == "https://vk.com/audio1_2"
+    assert item.display_title == "Song"
+
+
+async def test_vk_enqueue_track_url_reads_meta_from_api(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    _vk_token_stub(music)
+
+    async def fake_track(_token: str, owner_id: int, audio_id: int):
+        assert (owner_id, audio_id) == (1, 2)
+        return {"owner_id": 1, "id": 2, "artist": "Artist", "title": "Song", "duration": 30}
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    monkeypatch.setattr(vk_music, "track", fake_track)
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    await music.enqueue(GUILD_ID, "https://vk.com/audio1_2", 1, "u", source="vk")
+
+    item = music.current_items[GUILD_ID]
+    assert item.display_title == "Song"
+    assert item.length == 30_000
+
+
+async def test_vk_resolve_item_loads_a_fresh_stream(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="vk",
+        pending_url="https://vk.com/audio1_2", title="Song", author="Artist",
+    )
+    _vk_token_stub(music)
+
+    async def fake_stream(_token: str, owner_id: int, audio_id: int):
+        return "https://cdn.vkuser.net/song.mp3"
+
+    async def fake_load(url: str):
+        assert url == "https://cdn.vkuser.net/song.mp3"
+        return make_track("cdname")
+
+    monkeypatch.setattr(vk_music, "stream_url", fake_stream)
+    music._load_stream = fake_load  # type: ignore[method-assign]
+
+    track = await music._resolve_item(item)  # noqa: SLF001
+
+    # FakeTrack does not model the wavelink _title property, so the
+    # metadata patch lands on the private attribute.
+    assert track._title == "Song"  # noqa: SLF001
+    assert track._author == "Artist"  # noqa: SLF001
+
+
+async def test_vk_resolve_rejects_hls(music: MusicService, monkeypatch: pytest.MonkeyPatch) -> None:
+    item = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="vk",
+        pending_url="https://vk.com/audio1_2", title="Song", author="Artist",
+    )
+    _vk_token_stub(music)
+
+    async def hls_stream(_token: str, _owner: int, _audio: int):
+        raise vk_music.VkMusicError("VK streams this track over HLS, which the player cannot play.")
+
+    monkeypatch.setattr(vk_music, "stream_url", hls_stream)
+
+    with pytest.raises(MusicServiceError):
+        await music._resolve_item(item)  # noqa: SLF001
+
+
+async def test_vk_open_playlist_stores_deep_links(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _vk_token_stub(music)
+
+    async def fake_playlist(_token: str, owner_id: int, playlist_id: int):
+        assert (owner_id, playlist_id) == (123, 45)
+        entry = {
+            "title": "t", "author": "a", "url": "https://vk.com/audio1_1",
+            "duration": 1_000, "artwork": None,
+        }
+        return "My collection", [entry]
+
+    monkeypatch.setattr(vk_music, "playlist", fake_playlist)
+
+    session = await music.open_playlist("https://vk.com/playlist/123_45", "vk")
+
+    assert session.title == "My collection"
+    assert session.entries[0]["url"] == "https://vk.com/audio1_1"
+
+
+async def test_vk_requires_token(music: MusicService) -> None:
+    with pytest.raises(MusicServiceError, match="VK Music is not configured"):
+        await music.search("song", source="vk")

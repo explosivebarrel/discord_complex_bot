@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/admin/system", tags=["system"])
 
 YT_TOKEN_KEY = "youtube_oauth"
 YM_TOKEN_KEY = "yandex_music"
+VK_TOKEN_KEY = "vkmusic_token"
 
 
 class YoutubeConfigBody(BaseModel):
@@ -30,6 +31,10 @@ class YoutubeConfigBody(BaseModel):
 
 
 class YandexConfigBody(BaseModel):
+    access_token: str
+
+
+class VkConfigBody(BaseModel):
     access_token: str
 
 
@@ -97,6 +102,17 @@ async def integrations(
         "token_saved_in_db": bool(ym_stored and ym_stored.get("access_token")),
     }
 
+    vk_stored = await db.get_system_setting(VK_TOKEN_KEY)
+    vkmusic = {
+        # The bot reads this token from the DB before every VK call, so a
+        # new token applies at once.
+        "configured": bool(vk_stored and vk_stored.get("access_token")) or bool(config.vk_music_token),
+        "token_masked": LavalinkAdmin.mask_token(
+            (vk_stored or {}).get("access_token") or config.vk_music_token
+        ),
+        "token_saved_in_db": bool(vk_stored and vk_stored.get("access_token")),
+    }
+
     nodes = list(__import__("wavelink").Pool.nodes.values())
 
     return {
@@ -112,6 +128,7 @@ async def integrations(
         },
         "youtube": youtube,
         "yandexmusic": yandex,
+        "vkmusic": vkmusic,
         "superadmin_hint": "IDs in SUPERADMIN_IDS (.env) get this page",
     }
 
@@ -212,4 +229,33 @@ async def update_yandex(
         "token_masked": LavalinkAdmin.mask_token(token),
         "env_updated": env_written,
         "note": "Saved. Run `docker compose up -d --force-recreate lavalink` to apply.",
+    }
+
+
+@router.put("/vkmusic")
+async def update_vkmusic(
+    body: VkConfigBody,
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
+) -> dict[str, Any]:
+    """Save the VK audio access token in the DB and in .env.
+
+    The bot re-reads the DB value before every VK call, so it applies
+    without a restart.
+    """
+    _require_superadmin(user)
+    token = body.access_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="access_token must not be empty")
+
+    await db.set_system_setting(VK_TOKEN_KEY, {"access_token": token})
+    env_path = config.data_dir.parent / ".env"
+    env_written = _write_env_line(env_path, "VK_MUSIC_TOKEN", token)
+    await db.audit("admin.update_vkmusic", actor_id=user.discord_id, actor_kind="web")
+
+    return {
+        "token_masked": LavalinkAdmin.mask_token(token),
+        "env_updated": env_written,
+        "note": "Saved. VK search and playback use the new token right away.",
     }

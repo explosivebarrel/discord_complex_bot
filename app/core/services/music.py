@@ -14,7 +14,9 @@ import discord
 import wavelink
 
 from app.core.db import Database
+from app.core.services import vk_music
 from app.core.services.library import library_stream_url
+from app.core.services.vk_music import VkMusicError
 
 if TYPE_CHECKING:
     from app.core.config import Config
@@ -179,13 +181,13 @@ class MusicService:
     def _for_replay(item: QueueItem) -> QueueItem:
         """Prepare a history entry for another play.
 
-        A resolved yt/sc stream URL expires after a few hours (and live
+        A resolved yt/sc/vk stream URL expires after a few hours (and live
         streams refuse a second run at once). The page URL still resolves,
         so replay rebuilds the stream from it. Items without a URL (search
         results on other sources, radio) replay their stored track.
         """
         if item.track is not None:
-            if not item.pending_url and item.source in ("yt", "sc") and item.track.uri:
+            if not item.pending_url and item.source in ("yt", "sc", "vk") and item.track.uri:
                 item.pending_url = item.track.uri
             if item.pending_url:
                 item.track = None
@@ -368,6 +370,12 @@ class MusicService:
             return await self._ytdlp_search(query, limit, "scsearch", "sc")
         if source == "yt":
             return await self._ytdlp_search(query, limit, "ytsearch", "yt")
+        if source == "vk":
+            token = await self._vk_token()
+            try:
+                return await vk_music.search(token, query, limit)
+            except VkMusicError as exc:
+                raise MusicServiceError(str(exc)) from exc
         result = await self._search_with_retry(query, source)
         if isinstance(result, wavelink.Playlist):
             tracks = result.tracks[:limit]
@@ -403,9 +411,23 @@ class MusicService:
             return "sc"
         if host in ("music.yandex.ru", "music.yandex.com"):
             return "ym"
+        if host in vk_music.VK_HOSTS:
+            return "vk"
         if host == "archive.org":
             return "archive"
         return source
+
+    async def _vk_token(self) -> str:
+        """The VK audio token: the DB setting wins, .env is the fallback.
+
+        Reading the DB on every call keeps the Settings-page token live
+        without a container restart (unlike the Lavalink-side Yandex token).
+        """
+        stored = await self.db.get_system_setting("vkmusic_token")
+        token = (stored or {}).get("access_token") or self.config.vk_music_token
+        if not token:
+            raise MusicServiceError("VK Music is not configured. Set the access token in Settings.")
+        return token
 
     async def enqueue(
         self,
@@ -462,6 +484,28 @@ class MusicService:
                 for entry in entries
             ]
             title = f"{playlist_title or 'Playlist'} - {len(items)} track(s)"
+        elif source == "vk" and self._is_playlist_url(query):
+            # Collections: /playlist/<owner>_<id>, /album/... and /audios<owner>.
+            token = await self._vk_token()
+            playlist_title, entries = await self._vk_playlist_entries(token, query)
+            if not entries:
+                raise MusicServiceError("The playlist is empty or cannot be read.")
+            entries = entries[:PLAYLIST_LIMIT]
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=entry["url"],
+                    title=entry["title"],
+                    author=entry["author"],
+                    length=entry["duration"],
+                    artwork=entry["artwork"],
+                )
+                for entry in entries
+            ]
+            title = f"{playlist_title} - {len(items)} track(s)"
         elif source == "local":
             # Pending item; the signed stream URL is built at play time.
             items = [
@@ -478,8 +522,10 @@ class MusicService:
                 )
             ]
             title = items[0].display_title
-        elif source in ("yt", "sc") and meta.get("title"):
+        elif source in ("yt", "sc", "vk") and meta.get("title"):
             # The panel already knows the track metadata; queue lazily.
+            # For vk the pending URL is the track deep link, not the CDN URL:
+            # those are signed and expire.
             items = [
                 QueueItem(
                     track=None,
@@ -491,6 +537,34 @@ class MusicService:
                     author=str(meta.get("author") or ""),
                     length=int(meta.get("length_ms") or 0),
                     artwork=meta.get("artwork"),
+                )
+            ]
+            title = items[0].display_title
+        elif source == "vk":
+            # No metadata (raw URL or plain text): read it from the VK API.
+            token = await self._vk_token()
+            parsed = vk_music.parse_track_url(query)
+            try:
+                if parsed is not None:
+                    row = vk_music.track_row(await vk_music.track(token, *parsed))
+                else:
+                    rows = await vk_music.search(token, query, 1)
+                    if not rows:
+                        raise MusicServiceError("Nothing found for this query.")
+                    row = rows[0]
+            except VkMusicError as exc:
+                raise MusicServiceError(str(exc)) from exc
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=row["uri"],
+                    title=row["title"],
+                    author=row["author"],
+                    length=row["length"],
+                    artwork=row["artwork"],
                 )
             ]
             title = items[0].display_title
@@ -561,7 +635,21 @@ class MusicService:
             return "/sets/" in q
         if "music.yandex.ru" in q or "music.yandex.com" in q:
             return "/playlists/" in q or "/album/" in q
+        if any(host in q for host in vk_music.VK_HOSTS):
+            return (
+                vk_music.parse_playlist_url(query) is not None
+                or vk_music.parse_audios_url(query) is not None
+            )
         return False
+
+    async def _vk_playlist_entries(self, token: str, query: str) -> tuple[str, list[dict[str, Any]]]:
+        try:
+            parsed = vk_music.parse_playlist_url(query)
+            if parsed is not None:
+                return await vk_music.playlist(token, *parsed)
+            return await vk_music.user_audios(token, vk_music.parse_audios_url(query))
+        except VkMusicError as exc:
+            raise MusicServiceError(str(exc)) from exc
 
     async def _resolve_playlist(self, query: str) -> tuple[str, list[dict[str, Any]]]:
         """Read a playlist page with yt-dlp; (playlist title, flat track metadata)."""
@@ -623,6 +711,30 @@ class MusicService:
             if info.get("thumbnail"):
                 track._artwork = info["thumbnail"]  # noqa: SLF001
             elif item.artwork:
+                track._artwork = item.artwork  # noqa: SLF001
+            return track
+        if item.source == "vk":
+            token = await self._vk_token()
+            parsed = vk_music.parse_track_url(item.pending_url)
+            if parsed is None:
+                raise MusicServiceError("This VK link is not a single track the bot can play.")
+            track = None
+            # A signed URL can die between fetch and load; refetch once.
+            for attempt in range(2):
+                try:
+                    stream = await vk_music.stream_url(token, *parsed)
+                except VkMusicError as exc:
+                    raise MusicServiceError(str(exc)) from exc
+                track = await self._load_stream(stream)
+                if track is not None:
+                    break
+                if attempt + 1 < 2:
+                    await asyncio.sleep(1.0)
+            if track is None:
+                raise MusicServiceError("Could not load the VK stream. Try again in a moment.")
+            track._title = item.title or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
+            track._author = item.author or track.author  # noqa: SLF001
+            if item.artwork:
                 track._artwork = item.artwork  # noqa: SLF001
             return track
         loaded = await wavelink.Playable.search(item.pending_url)
@@ -835,7 +947,7 @@ class MusicService:
     # --- playlist browser (panel) ---
 
     def looks_like_playlist(self, query: str, source: str) -> bool:
-        return self._is_playlist_url(query) and self._detect_source(query, source) in ("yt", "sc", "ym")
+        return self._is_playlist_url(query) and self._detect_source(query, source) in ("yt", "sc", "ym", "vk")
 
     async def open_playlist(self, query: str, source: str) -> PlaylistSession:
         """Read a playlist into a cached session for the panel browser."""
@@ -844,6 +956,10 @@ class MusicService:
             result = await self._lavalink_load_with_retry(query)
             entries = list(getattr(result, "tracks", None) or [])
             title = str(getattr(result, "name", None) or "Playlist")
+        elif source == "vk":
+            token = await self._vk_token()
+            title, entries = await self._vk_playlist_entries(token, query)
+            title = title or "Playlist"
         else:
             title, entries = await self._resolve_playlist(query)
             title = title or "Playlist"

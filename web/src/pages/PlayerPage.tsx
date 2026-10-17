@@ -34,6 +34,7 @@ import Folder from "@mui/icons-material/Folder";
 import YouTube from "@mui/icons-material/YouTube";
 import VolumeUp from "@mui/icons-material/VolumeUp";
 import AllInclusive from "@mui/icons-material/AllInclusive";
+import TagIcon from "@mui/icons-material/Tag";
 import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
 import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
 import Favorite from "@mui/icons-material/Favorite";
@@ -64,6 +65,7 @@ const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
   { id: "yt", label: "YouTube", icon: <YouTube fontSize="small" /> },
   { id: "sc", label: "SoundCloud", icon: <CloudQueue fontSize="small" /> },
   { id: "ym", label: "Яндекс Музыка", icon: <MusicNote fontSize="small" /> },
+  { id: "vk", label: "VK", icon: <TagIcon fontSize="small" /> },
   { id: "radio", label: "Radio", icon: <RadioIcon fontSize="small" /> },
   { id: "archive", label: "Archive.org", icon: <LibraryMusic fontSize="small" /> },
   { id: "local", label: "Local", icon: <Folder fontSize="small" /> },
@@ -74,6 +76,7 @@ const PLACEHOLDERS: Record<string, string> = {
   yt: "Track name or URL",
   sc: "Search SoundCloud tracks",
   ym: "Поиск по Яндекс.Музыке",
+  vk: "Track name or vk.com link (track, playlist, audios)",
   radio: "Station name or genre (jazz, rock, news…)",
   archive: "Search audio on Archive.org",
   local: "Search files in the server library (data/music)",
@@ -88,6 +91,7 @@ const SOURCE_LABELS: Record<string, string> = {
   sc: "SoundCloud",
   ym: "Яндекс Музыка",
   yandexmusic: "Яндекс Музыка",
+  vk: "VK Music",
   radio: "Radio",
   archive: "Archive.org",
   youtube: "YouTube",

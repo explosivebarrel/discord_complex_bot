@@ -69,6 +69,7 @@ def config(tmp_path: Path) -> Config:
         lavalink_password="pw",
         lavalink_secure=False,
         yandex_music_token="",
+        vk_music_token="",
         log_level="INFO",
         data_dir=tmp_path,
         music_library_dir=tmp_path / "music",

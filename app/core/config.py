@@ -30,6 +30,7 @@ class Config:
     lavalink_password: str
     lavalink_secure: bool
     yandex_music_token: str
+    vk_music_token: str
     log_level: str
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
     music_library_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "music")
@@ -64,6 +65,7 @@ def load_config() -> Config:
         lavalink_password=os.getenv("LAVALINK_PASSWORD", "change-me-too"),
         lavalink_secure=os.getenv("LAVALINK_SECURE", "false").lower() == "true",
         yandex_music_token=os.getenv("YANDEX_MUSIC_TOKEN", ""),
+        vk_music_token=os.getenv("VK_MUSIC_TOKEN", ""),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         music_library_dir=Path(os.getenv("MUSIC_LIBRARY_DIR", str(data_dir_value / "music"))),
         internal_base_url=os.getenv("INTERNAL_BASE_URL", base_url_value),

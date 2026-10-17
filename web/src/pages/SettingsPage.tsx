@@ -41,6 +41,7 @@ export function SettingsPage() {
   const [poToken, setPoToken] = useState("");
   const [visitorData, setVisitorData] = useState("");
   const [yandexToken, setYandexToken] = useState("");
+  const [vkToken, setVkToken] = useState("");
 
   const guard = (e: Error) => {
     if (e.message !== "unauthorized") setError(e.message);
@@ -57,6 +58,7 @@ export function SettingsPage() {
 
   const yt = info?.youtube;
   const ym = info?.yandexmusic;
+  const vk = info?.vkmusic;
 
   if (loading) {
     return (
@@ -202,6 +204,51 @@ export function SettingsPage() {
                     .then((r) => {
                       feedback.show(r.note);
                       setYandexToken("");
+                      refresh();
+                    })
+                    .catch(guard)
+                }
+              >
+                Save
+              </Button>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              VK Music access token
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
+              Needs a token with the audio scope (mobile-client trick). Open{" "}
+              <a
+                href="https://oauth.vk.com/authorize?client_id=2685278&display=mobile&response_type=token&scope=audio&redirect_uri=https://oauth.vk.com/blank.html&v=5.199"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#D0BCFF" }}
+              >
+                this VK OAuth link
+              </a>{" "}
+              while logged into the VK account, allow access, then copy <code>access_token</code> from the
+              blank-page URL. Applied without a restart. Current: {vk?.configured ? vk.token_masked : "not set"}.
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <TextField
+                fullWidth
+                placeholder="vk1.a.… paste the access token"
+                value={vkToken}
+                onChange={(e) => setVkToken(e.target.value)}
+              />
+              <Button
+                variant="contained"
+                disabled={!vkToken.trim()}
+                onClick={() =>
+                  api
+                    .updateVkToken(vkToken)
+                    .then((r) => {
+                      feedback.show(r.note);
+                      setVkToken("");
                       refresh();
                     })
                     .catch(guard)

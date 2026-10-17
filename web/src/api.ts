@@ -138,6 +138,11 @@ export interface Integrations {
     token_masked?: string | null;
     token_saved_in_db?: boolean;
   };
+  vkmusic: {
+    configured: boolean;
+    token_masked?: string | null;
+    token_saved_in_db?: boolean;
+  };
 }
 
 export interface GuildSettings {
@@ -503,6 +508,15 @@ export const api = {
 
   updateYandexToken: (accessToken: string) =>
     fetch("/api/admin/system/yandexmusic", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken }),
+    }).then((r) =>
+      handle<{ token_masked: string; env_updated: boolean; note: string }>(r),
+    ),
+
+  updateVkToken: (accessToken: string) =>
+    fetch("/api/admin/system/vkmusic", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: accessToken }),

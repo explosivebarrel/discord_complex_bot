@@ -150,11 +150,13 @@ async def search(
             music.search(q, limit=5, source="yt"),
             music.search(q, limit=4, source="sc"),
             music.search(q, limit=4, source="ym"),
+            music.search(q, limit=4, source="vk"),
             radio_search(q, limit=3),
             archive_search(q, limit=3),
             return_exceptions=True,
         )
-        yt_res, sc_res, ym_res, radio_res, arch_res = (r if isinstance(r, list) else [] for r in found)
+        rows = (r if isinstance(r, list) else [] for r in found)
+        yt_res, sc_res, ym_res, vk_res, radio_res, arch_res = rows
         # Only yt/sc go through yt-dlp at play time; probe them so the panel
         # can mark HLS-only and DRM tracks before the user queues them.
         to_probe = [r for r in (*yt_res, *sc_res) if r.get("uri")]
@@ -162,11 +164,14 @@ async def search(
         for row, verdict in zip(to_probe, probes):
             if verdict in ("hls", "drm"):
                 row["issue"] = verdict
-        merged = [*yt_res, *sc_res, *ym_res, *radio_res, *arch_res]
+        merged = [*yt_res, *sc_res, *ym_res, *vk_res, *radio_res, *arch_res]
         if not merged:
             raise HTTPException(status_code=502, detail="All sources failed. Try again in a moment.")
         return merged
-    return await music.search(q, source=source)
+    try:
+        return await music.search(q, source=source)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/enqueue")
