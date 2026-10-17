@@ -129,8 +129,8 @@ export function PlayerDock({
       sx={{
         position: "relative",
         bgcolor: m3.surfaceContainerLow,
-        px: 3,
-        pt: 2,
+        px: { xs: 1.5, md: 3 },
+        pt: { xs: 1.5, md: 2 },
         pb: 1.5,
         display: "flex",
         alignItems: "center",
@@ -147,8 +147,13 @@ export function PlayerDock({
       ) : null)}
 
       {/* Left column takes the same flex width as the right one, so the
-          transport cluster stays centered in the dock. */}
-      <Stack direction="row" spacing={2} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>
+          transport cluster stays centered in the dock. On phones it takes
+          the whole first row instead. */}
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ flex: 1, minWidth: 0, alignItems: "center", flexBasis: { xs: "100%", md: "auto" } }}
+      >
       <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
         {current?.artwork ? (
           <Box
@@ -195,7 +200,17 @@ export function PlayerDock({
       )}
       </Stack>
 
-      <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", flexShrink: 0 }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          alignItems: "flex-start",
+          flexShrink: 0,
+          // Phones: the transport shares row 2 with the utility buttons.
+          flex: { xs: 1, md: "0 0 auto" },
+          justifyContent: { xs: "center", md: "flex-start" },
+        }}
+      >
         <Tooltip title="Previous track">
           <span>
             <IconButton disabled={isLoading || !hasHistory} onClick={onPrevious} sx={{ mt: 0.5 }}>

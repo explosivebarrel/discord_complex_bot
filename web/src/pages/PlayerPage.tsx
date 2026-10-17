@@ -687,7 +687,19 @@ export function PlayerPage() {
               <Typography variant="h6" gutterBottom>
                 Add music
               </Typography>
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 2, rowGap: 1 }}>
+              {/* Phones: one swipeable chip row instead of a tall wrap. */}
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                sx={{
+                  flexWrap: { xs: "nowrap", sm: "wrap" },
+                  overflowX: { xs: "auto", sm: "visible" },
+                  mb: 2,
+                  rowGap: 1,
+                  pb: { xs: 0.5, sm: 0 },
+                }}
+              >
                 {SOURCES.map((s) => (
                   <Chip
                     key={s.id}
@@ -700,17 +712,30 @@ export function PlayerPage() {
                       setSource(s.id);
                       setResults(null);
                     }}
+                    sx={{ flexShrink: 0 }}
                   />
                 ))}
               </Stack>
               {source === "radio" && (
-                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mb: 1.5, rowGap: 1 }}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  useFlexGap
+                  sx={{
+                    flexWrap: { xs: "nowrap", sm: "wrap" },
+                    overflowX: { xs: "auto", sm: "visible" },
+                    mb: 1.5,
+                    rowGap: 1,
+                    pb: { xs: 0.5, sm: 0 },
+                  }}
+                >
                   {RADIO_PRESETS.map((preset) => (
                     <Chip
                       key={preset}
                       label={preset}
                       size="small"
                       variant="outlined"
+                      sx={{ flexShrink: 0 }}
                       onClick={() => {
                         setQuery(preset);
                         setSearching(true);
@@ -724,7 +749,12 @@ export function PlayerPage() {
                   ))}
                 </Stack>
               )}
-              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              {/* Phones: the field takes the full row, Queue URL moves below. */}
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1}
+                sx={{ alignItems: { xs: "stretch", sm: "center" } }}
+              >
                 <TextField
                   fullWidth
                   placeholder={PLACEHOLDERS[source]}
@@ -751,7 +781,7 @@ export function PlayerPage() {
                 <Tooltip title="Add the link to the queue without searching">
                   <Button
                     variant="tonal"
-                    sx={{ height: 40, flexShrink: 0 }}
+                    sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
                     disabled={!query.trim() || enqueueing !== null}
                     onClick={() => query.trim() && enqueue("url", { query, source })}
                   >

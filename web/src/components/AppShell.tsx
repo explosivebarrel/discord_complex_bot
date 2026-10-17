@@ -291,7 +291,8 @@ export function AppShell({
     <Box
       sx={{
         height: "100dvh",
-        p: 2,
+        // Slimmer inset on phones: screen width is scarce there.
+        p: { xs: 1, md: 2 },
         boxSizing: "border-box",
         bgcolor: m3.surfaceContainerLowest,
         overflow: "hidden",
@@ -354,7 +355,7 @@ export function AppShell({
         sx={{
           height: "100%",
           bgcolor: m3.surface,
-          borderRadius: "24px",
+          borderRadius: { xs: "16px", md: "24px" },
           overflow: "hidden",
           display: "flex",
         }}
@@ -438,7 +439,7 @@ export function AppShell({
           {/* Page header: typography on the frame surface, no bar panel.
               Shares the centered content width so the title lines up with
               the page column on wide screens. */}
-          <Box sx={{ px: 3, pt: 2, pb: 1.5, flexShrink: 0 }}>
+          <Box sx={{ px: { xs: 1.5, md: 3 }, pt: { xs: 1.5, md: 2 }, pb: { xs: 1, md: 1.5 }, flexShrink: 0 }}>
             <Box sx={{ maxWidth: 1400, mx: "auto", display: "flex", alignItems: "center", gap: 1 }}>
             {!isWide && me && (
               <IconButton onClick={() => setModalOpen(true)} aria-label="Open navigation">
@@ -476,7 +477,10 @@ export function AppShell({
           </Box>
 
           {/* The only page-level scroll container. */}
-          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 3, pb: 3 }}>
+          <Box
+            component="main"
+            sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: { xs: 1.5, md: 3 }, pb: { xs: 2, md: 3 } }}
+          >
             <Box sx={{ maxWidth: 1400, mx: "auto" }}>{children}</Box>
           </Box>
 
