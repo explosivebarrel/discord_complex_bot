@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import {
   Box,
   Button,
+  type Theme,
   Card,
   CardContent,
   Chip,
@@ -123,6 +124,8 @@ export function PlayerPage() {
 
   const [selectedChannel, setSelectedChannel] = useState<string>("");
   const [query, setQuery] = useState("");
+  // A non-empty query turns the search marker into an action button.
+  const hasQuery = query.trim().length > 0;
   const [source, setSource] = useState("yt");
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -765,14 +768,52 @@ export function PlayerPage() {
                     input: {
                       startAdornment: (
                         <InputAdornment position="start">
-                          <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+                          {/* Empty field: a plain search marker. With a query
+                              it hands over to the action button on the right. */}
+                          <SearchIcon
+                            fontSize="small"
+                            sx={{
+                              color: hasQuery ? "transparent" : "text.secondary",
+                              transform: hasQuery ? "translateX(24px)" : "none",
+                              opacity: hasQuery ? 0 : 1,
+                              transition: (t: Theme) =>
+                                t.transitions.create(["opacity", "transform", "color"], {
+                                  duration: t.transitions.duration.short,
+                                }),
+                            }}
+                          />
                         </InputAdornment>
                       ),
                       endAdornment: (
                         <InputAdornment position="end">
-                          <Button onClick={doSearch} disabled={searching || !query.trim()}>
-                            {searching ? <CircularProgress size={18} /> : "Search"}
-                          </Button>
+                          {/* The action magnifier is always mounted at the
+                              field's right edge and fades/slides in when a
+                              query appears; the "Search" caption gives way. */}
+                          {!hasQuery && (
+                            <Typography variant="body2" sx={{ color: "text.secondary", pr: 1 }}>
+                              Search
+                            </Typography>
+                          )}
+                          <Tooltip title="Search">
+                            <IconButton
+                              aria-label="Search"
+                              onClick={doSearch}
+                              disabled={searching}
+                              sx={{
+                                position: "absolute",
+                                right: 8,
+                                opacity: hasQuery ? 1 : 0,
+                                pointerEvents: hasQuery ? "auto" : "none",
+                                transform: hasQuery ? "translateX(0)" : "translateX(-24px)",
+                                transition: (t: Theme) =>
+                                  t.transitions.create(["opacity", "transform"], {
+                                    duration: t.transitions.duration.short,
+                                  }),
+                              }}
+                            >
+                              {searching ? <CircularProgress size={18} /> : <SearchIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
                         </InputAdornment>
                       ),
                     },
