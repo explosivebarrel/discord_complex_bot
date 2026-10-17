@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
+import { Avatar, Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
 import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
 import { api, guildAllows, type AccessMockTier, type GuildBrief } from "../api";
 import { useGuilds, useMe, useSetAccessMock } from "../queries";
@@ -7,6 +7,11 @@ import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { MsIcon } from "../components/MsIcon";
 import { m3 } from "../theme";
+
+function guildIconUrl(guild: GuildBrief) {
+  if (!guild.icon) return undefined;
+  return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64`;
+}
 
 /** Guild card section button: disabled with a hint when no access. */
 function SectionButton({ label, icon, href, enabled, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; primary?: boolean }) {
@@ -132,19 +137,15 @@ export function GuildsPage() {
             <Card sx={{ height: "100%" }}>
               <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, height: "100%" }}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: "12px",
-                      bgcolor: m3.surfaceContainerHigh,
-                      display: "grid",
-                      placeItems: "center",
-                      flexShrink: 0,
-                    }}
+                  {/* The server's own icon fills the same rounded square the
+                      bot glyph used to sit in; the letter covers no-icon guilds. */}
+                  <Avatar
+                    src={guildIconUrl(g)}
+                    variant="rounded"
+                    sx={{ width: 44, height: 44, borderRadius: "12px", bgcolor: m3.surfaceContainerHigh, fontSize: 18, flexShrink: 0 }}
                   >
-                    <GraphicEq sx={{ color: "primary.main" }} />
-                  </Box>
+                    {g.name.slice(0, 1)}
+                  </Avatar>
                   <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
                     {g.name}
                   </Typography>
