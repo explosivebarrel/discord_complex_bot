@@ -154,6 +154,9 @@ export function PlayerDock({
         <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} />
       ) : null)}
 
+      {/* Left column takes the same flex width as the right one, so the
+          transport cluster stays centered in the dock. */}
+      <Stack direction="row" spacing={2} sx={{ flex: 1, minWidth: 0, alignItems: "center" }}>
       <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
         {current?.artwork ? (
           <Box
@@ -178,7 +181,7 @@ export function PlayerDock({
         {isLoading && <CircularProgress size={26} sx={{ position: "absolute", inset: "11px" }} />}
       </Box>
 
-      <Box sx={{ flex: 1, minWidth: 180 }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="subtitle2" noWrap>
           {current?.title ?? "Nothing playing"}
         </Typography>
@@ -198,6 +201,7 @@ export function PlayerDock({
           {fmt(position)} / {fmt(current.length)}
         </Typography>
       )}
+      </Stack>
 
       <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", flexShrink: 0 }}>
         <Tooltip title="Previous track">
@@ -238,7 +242,7 @@ export function PlayerDock({
         </Tooltip>
       </Stack>
 
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flexShrink: 0 }}>
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", flex: 1, justifyContent: "flex-end" }}>
         <Tooltip title={`Repeat: ${repeat === "off" ? "off (click for queue)" : repeat === "all" ? "whole queue (click for one track)" : "one track (click to turn off)"}`}>
           <IconButton
             onClick={onRepeatCycle}

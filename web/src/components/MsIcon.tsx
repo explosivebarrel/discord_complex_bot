@@ -3,16 +3,18 @@ import { Box, type SxProps, type Theme } from "@mui/material";
 /**
  * One glyph of Material Symbols Rounded (https://fonts.google.com/icons),
  * served from the local subset in /fonts. `name` is the icon ligature,
- * e.g. "left_panel_close". Filled style, matching the MUI filled icons
- * used elsewhere.
+ * e.g. "left_panel_close". The font keeps the FILL axis, so `fill`
+ * switches between filled (default) and outlined rendering.
  */
 export function MsIcon({
   name,
   fontSize = 24,
+  fill = true,
   sx,
 }: {
   name: string;
   fontSize?: number | string;
+  fill?: boolean;
   sx?: SxProps<Theme>;
 }) {
   return (
@@ -33,7 +35,7 @@ export function MsIcon({
           wordWrap: "normal",
           direction: "ltr",
           fontFeatureSettings: '"liga"',
-          fontVariationSettings: '"FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24',
+          fontVariationSettings: `"FILL" ${fill ? 1 : 0}, "wght" 400, "GRAD" 0, "opsz" 24`,
           WebkitFontSmoothing: "antialiased",
           userSelect: "none",
         },

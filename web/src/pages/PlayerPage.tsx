@@ -53,6 +53,7 @@ import { PlayerPageSkeleton } from "../components/Skeletons";
 import { m3 } from "../theme";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
+import { MsIcon } from "../components/MsIcon";
 import { PlayerDock } from "../components/PlayerDock";
 import { PlaylistBrowser } from "../components/PlaylistBrowser";
 import { PlaylistAddMenu } from "../components/PlaylistAddMenu";
@@ -325,8 +326,9 @@ export function PlayerPage() {
                     displayEmpty
                   >
                     {channels.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>
-                        🔊 {c.name}
+                      <MenuItem key={c.id} value={c.id} sx={{ gap: 1 }}>
+                        <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
+                        {c.name}
                       </MenuItem>
                     ))}
                   </Select>

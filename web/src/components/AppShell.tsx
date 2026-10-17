@@ -57,6 +57,7 @@ function GuildTab({
 }
 
 // Shared Material Symbols glyphs of the shell (https://fonts.google.com/icons).
+// The panel toggles are outlined: filled they read too heavy.
 const Ic = {
   player: <MsIcon name="play_circle" />,
   stats: <MsIcon name="bar_chart" />,
@@ -66,10 +67,10 @@ const Ic = {
   logout: <MsIcon name="logout" />,
   menu: <MsIcon name="menu" />,
   back: <MsIcon name="arrow_back" />,
-  leftClose: <MsIcon name="left_panel_close" />,
-  leftOpen: <MsIcon name="left_panel_open" />,
-  rightClose: <MsIcon name="right_panel_close" />,
-  rightOpen: <MsIcon name="right_panel_open" />,
+  leftClose: <MsIcon name="left_panel_close" fill={false} />,
+  leftOpen: <MsIcon name="left_panel_open" fill={false} />,
+  rightClose: <MsIcon name="right_panel_close" fill={false} />,
+  rightOpen: <MsIcon name="right_panel_open" fill={false} />,
   queue: <MsIcon name="queue_music" />,
 };
 
