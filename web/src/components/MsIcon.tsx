@@ -10,17 +10,21 @@ export function MsIcon({
   name,
   fontSize = 24,
   fill = true,
+  className,
   sx,
 }: {
   name: string;
   fontSize?: number | string;
   fill?: boolean;
+  /** Forwarded so MUI wrappers (e.g. Chip's cloned icon) can style the span. */
+  className?: string;
   sx?: SxProps<Theme>;
 }) {
   return (
     <Box
       component="span"
       aria-hidden
+      className={className}
       sx={[
         {
           fontFamily: '"Material Symbols Rounded"',

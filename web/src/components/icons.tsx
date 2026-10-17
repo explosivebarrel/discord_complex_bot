@@ -1,15 +1,16 @@
 import { type SxProps, type Theme } from "@mui/material";
 import { MsIcon } from "./MsIcon";
 
-type IconProps = { fontSize?: number | string; sx?: SxProps<Theme> };
+type IconProps = { fontSize?: number | string; className?: string; sx?: SxProps<Theme> };
 
 // App-wide icon set: every glyph comes from the local Material Symbols
 // Rounded subset (https://fonts.google.com/icons), so the whole UI draws
 // its icons from one collection. `ic` maps MUI-style props onto MsIcon
-// and translates the legacy fontSize="small" to 20px.
+// and translates the legacy fontSize="small" to 20px. className must be
+// forwarded: MUI clones icon elements with wrapper classes (Chip etc.).
 const ic = (name: string, fill = true) => {
-  const Component = ({ fontSize = 24, sx }: IconProps) => (
-    <MsIcon name={name} fontSize={fontSize === "small" ? 20 : fontSize} fill={fill} sx={sx} />
+  const Component = ({ fontSize = 24, className, sx }: IconProps) => (
+    <MsIcon name={name} fontSize={fontSize === "small" ? 20 : fontSize} fill={fill} className={className} sx={sx} />
   );
   return Component;
 };
@@ -74,7 +75,14 @@ export const IconWorkspaces = ic("workspaces");
 export const IconFavorite = ({
   filled = true,
   fontSize = 24,
+  className,
   sx,
 }: IconProps & { filled?: boolean }) => (
-  <MsIcon name="favorite" fontSize={fontSize === "small" ? 20 : fontSize} fill={filled} sx={sx} />
+  <MsIcon
+    name="favorite"
+    fontSize={fontSize === "small" ? 20 : fontSize}
+    fill={filled}
+    className={className}
+    sx={sx}
+  />
 );
