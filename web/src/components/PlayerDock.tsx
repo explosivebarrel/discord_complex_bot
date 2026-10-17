@@ -313,16 +313,22 @@ export function PlayerDock({
         transformOrigin={{ vertical: "bottom", horizontal: "right" }}
         sx={{ display: { md: "none" } }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 2, width: 240 }}>
-          <VolumeUp fontSize="small" sx={{ color: "text.secondary" }} />
+        {/* Vertical drag reads like the phone's own volume control; the
+            caption marks the current percent, the 100 point has no tick. */}
+        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, p: 1.5 }}>
           <Slider
+            orientation="vertical"
             size="small"
             min={0}
             max={200}
+            sx={{ height: 160 }}
             value={Math.min(volume, 200)}
             onChange={(_, v) => onVolumeChange(v as number)}
             onChangeCommitted={(_, v) => onVolumeCommit(v as number)}
           />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            {Math.round(volume)}%
+          </Typography>
         </Box>
       </Popover>
     </Box>
