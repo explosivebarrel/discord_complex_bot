@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Chip, CircularProgress, IconButton, LinearProgress, Slider, Tooltip, Typography } from "@mui/material";
+import { Box, Chip, CircularProgress, IconButton, LinearProgress, Slider, Tooltip, Typography, useTheme } from "@mui/material";
 import Pause from "@mui/icons-material/Pause";
 import PlayArrow from "@mui/icons-material/PlayArrow";
 import SkipNext from "@mui/icons-material/SkipNext";
@@ -49,6 +49,7 @@ export function PlayerBar({
   const isLoading = !!current?.loading;
   const hasHistory = (state?.played?.length ?? 0) > 0;
   const repeat = state?.repeat ?? "off";
+  const theme = useTheme();
   const [livePos, setLivePos] = useState(0);
   // While dragging the seek slider, show the dragged position and only send
   // the seek request once the drag ends.
@@ -73,9 +74,13 @@ export function PlayerBar({
     <Box
       sx={{
         position: "fixed",
-        left: { xs: 8, sm: 16 },
-        right: { xs: 8, sm: 16 },
+        // --nav-w / --sheet-w come from AppShell: keep the pill between the
+        // navigation drawer and the player sheet instead of under them.
+        left: { xs: 8, sm: "calc(var(--nav-w, 0px) + 16px)" },
+        right: { xs: 8, sm: "calc(var(--sheet-w, 0px) + 16px)" },
         bottom: { xs: 8, sm: 16 },
+        zIndex: 1100,
+        transition: theme.transitions.create(["left", "right"], { duration: theme.transitions.duration.standard }),
         bgcolor: m3.surfaceContainerHigh,
         borderRadius: "20px",
         px: 2,

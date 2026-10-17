@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useState } from "react";
 import { AppBar, Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import ArrowBack from "@mui/icons-material/ArrowBack";
@@ -250,6 +250,7 @@ export function AppShell({
   // lg and up: the player sidebar is a pinned side sheet; below lg it is a
   // modal drawer so it never jumps under the page content.
   const isLarge = useMediaQuery(theme.breakpoints.up("lg"));
+  const isXl = useMediaQuery(theme.breakpoints.up("xl"));
   const [navCollapsed, setNavCollapsed] = useLocalPref("ui.navCollapsed", false);
   const [sheetOpen, setSheetOpen] = useLocalPref("ui.rightOpen", true);
   // On wide screens the sheet open/closed state persists; below lg the
@@ -279,9 +280,20 @@ export function AppShell({
     boxSizing: "border-box" as const,
     bgcolor: m3.surfaceContainer,
   };
+  // Exposed as CSS vars so the fixed PlayerBar hugs the drawer and the
+  // player sheet slot instead of sliding under them.
+  const sheetSlotWidth = right && isLarge ? (rightOpen ? (isXl ? 340 : 320) : 56) : 0;
 
   return (
-    <Box sx={{ minHeight: "100dvh" }}>
+    <Box
+      sx={{ minHeight: "100dvh" }}
+      style={
+        {
+          "--nav-w": `${isWide ? navWidth : 0}px`,
+          "--sheet-w": `${sheetSlotWidth}px`,
+        } as CSSProperties
+      }
+    >
       <AppBar
         position="fixed"
         elevation={0}
@@ -312,9 +324,9 @@ export function AppShell({
           >
             {title ?? ""}
           </Typography>
-          {/* The open sheet closes itself from its own header; the appbar
-              button only brings it back. */}
-          {right && !rightOpen && (
+          {/* On lg+ the collapsed rail carries its own restore button, so
+              the appbar only needs one below lg. */}
+          {right && !rightOpen && !isLarge && (
             <Tooltip title="Show player sidebar">
               <IconButton size="small" onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
                 <ViewSidebar />
@@ -385,22 +397,30 @@ export function AppShell({
             flex: 1,
             minWidth: 0,
             width: "100%",
-            maxWidth: 1400,
-            mx: "auto",
-            px: { xs: 1.5, sm: 3 },
           }}
         >
           <Box
             sx={{
               // Flex whenever the page has a right slot (open sheet or the
-              // collapsed rail) so the rail always sits BESIDE the content.
+              // collapsed rail) so they sit BESIDE the content pinned to the
+              // viewport's right edge; only the page column is centered.
               display: { lg: right ? "flex" : "block" } as const,
               gap: 3,
               alignItems: "flex-start",
             }}
           >
-            <Box sx={{ flex: 1, minWidth: 0, pt: { xs: 10, sm: 11 }, pb: right ? { xs: 22, sm: 18 } : 4 }}>
-              {children}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Box
+                sx={{
+                  maxWidth: 1400,
+                  mx: "auto",
+                  px: { xs: 1.5, sm: 3 },
+                  pt: { xs: 10, sm: 11 },
+                  pb: right ? { xs: 22, sm: 18 } : 4,
+                }}
+              >
+                {children}
+              </Box>
             </Box>
             {right && !rightOpen && isLarge && (
               <Box
@@ -447,7 +467,7 @@ export function AppShell({
                   borderLeft: `1px solid ${m3.outlineVariant}`,
                   px: 2,
                   pt: { sm: 10 },
-                  pb: { sm: 18 },
+                  pb: 3,
                 }}
               >
                 <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
