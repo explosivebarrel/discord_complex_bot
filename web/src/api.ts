@@ -17,6 +17,8 @@ export interface GuildBrief {
   name: string;
   icon: string | null;
   is_admin: boolean;
+  /** Owner-level trust: section access matrix and the panel admin list. */
+  is_owner?: boolean;
   is_superadmin?: boolean;
   access: {
     player: boolean;

@@ -11,7 +11,9 @@ from app.api.deps import (
     get_bot,
     get_current_user,
     get_db,
+    is_guild_owner,
     require_guild_admin,
+    require_guild_owner,
     require_section_access,
 )
 from app.core.db import Database
@@ -90,6 +92,14 @@ async def update_settings(
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
+    # Section access levels are the privilege matrix: only the owner (or a
+    # super-admin) may rewrite them, otherwise any panel admin could grant
+    # themselves more access. Everything else stays admin-editable.
+    owner_field = any(
+        value is not None for value in (body.stats_access, body.posts_access, body.moderation_access)
+    )
+    if owner_field and not is_guild_owner(bot, guild_id, user):
+        raise HTTPException(status_code=403, detail="Only the server owner can change section access")
     guild = bot.get_guild(guild_id)
     await db.update_guild_settings(
         guild_id,
@@ -133,7 +143,7 @@ async def guild_stats(
 async def add_admin(
     guild_id: int,
     body: AddAdminBody,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(require_guild_owner),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
@@ -158,7 +168,7 @@ async def add_admin(
 async def remove_admin(
     guild_id: int,
     discord_id: int,
-    user: CurrentUser = Depends(require_guild_admin),
+    user: CurrentUser = Depends(require_guild_owner),
     bot: ComplexBot = Depends(get_bot),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:

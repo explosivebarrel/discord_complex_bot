@@ -362,6 +362,21 @@ async def require_guild_admin(
     raise HTTPException(status_code=403, detail="Server admin rights required")
 
 
+def is_guild_owner(bot: ComplexBot, guild_id: int, user: CurrentUser) -> bool:
+    """Owner-level trust: the Discord owner or an unmocked super-admin.
+
+    An active access mock replaces the user's tier for the whole session,
+    so a super-admin previewing "member" or "admin" is not the owner while
+    it is on — otherwise the mock could not show what admins really see.
+    """
+    if get_access_mock(user.session_id, guild_id) is not None:
+        return False
+    if user.is_superadmin:
+        return True
+    guild = bot.get_guild(guild_id)
+    return guild is not None and user.discord_id == guild.owner_id
+
+
 async def require_guild_owner(
     guild_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -372,11 +387,8 @@ async def require_guild_owner(
     No membership call is needed: the owner of the guild is always a member,
     and guild.owner_id comes from the bot cache.
     """
-    if user.is_superadmin:
-        return user
-    guild = bot.get_guild(guild_id)
-    if guild is None:
+    if bot.get_guild(guild_id) is None:
         raise HTTPException(status_code=404, detail="Bot is not on this server")
-    if user.discord_id != guild.owner_id:
+    if not is_guild_owner(bot, guild_id, user):
         raise HTTPException(status_code=403, detail="Only the server owner can do this")
     return user

@@ -63,3 +63,25 @@ def test_missing_guild_blocks_everything():
     bot = make_bot_no_guild()
     assert not bot_section_available(bot, 1, "player")
     assert not bot_section_available(bot, 1, "manage")
+
+
+def test_is_guild_owner_mock_awareness():
+    from app.api.deps import is_guild_owner, set_access_mock
+
+    guild = SimpleNamespace(owner_id=777)
+    bot = SimpleNamespace(get_guild=lambda gid: guild)
+
+    owner = SimpleNamespace(is_superadmin=False, discord_id=777, session_id="s1")
+    admin = SimpleNamespace(is_superadmin=False, discord_id=888, session_id="s1")
+    root = SimpleNamespace(is_superadmin=True, discord_id=999, session_id="s1")
+
+    assert is_guild_owner(bot, 1, owner)
+    assert not is_guild_owner(bot, 1, admin)
+    assert is_guild_owner(bot, 1, root)
+    # A super-admin previewing another tier is not the owner while mocked.
+    set_access_mock("s1", 1, "admin")
+    assert not is_guild_owner(bot, 1, root)
+    assert not is_guild_owner(bot, 1, owner)  # even the real owner is mocked out
+    set_access_mock("s1", 1, None)
+    assert is_guild_owner(bot, 1, owner)
+    assert is_guild_owner(bot, 1, root)

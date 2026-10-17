@@ -20,7 +20,7 @@ import {
 } from "@mui/material";
 import { IconDelete as Delete } from "../components/icons";
 import { api, GuildSettings } from "../api";
-import { useGuildSettings, useVoiceChannels, usePostComposer } from "../queries";
+import { useGuildSettings, useGuilds, useVoiceChannels, usePostComposer } from "../queries";
 import { CardSkeleton } from "../components/Skeletons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -32,6 +32,10 @@ export function AdminPage() {
   const { me, loading } = useAuth();
   const feedback = useFeedback();
   const settingsQuery = useGuildSettings(gid);
+  // Owner-level trust for this guild: the API bakes the super-admin
+  // shortcut and the access mock into the flag.
+  const brief = useGuilds().data?.find((g) => g.id === gid);
+  const isOwner = !!brief?.is_owner;
   // The forms edit a local draft; it re-syncs whenever the query refetches.
   const [draftSettings, setDraftSettings] = useState<GuildSettings | null>(null);
   useEffect(() => {
@@ -198,6 +202,7 @@ export function AdminPage() {
                 <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
                   Who can open each panel section. Admins: server owner, Discord
                   Manage Server permission, or an id added below.
+                  {!isOwner && " Only the server owner can change the access levels."}
                 </Typography>
                 <Stack spacing={1.5}>
                   {(
@@ -211,16 +216,21 @@ export function AdminPage() {
                       <Typography variant="body2" sx={{ width: 110 }}>
                         {label}
                       </Typography>
-                      <Select
-                        fullWidth
-                        size="small"
-                        value={access[key]}
-                        onChange={(e) => setAccess({ ...access, [key]: e.target.value as string })}
-                      >
-                        <MenuItem value="admins">Admins only</MenuItem>
-                        <MenuItem value="everyone">Everyone</MenuItem>
-                        <MenuItem value="off">Off</MenuItem>
-                      </Select>
+                      <Tooltip title={isOwner ? undefined : "Only the server owner can change this"}>
+                        <span style={{ display: "flex", flex: 1, minWidth: 0 }}>
+                          <Select
+                            fullWidth
+                            size="small"
+                            disabled={!isOwner}
+                            value={access[key]}
+                            onChange={(e) => setAccess({ ...access, [key]: e.target.value as string })}
+                          >
+                            <MenuItem value="admins">Admins only</MenuItem>
+                            <MenuItem value="everyone">Everyone</MenuItem>
+                            <MenuItem value="off">Off</MenuItem>
+                          </Select>
+                        </span>
+                      </Tooltip>
                     </Stack>
                   ))}
                   <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
@@ -249,12 +259,19 @@ export function AdminPage() {
                       variant="contained"
                       onClick={() =>
                         api
-                          .updateGuildSettings(gid, {
-                            stats_access: access.stats,
-                            posts_access: access.posts,
-                            moderation_access: access.moderation,
-                            mod_log_channel_id: access.modLog || null,
-                          })
+                          .updateGuildSettings(
+                            gid,
+                            // Non-owners must not send the privilege fields:
+                            // the API rejects the whole update if they do.
+                            isOwner
+                              ? {
+                                  stats_access: access.stats,
+                                  posts_access: access.posts,
+                                  moderation_access: access.moderation,
+                                  mod_log_channel_id: access.modLog || null,
+                                }
+                              : { mod_log_channel_id: access.modLog || null },
+                          )
                           .then((s) => {
                             setDraftSettings(s);
                             setAccess({
@@ -281,17 +298,23 @@ export function AdminPage() {
               <Typography variant="h6" gutterBottom>
                 Server admins (web panel)
               </Typography>
+              {!isOwner && (
+                <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+                  Only the server owner can manage panel admins.
+                </Typography>
+              )}
               <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
                 <TextField
                   fullWidth
                   size="small"
                   placeholder="Discord user ID"
                   value={newAdmin}
+                  disabled={!isOwner}
                   onChange={(e) => setNewAdmin(e.target.value)}
                 />
                 <Button
                   variant="tonal"
-                  disabled={!newAdmin.trim()}
+                  disabled={!isOwner || !newAdmin.trim()}
                   onClick={() =>
                     api
                       .addGuildAdmin(gid, newAdmin)
@@ -317,18 +340,21 @@ export function AdminPage() {
                       key={a}
                       disableGutters
                       secondaryAction={
-                        <Tooltip title="Remove admin">
-                          <IconButton
-                            edge="end"
-                            onClick={() =>
-                              api
-                                .removeGuildAdmin(gid, a)
-                                .then(() => refresh())
-                                .catch(guard)
-                            }
-                          >
-                            <Delete />
-                          </IconButton>
+                        <Tooltip title={isOwner ? "Remove admin" : "Only the server owner can manage panel admins"}>
+                          <span>
+                            <IconButton
+                              edge="end"
+                              disabled={!isOwner}
+                              onClick={() =>
+                                api
+                                  .removeGuildAdmin(gid, a)
+                                  .then(() => refresh())
+                                  .catch(guard)
+                              }
+                            >
+                              <Delete />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       }
                     >

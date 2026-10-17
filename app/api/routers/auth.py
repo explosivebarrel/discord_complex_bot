@@ -175,12 +175,18 @@ async def my_guilds(
         bot_access = {s: bot_section_available(bot, gid, s) for s in access}
         for key, ok in bot_access.items():
             access[key] = access[key] and ok
+        # Owner-level controls (section access matrix, panel admin list).
+        # The Discord owner or a super-admin keeps them; ANY active mock
+        # removes owner-level trust, matching deps.is_guild_owner, so the
+        # preview shows exactly what a real admin would see.
+        effective_owner = (is_owner or user.is_superadmin) and mock is None
         result.append(
             {
                 "id": str(gid),
                 "name": g["name"],
                 "icon": g.get("icon"),
                 "is_admin": is_admin,
+                "is_owner": effective_owner,
                 "is_superadmin": user.is_superadmin,
                 "access": access,
                 "bot_access": bot_access,
