@@ -835,17 +835,22 @@ export function PlayerPage() {
                         t.transitions.create(["opacity", "transform"], { duration: t.transitions.duration.short }),
                     }}
                   >
-                    {hasQuery ? (
-                      <Tooltip title="Search">
-                        <span>
-                          <IconButton aria-label="Search" onClick={doSearch} disabled={searching}>
-                            {searching ? <CircularProgress size={18} /> : <SearchIcon fontSize="small" />}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    ) : (
-                      <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
-                    )}
+                    {/* The magnifier is one always-mounted button: without a
+                        query the wrapper makes it inert (a plain marker), with
+                        a query it becomes the search action. No swap, so the
+                        glyph never shifts between the states. */}
+                    <Tooltip title={hasQuery ? "Search" : ""}>
+                      <IconButton
+                        aria-hidden={!hasQuery}
+                        aria-label={hasQuery ? "Search" : undefined}
+                        tabIndex={hasQuery ? 0 : -1}
+                        onClick={hasQuery ? doSearch : undefined}
+                        disabled={searching}
+                        sx={{ color: hasQuery ? undefined : "text.secondary" }}
+                      >
+                        {searching ? <CircularProgress size={18} /> : <SearchIcon fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                 </Box>
                 <Tooltip title="Add the link to the queue without searching">
