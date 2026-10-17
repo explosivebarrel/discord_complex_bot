@@ -81,7 +81,6 @@ function DrawerContent({
   guildsLoading,
   activeGuildId,
   collapsed,
-  onToggleCollapse,
   onNavigate,
   onLogout,
 }: {
@@ -90,7 +89,6 @@ function DrawerContent({
   guildsLoading: boolean;
   activeGuildId: string | null;
   collapsed: boolean;
-  onToggleCollapse?: () => void;
   onNavigate?: () => void;
   onLogout?: () => void;
 }) {
@@ -100,12 +98,10 @@ function DrawerContent({
   const active = guilds.find((g) => g.id === activeGuildId) ?? null;
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Toolbar sx={{ gap: 1.5, px: collapsed ? 1 : 2.5, justifyContent: collapsed ? "center" : "flex-start" }}>
-        {collapsed ? (
-          <IconButton onClick={onToggleCollapse} aria-label="Expand navigation">
-            {Ic.leftOpen}
-          </IconButton>
-        ) : (
+      {/* The expand/collapse toggle lives in AppShell, pinned to the top
+          right corner, so it does not move during the animation. */}
+      <Toolbar sx={{ gap: 1.5, px: collapsed ? 1 : 2.5, pr: collapsed ? 1 : 7 }}>
+        {!collapsed && (
           <>
             <IconGraphicEq sx={{ color: "primary.main" }} />
             <Typography
@@ -116,13 +112,6 @@ function DrawerContent({
             >
               {botName}
             </Typography>
-            {onToggleCollapse && (
-              <Tooltip title="Collapse menu">
-                <IconButton onClick={onToggleCollapse} aria-label="Collapse menu">
-                  {Ic.leftClose}
-                </IconButton>
-              </Tooltip>
-            )}
           </>
         )}
       </Toolbar>
@@ -373,22 +362,66 @@ export function AppShell({
         {isWide && (
           <Box
             sx={{
+              // One column animating between the drawer and the rail; the
+              // expanded content and the rail crossfade instead of
+              // reflowing, like the player sheet on the right.
               width: navWidth,
               flexShrink: 0,
+              position: "relative",
               overflow: "hidden",
               borderRight: `1px solid ${m3.outlineVariant}`,
               transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
             }}
           >
-            <DrawerContent
-              me={me}
-              guilds={guilds}
-              guildsLoading={guildsLoading}
-              activeGuildId={activeGuildId}
-              collapsed={navCollapsed}
-              onToggleCollapse={() => setNavCollapsed(!navCollapsed)}
-              onLogout={onLogout}
-            />
+            <Box
+              sx={{
+                width: DRAWER_WIDTH,
+                height: "100%",
+                opacity: navCollapsed ? 0 : 1,
+                pointerEvents: navCollapsed ? "none" : "auto",
+                transition: theme.transitions.create("opacity", { duration: theme.transitions.duration.short }),
+              }}
+            >
+              <DrawerContent
+                me={me}
+                guilds={guilds}
+                guildsLoading={guildsLoading}
+                activeGuildId={activeGuildId}
+                collapsed={false}
+                onLogout={onLogout}
+              />
+            </Box>
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                justifyContent: "center",
+                opacity: navCollapsed ? 1 : 0,
+                pointerEvents: navCollapsed ? "auto" : "none",
+                transition: theme.transitions.create("opacity", { duration: theme.transitions.duration.short }),
+              }}
+            >
+              <Box sx={{ width: DRAWER_RAIL_WIDTH, height: "100%" }}>
+                <DrawerContent
+                  me={me}
+                  guilds={guilds}
+                  guildsLoading={guildsLoading}
+                  activeGuildId={activeGuildId}
+                  collapsed
+                  onLogout={onLogout}
+                />
+              </Box>
+            </Box>
+            <Tooltip title={navCollapsed ? "Expand navigation" : "Collapse menu"}>
+              <IconButton
+                onClick={() => setNavCollapsed(!navCollapsed)}
+                aria-label={navCollapsed ? "Expand navigation" : "Collapse menu"}
+                sx={{ position: "absolute", top: 8, right: 8 }}
+              >
+                {navCollapsed ? Ic.leftOpen : Ic.leftClose}
+              </IconButton>
+            </Tooltip>
           </Box>
         )}
 
