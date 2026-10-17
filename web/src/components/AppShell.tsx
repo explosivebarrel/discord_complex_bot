@@ -417,7 +417,16 @@ export function AppShell({
               <IconButton
                 onClick={() => setNavCollapsed(!navCollapsed)}
                 aria-label={navCollapsed ? "Expand navigation" : "Collapse menu"}
-                sx={{ position: "absolute", top: 8, right: 8 }}
+                sx={{
+                  position: "absolute",
+                  top: 8,
+                  // Corner of the expanded drawer, centered in the rail —
+                  // the offset glides with the width animation.
+                  right: navCollapsed ? 20 : 8,
+                  transition: theme.transitions.create(["right", "background-color"], {
+                    duration: theme.transitions.duration.standard,
+                  }),
+                }}
               >
                 {navCollapsed ? Ic.leftOpen : Ic.leftClose}
               </IconButton>
