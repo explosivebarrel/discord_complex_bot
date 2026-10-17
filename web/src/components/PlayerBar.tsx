@@ -10,6 +10,7 @@ import RepeatOne from "@mui/icons-material/RepeatOne";
 import VolumeUp from "@mui/icons-material/VolumeUp";
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import type { PlayerState } from "../api";
+import { m3 } from "../theme";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -49,6 +50,9 @@ export function PlayerBar({
   const hasHistory = (state?.played?.length ?? 0) > 0;
   const repeat = state?.repeat ?? "off";
   const [livePos, setLivePos] = useState(0);
+  // While dragging the seek slider, show the dragged position and only send
+  // the seek request once the drag ends.
+  const [dragPos, setDragPos] = useState<number | null>(null);
 
   // Advance the progress bar locally between 3-second polls.
   useEffect(() => {
@@ -58,9 +62,12 @@ export function PlayerBar({
     return () => clearInterval(timer);
   }, [current, paused, isLive]);
 
+  useEffect(() => setDragPos(null), [current]);
+
   if (!state || !current) return null;
 
   const position = isLive ? 0 : Math.min(livePos, current.length);
+  const shownPos = dragPos ?? position;
 
   return (
     <Box
@@ -69,7 +76,7 @@ export function PlayerBar({
         left: { xs: 8, sm: 16 },
         right: { xs: 8, sm: 16 },
         bottom: { xs: 8, sm: 16 },
-        bgcolor: "#2B2930",
+        bgcolor: m3.surfaceContainerHigh,
         borderRadius: "20px",
         px: 2,
         py: 1.25,
@@ -128,13 +135,17 @@ export function PlayerBar({
               size="small"
               min={0}
               max={Math.max(current.length, 1)}
-              value={position}
-              onChange={(_, v) => onSeek(v as number)}
+              value={shownPos}
+              onChange={(_, v) => setDragPos(v as number)}
+              onChangeCommitted={(_, v) => {
+                setDragPos(null);
+                onSeek(v as number);
+              }}
               sx={{ mt: 0.5, mx: 0 }}
             />
             <Box sx={{ display: "flex", justifyContent: "space-between", mt: -1 }}>
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {fmt(position)}
+                {fmt(shownPos)}
               </Typography>
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
                 {fmt(current.length)}
