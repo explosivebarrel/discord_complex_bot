@@ -76,6 +76,8 @@ export interface PlayerState {
   connected: boolean;
   channel_id: string | null;
   channel_name: string | null;
+  /** Guild setting: the channel the panel preselects while not connected. */
+  default_voice_channel_id?: string | null;
   volume: number;
   playing: boolean;
   repeat: "off" | "one" | "all";

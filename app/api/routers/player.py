@@ -83,8 +83,15 @@ async def player_state(
     guild_id: int,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
 ) -> dict[str, Any]:
-    return music.get_state(guild_id)
+    state = music.get_state(guild_id)
+    # The panel preselects this channel while the bot is not in voice.
+    settings = await db.get_guild_settings(guild_id)
+    state["default_voice_channel_id"] = (
+        str(settings.default_voice_channel_id) if settings.default_voice_channel_id is not None else None
+    )
+    return state
 
 
 @router.get("/channels")

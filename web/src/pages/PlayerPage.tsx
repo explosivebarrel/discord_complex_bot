@@ -152,12 +152,22 @@ export function PlayerPage() {
   }, [state, volume]);
 
   useEffect(() => {
-    // A channel picked on another server is not valid here: fall back to
-    // the first channel of the current guild until the user picks one.
-    if (!channels.some((c) => c.id === selectedChannel)) {
-      setSelectedChannel(channels[0]?.id ?? "");
+    // A pick from another server is not valid here. The fallback chain
+    // mirrors the backend join path: the bot's live channel, then the
+    // guild default from settings, then the first channel.
+    if (channels.some((c) => c.id === selectedChannel)) return;
+    const live = state?.channel_id;
+    if (live && channels.some((c) => c.id === live)) {
+      setSelectedChannel(live);
+      return;
     }
-  }, [channels, selectedChannel]);
+    const def = state?.default_voice_channel_id;
+    if (def && channels.some((c) => c.id === def)) {
+      setSelectedChannel(def);
+      return;
+    }
+    setSelectedChannel(channels[0]?.id ?? "");
+  }, [channels, selectedChannel, state]);
 
   const toggleFavorite = (t: TrackInfo) => {
     const existing = favorites.find((f) => f.uri === t.uri);
