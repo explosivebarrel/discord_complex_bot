@@ -22,26 +22,26 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import AddQueue from "@mui/icons-material/Queue";
-import PlaylistAdd from "@mui/icons-material/PlaylistAdd";
-import GraphicEq from "@mui/icons-material/GraphicEq";
-import MusicNote from "@mui/icons-material/MusicNote";
-import CloudQueue from "@mui/icons-material/CloudQueue";
-import RadioIcon from "@mui/icons-material/Radio";
-import LibraryMusic from "@mui/icons-material/LibraryMusic";
-import Folder from "@mui/icons-material/Folder";
 import YouTube from "@mui/icons-material/YouTube";
-import AllInclusive from "@mui/icons-material/AllInclusive";
-import TagIcon from "@mui/icons-material/Tag";
-import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
-import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
-import Favorite from "@mui/icons-material/Favorite";
-import FavoriteBorder from "@mui/icons-material/FavoriteBorder";
-import PlayArrow from "@mui/icons-material/PlayArrow";
-import DeleteOutlined from "@mui/icons-material/DeleteOutlined";
-import Shuffle from "@mui/icons-material/Shuffle";
-import History from "@mui/icons-material/History";
+import {
+  IconAddToQueue as AddQueue,
+  IconAllInclusive as AllInclusive,
+  IconCloud as CloudQueue,
+  IconDelete as DeleteOutlined,
+  IconFavorite as Favorite,
+  IconFolder as Folder,  IconGraphicEq as GraphicEq,
+  IconHistory as History,
+  IconKeyboardArrowDown as KeyboardArrowDown,
+  IconKeyboardArrowUp as KeyboardArrowUp,
+  IconLibraryMusic as LibraryMusic,
+  IconMusicNote as MusicNote,
+  IconPlayArrow as PlayArrow,
+  IconPlaylistAdd as PlaylistAdd,
+  IconRadio as RadioIcon,
+  IconSearch as SearchIcon,
+  IconShuffle as Shuffle,
+  IconTag as TagIcon,
+} from "../components/icons";
 import {
   api,
   PlaylistPageInfo,
@@ -794,11 +794,7 @@ export function PlayerPage() {
                                     : { color: "text.secondary" }
                                 }
                               >
-                                {favorites.some((f) => f.uri === t.uri) ? (
-                                  <Favorite fontSize="small" />
-                                ) : (
-                                  <FavoriteBorder fontSize="small" />
-                                )}
+                              <Favorite filled={favorites.some((f) => f.uri === t.uri)} fontSize="small" sx={favorites.some((f) => f.uri === t.uri) ? { color: "primary.main" } : { color: "text.secondary" }} />
                               </IconButton>
                               </Tooltip>
                               {t.issue && (

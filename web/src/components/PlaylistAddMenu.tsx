@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import PlaylistAdd from "@mui/icons-material/PlaylistAdd";
+import { IconPlaylistAdd as PlaylistAdd } from "./icons";
 import { api, UserPlaylistBrief } from "../api";
 import { useFeedback } from "./Feedback";
 

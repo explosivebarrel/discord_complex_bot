@@ -14,9 +14,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import CheckCircle from "@mui/icons-material/CheckCircle";
-import Cancel from "@mui/icons-material/Cancel";
-import ErrorOutline from "@mui/icons-material/Error";
+import { IconCancel as Cancel, IconCheckCircle as CheckCircle, IconError as ErrorOutline } from "../components/icons";
 import { api } from "../api";
 import { useIntegrations } from "../queries";
 import { CardSkeleton } from "../components/Skeletons";

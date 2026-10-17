@@ -1,5 +1,5 @@
 import { Box, Button, Card, CardContent, Typography } from "@mui/material";
-import GraphicEq from "@mui/icons-material/GraphicEq";
+import { IconGraphicEq as GraphicEq } from "../components/icons";
 import { useBotName } from "../useMeta";
 
 export function LoginPage() {

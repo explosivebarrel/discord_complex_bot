@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import Delete from "@mui/icons-material/Delete";
+import { IconDelete as Delete } from "../components/icons";
 import { api, GuildSettings } from "../api";
 import { useGuildSettings, useVoiceChannels, usePostComposer } from "../queries";
 import { CardSkeleton } from "../components/Skeletons";

@@ -14,12 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import AddQueue from "@mui/icons-material/Queue";
-import Close from "@mui/icons-material/Close";
-import PlayArrow from "@mui/icons-material/PlayArrow";
-import SearchIcon from "@mui/icons-material/Search";
-import Shuffle from "@mui/icons-material/Shuffle";
-import LibraryMusic from "@mui/icons-material/LibraryMusic";
+import { IconAddToQueue as AddQueue, IconClose as Close, IconLibraryMusic as LibraryMusic, IconPlayArrow as PlayArrow, IconSearch as SearchIcon, IconShuffle as Shuffle } from "./icons";
 import { PlaylistPageInfo } from "../api";
 import { PlaylistAddMenu } from "./PlaylistAddMenu";
 

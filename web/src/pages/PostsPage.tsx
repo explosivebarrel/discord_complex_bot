@@ -18,22 +18,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import Bold from "@mui/icons-material/FormatBold";
-import Italic from "@mui/icons-material/FormatItalic";
-import Underline from "@mui/icons-material/FormatUnderlined";
-import Strikethrough from "@mui/icons-material/FormatStrikethrough";
-import Code from "@mui/icons-material/Code";
-import FormatQuote from "@mui/icons-material/FormatQuote";
-import FormatListBulleted from "@mui/icons-material/FormatListBulleted";
-import TitleIcon from "@mui/icons-material/Title";
-import LinkIcon from "@mui/icons-material/Link";
-import AlternateEmail from "@mui/icons-material/AlternateEmail";
-import Tag from "@mui/icons-material/Tag";
-import Workspaces from "@mui/icons-material/Workspaces";
-import Campaign from "@mui/icons-material/Campaign";
-import EmojiEmotions from "@mui/icons-material/EmojiEmotions";
-import Visibility from "@mui/icons-material/Visibility";
-import Edit from "@mui/icons-material/Edit";
+import { IconAlternateEmail as AlternateEmail, IconCampaign as Campaign, IconCode as Code, IconEdit as Edit, IconFormatBold as Bold, IconFormatItalic as Italic, IconFormatListBulleted as FormatListBulleted, IconFormatQuote as FormatQuote, IconFormatUnderlined as Underline, IconLink as LinkIcon, IconMood as EmojiEmotions, IconStrikethrough as Strikethrough, IconTag as Tag, IconTitle as TitleIcon, IconVisibility as Visibility, IconWorkspaces as Workspaces } from "../components/icons";
 import { api, PostChannel } from "../api";
 import { usePostComposer } from "../queries";
 import { CardSkeleton } from "../components/Skeletons";

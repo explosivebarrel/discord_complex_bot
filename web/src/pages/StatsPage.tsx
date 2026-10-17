@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom";
 import { Box, Card, CardContent, List, ListItem, ListItemText, Typography } from "@mui/material";
-import BarChart from "@mui/icons-material/BarChart";
+import { IconBarChart as BarChart } from "../components/icons";
 import { useGuildStats } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";

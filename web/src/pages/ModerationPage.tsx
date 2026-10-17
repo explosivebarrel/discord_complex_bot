@@ -15,7 +15,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import Gavel from "@mui/icons-material/Gavel";
+import { IconGavel as Gavel } from "../components/icons";
 import { api } from "../api";
 import { useModerationUsers, useModerationWarnings, useModerationLog } from "../queries";
 import { useAuth } from "../useAuth";

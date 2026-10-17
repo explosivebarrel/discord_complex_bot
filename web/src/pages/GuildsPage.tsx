@@ -1,9 +1,5 @@
 import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Typography } from "@mui/material";
-import GraphicEq from "@mui/icons-material/GraphicEq";
-import Settings from "@mui/icons-material/Settings";
-import BarChart from "@mui/icons-material/BarChart";
-import PostAdd from "@mui/icons-material/PostAdd";
-import Gavel from "@mui/icons-material/Gavel";
+import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
 import { api } from "../api";
 import { useGuilds } from "../queries";
 import { useAuth } from "../useAuth";

@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
-import GraphicEq from "@mui/icons-material/GraphicEq";
+import { IconGraphicEq } from "./icons";
 import { MsIcon } from "./MsIcon";
 import type { GuildBrief, Me } from "../api";
 import { api } from "../api";
@@ -106,7 +106,7 @@ function DrawerContent({
           </IconButton>
         ) : (
           <>
-            <GraphicEq sx={{ color: "primary.main" }} />
+            <IconGraphicEq sx={{ color: "primary.main" }} />
             <Typography
               variant="subtitle2"
               noWrap

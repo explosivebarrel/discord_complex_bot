@@ -1,14 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, IconButton, LinearProgress, Slider, Stack, Tooltip, Typography } from "@mui/material";
-import Pause from "@mui/icons-material/Pause";
-import PlayArrow from "@mui/icons-material/PlayArrow";
-import SkipNext from "@mui/icons-material/SkipNext";
-import SkipPrevious from "@mui/icons-material/SkipPrevious";
-import Stop from "@mui/icons-material/Stop";
-import Repeat from "@mui/icons-material/Repeat";
-import RepeatOne from "@mui/icons-material/RepeatOne";
-import VolumeUp from "@mui/icons-material/VolumeUp";
-import GraphicEq from "@mui/icons-material/GraphicEq";
+import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { m3 } from "../theme";
 
