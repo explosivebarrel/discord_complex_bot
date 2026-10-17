@@ -12,6 +12,7 @@ from app.api.deps import (
     SESSION_COOKIE,
     STATE_COOKIE,
     CurrentUser,
+    bot_section_available,
     create_session,
     get_access_mock,
     get_access_mock_all,
@@ -169,6 +170,11 @@ async def my_guilds(
                 "posts": section_allows(settings.posts_access, tier),
                 "moderation": section_allows(settings.moderation_access, tier),
             }
+        # The bot's own permissions are a hard limit no user tier can lift:
+        # an invited-without-permissions bot makes sections useless.
+        bot_access = {s: bot_section_available(bot, gid, s) for s in access}
+        for key, ok in bot_access.items():
+            access[key] = access[key] and ok
         result.append(
             {
                 "id": str(gid),
@@ -177,6 +183,7 @@ async def my_guilds(
                 "is_admin": is_admin,
                 "is_superadmin": user.is_superadmin,
                 "access": access,
+                "bot_access": bot_access,
             }
         )
     result.sort(key=lambda item: item["name"].lower())

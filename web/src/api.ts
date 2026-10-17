@@ -25,6 +25,9 @@ export interface GuildBrief {
     posts: boolean;
     moderation: boolean;
   };
+  /** Which sections the BOT can perform on this server. Missing on stale
+      cached payloads; a false here is the reason access is false. */
+  bot_access?: Partial<Record<GuildSection, boolean>>;
 }
 
 /** Single source of truth for section availability, shared by the home
@@ -32,6 +35,14 @@ export interface GuildBrief {
     bakes the super-admin shortcut and any access mock into the flags. */
 export function guildAllows(guild: GuildBrief, section: GuildSection): boolean {
   return !!guild.access?.[section];
+}
+
+/** Tooltip for a disabled section: user rights vs the bot's permissions. */
+export function guildSectionHint(guild: GuildBrief, section: GuildSection): string {
+  if (guildAllows(guild, section)) return "";
+  return guild.bot_access?.[section] === false
+    ? "The bot is missing Discord permissions on this server"
+    : "You don't have access to this section";
 }
 
 export interface ModerationWarning {

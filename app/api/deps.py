@@ -268,6 +268,32 @@ def section_allows(level: str, is_admin_tier: bool) -> bool:
     return level == "everyone"
 
 
+def bot_section_available(bot: ComplexBot, guild_id: int, section: str) -> bool:
+    """Whether the BOT's own Discord permissions allow the section to work.
+
+    A user with full rights still cannot use a section the bot cannot
+    perform: invited with a narrow permission set, it cannot connect to
+    voice, send messages or moderate. Guild-level permissions only —
+    per-channel overrides are the bot's runtime error messages.
+    """
+    guild = bot.get_guild(guild_id)
+    if guild is None or guild.me is None:
+        return False
+    p = guild.me.guild_permissions
+    if section == "player":
+        return p.connect and p.speak
+    if section == "stats":
+        # Stats come from collected messages; without view_channel the
+        # bot never sees any.
+        return p.view_channel
+    if section == "posts":
+        return p.view_channel and p.send_messages
+    if section == "moderation":
+        return p.moderate_members or p.kick_members or p.ban_members
+    # manage: the bot configures itself, no Discord permission involved.
+    return True
+
+
 async def is_admin_tier(
     guild_id: int,
     user: CurrentUser = Depends(get_current_user),
@@ -294,6 +320,13 @@ def require_section_access(section: str):
     ) -> Any:
         # Any, not CurrentUser: FastAPI >= 0.14x builds a response model from a
         # dependency return annotation, and CurrentUser is not a Pydantic model.
+        # The bot's permissions come before every user tier: no shortcut makes
+        # a section work the bot cannot perform.
+        if not bot_section_available(bot, guild_id, section):
+            raise HTTPException(
+                status_code=403,
+                detail="The bot is missing Discord permissions for this section",
+            )
         if _superadmin_unmocked(user, guild_id):
             return user
         if bot.get_guild(guild_id) is None:

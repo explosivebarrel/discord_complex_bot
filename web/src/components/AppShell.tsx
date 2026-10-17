@@ -25,6 +25,7 @@ function GuildTab({
   label,
   collapsed,
   disabled,
+  botBlocked,
   onClick,
 }: {
   to: string;
@@ -32,6 +33,8 @@ function GuildTab({
   label: string;
   collapsed: boolean;
   disabled?: boolean;
+  /** Disabled because the BOT lacks permissions, not the user. */
+  botBlocked?: boolean;
   onClick?: () => void;
 }) {
   const { pathname } = useLocation();
@@ -40,8 +43,10 @@ function GuildTab({
       title={
         disabled
           ? collapsed
-            ? `${label} — no access`
-            : "You don't have access to this section"
+            ? `${label} — ${botBlocked ? "bot lacks permissions" : "no access"}`
+            : botBlocked
+              ? "The bot is missing Discord permissions on this server"
+              : "You don't have access to this section"
           : collapsed
             ? label
             : undefined
@@ -147,6 +152,7 @@ function DrawerContent({
               label="Player"
               collapsed={collapsed}
               disabled={!guildAllows(active, "player")}
+              botBlocked={active.bot_access?.player === false}
               onClick={onNavigate}
             />
             <GuildTab
@@ -155,6 +161,7 @@ function DrawerContent({
               label="Stats"
               collapsed={collapsed}
               disabled={!guildAllows(active, "stats")}
+              botBlocked={active.bot_access?.stats === false}
               onClick={onNavigate}
             />
             <GuildTab
@@ -163,6 +170,7 @@ function DrawerContent({
               label="Posts"
               collapsed={collapsed}
               disabled={!guildAllows(active, "posts")}
+              botBlocked={active.bot_access?.posts === false}
               onClick={onNavigate}
             />
             {/* Secondary sections live one click deeper so the rail stays
@@ -210,6 +218,7 @@ function DrawerContent({
                 label="Moderation"
                 collapsed={collapsed}
                 disabled={!guildAllows(active, "moderation")}
+                botBlocked={active.bot_access?.moderation === false}
                 onClick={onNavigate}
               />
               <GuildTab

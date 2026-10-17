@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Avatar, Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
 import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
-import { api, guildAllows, type AccessMockTier, type GuildBrief } from "../api";
+import { api, guildAllows, guildSectionHint, type AccessMockTier, type GuildBrief } from "../api";
 import { useGuilds, useMe, useSetAccessMock } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -14,14 +14,14 @@ function guildIconUrl(guild: GuildBrief) {
 }
 
 /** Guild card section button: disabled with a hint when no access. */
-function SectionButton({ label, icon, href, enabled, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; primary?: boolean }) {
+function SectionButton({ label, icon, href, enabled, hint, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; hint?: string; primary?: boolean }) {
   const button = (
     <Button href={href} variant={primary ? "contained" : "tonal"} size="small" startIcon={icon} disabled={!enabled} sx={{ flex: 1 }}>
       {label}
     </Button>
   );
   return (
-    <Tooltip title={enabled ? undefined : "You don't have access to this section"}>
+    <Tooltip title={enabled ? undefined : hint ?? "You don't have access to this section"}>
       <span style={{ display: "flex", flex: 1 }}>{button}</span>
     </Tooltip>
   );
@@ -161,6 +161,7 @@ export function GuildsPage() {
                     icon={<GraphicEq />}
                     href={`/guild/${g.id}`}
                     enabled={guildAllows(g, "player")}
+                    hint={guildSectionHint(g, "player")}
                     primary
                   />
                   <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -170,12 +171,14 @@ export function GuildsPage() {
                         icon={<Settings />}
                         href={`/guild/${g.id}/admin`}
                         enabled={guildAllows(g, "manage")}
+                        hint={guildSectionHint(g, "manage")}
                       />
                       <SectionButton
                         label="Stats"
                         icon={<BarChart />}
                         href={`/guild/${g.id}/stats`}
                         enabled={guildAllows(g, "stats")}
+                        hint={guildSectionHint(g, "stats")}
                       />
                     </Box>
                     <Box sx={{ display: "flex", gap: 1 }}>
@@ -184,12 +187,14 @@ export function GuildsPage() {
                         icon={<PostAdd />}
                         href={`/guild/${g.id}/posts`}
                         enabled={guildAllows(g, "posts")}
+                        hint={guildSectionHint(g, "posts")}
                       />
                       <SectionButton
                         label="Mod"
                         icon={<Gavel />}
                         href={`/guild/${g.id}/moderation`}
                         enabled={guildAllows(g, "moderation")}
+                        hint={guildSectionHint(g, "moderation")}
                       />
                     </Box>
                   </Box>
