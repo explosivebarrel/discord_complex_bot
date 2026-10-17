@@ -18,15 +18,22 @@ export function GuildsPage() {
     </AppShell>
   );
 
-  if (loading) {
+  // First load (auth or the guilds fetch): card skeletons instead of an
+  // empty grid under the "Servers" title.
+  if (loading || (me && guildsQuery.isPending)) {
     return shell(
       <Grid container spacing={2}>
-        {[0, 1, 2].map((i) => (
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }}>
-            <Card>
+            <Card sx={{ height: "100%" }}>
               <CardContent>
-                <Skeleton width="60%" />
-                <Skeleton width="40%" />
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 1.5 }}>
+                  <Skeleton variant="rounded" width={44} height={44} />
+                  <Skeleton width="60%" />
+                </Box>
+                <Skeleton width="35%" sx={{ mb: 2.5 }} />
+                <Skeleton variant="rounded" height={32} sx={{ mb: 1 }} />
+                <Skeleton variant="rounded" height={32} />
               </CardContent>
             </Card>
           </Grid>
@@ -46,7 +53,6 @@ export function GuildsPage() {
       </Box>,
     );
   }
-
   return shell(
     <Box>
       {guildsError && (
