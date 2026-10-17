@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Chip, CircularProgress, IconButton, LinearProgress, Slider, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Chip, CircularProgress, IconButton, LinearProgress, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { m3 } from "../theme";
@@ -111,6 +111,8 @@ export function PlayerDock({
   const hasHistory = (state?.played?.length ?? 0) > 0;
   const repeat = state?.repeat ?? "off";
   const [livePos, setLivePos] = useState(0);
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Advance the progress line locally between 3-second polls.
   useEffect(() => {
@@ -255,7 +257,7 @@ export function PlayerDock({
         direction="row"
         spacing={0.5}
         sx={{
-          alignItems: { xs: "center", md: "flex-start" },
+          alignItems: "center",
           flex: { xs: "0 0 auto", md: 1 },
           justifyContent: { xs: "flex-start", md: "flex-end" },
           order: { xs: 2, md: 0 },
@@ -287,7 +289,42 @@ export function PlayerDock({
             onChangeCommitted={(_, v) => onVolumeCommit(v as number)}
           />
         </Box>
+        {/* Below md the slider does not fit: the icon opens it in a popover. */}
+        <Box sx={{ display: { xs: "flex", md: "none" } }}>
+          <Tooltip title="Volume">
+            <span>
+              <IconButton
+                aria-label="Volume"
+                ref={volumeButtonRef}
+                onClick={() => setVolumeOpen((open) => !open)}
+              >
+                <VolumeUp />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
       </Stack>
+
+      <Popover
+        open={volumeOpen}
+        anchorEl={volumeButtonRef.current}
+        onClose={() => setVolumeOpen(false)}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }}
+        transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+        sx={{ display: { md: "none" } }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 2, width: 240 }}>
+          <VolumeUp fontSize="small" sx={{ color: "text.secondary" }} />
+          <Slider
+            size="small"
+            min={0}
+            max={200}
+            value={Math.min(volume, 200)}
+            onChange={(_, v) => onVolumeChange(v as number)}
+            onChangeCommitted={(_, v) => onVolumeCommit(v as number)}
+          />
+        </Box>
+      </Popover>
     </Box>
   );
 }
