@@ -29,6 +29,7 @@ function SectionButton({ label, icon, href, enabled, hint, primary }: { label: s
 
 const MOCK_LABELS: Record<AccessMockTier | "real", string> = {
   real: "Real permissions",
+  owner: "As owner",
   admin: "As admin",
   member: "As member",
   guest: "As guest",
@@ -55,7 +56,7 @@ function MockMenu({ guild, mock }: { guild: GuildBrief; mock: AccessMockTier | n
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
-        {(["real", "admin", "member", "guest"] as const).map((tier) => (
+        {(["real", "owner", "admin", "member", "guest"] as const).map((tier) => (
           <MenuItem
             key={tier}
             selected={tier === "real" ? !mock : mock === tier}
@@ -152,8 +153,22 @@ export function GuildsPage() {
                   {me?.is_superadmin && <MockMenu guild={g} mock={mock} />}
                 </Box>
                 <Box sx={{ display: "flex", gap: 1, alignSelf: "flex-start" }}>
-                  {g.is_admin && <Chip size="small" label="admin" color="primary" />}
-                  {mock && <Chip size="small" label={`as ${mock}`} color="secondary" />}
+                  {/* The highest applicable role, one chip per card. Under an
+                      access mock the chip shows the pretended tier. */}
+                  {mock
+                    ? mock === "owner" ? (
+                        <Chip size="small" label="owner" color="primary" />
+                      ) : mock === "admin" ? (
+                        <Chip size="small" label="admin" color="secondary" />
+                      ) : null
+                    : g.is_superadmin ? (
+                        <Chip size="small" label="superadmin" sx={{ bgcolor: m3.tertiaryContainer, color: "#F5EFF7" }} />
+                      ) : g.is_owner ? (
+                        <Chip size="small" label="owner" color="primary" />
+                      ) : g.is_admin ? (
+                        <Chip size="small" label="admin" color="secondary" />
+                      ) : null}
+                  {mock && <Chip size="small" variant="outlined" color="secondary" label={`as ${mock}`} />}
                 </Box>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   <SectionButton

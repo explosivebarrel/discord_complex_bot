@@ -140,10 +140,13 @@ _member_cache: dict[tuple[int, int], tuple[float, bool, bool]] = {}
 
 # --- access mock (super-admin testing) ---
 
-# Pretend tiers for the panel: "admin" (owner/MANAGE_GUILD), "member" (plain
-# member) and "guest" (not a member). Key: session id, value: {guild_id: tier}.
-# In memory on purpose: a restart resets every mock to the real permissions.
-MOCK_TIERS = ("admin", "member", "guest")
+# Pretend tiers for the panel: "owner" (the guild owner without any
+# super-admin powers), "admin" (owner/MANAGE_GUILD), "member" (plain
+# member) and "guest" (not a member). The super-admin is the operator
+# identity and is deliberately not mockable. Key: session id, value:
+# {guild_id: tier}. In memory on purpose: a restart resets every mock
+# to the real permissions.
+MOCK_TIERS = ("owner", "admin", "member", "guest")
 _access_mock: dict[int, dict[int, str]] = {}
 
 
@@ -208,7 +211,7 @@ async def _guild_access(
     # gates behave exactly as they would for the pretended tier.
     mock = get_access_mock(user.session_id, guild_id)
     if mock is not None:
-        return mock != "guest", mock == "admin"
+        return mock != "guest", mock in ("admin", "owner")
     try:
         from app.api.sessions import fetch_guilds_with_retry
 
@@ -365,12 +368,13 @@ async def require_guild_admin(
 def is_guild_owner(bot: ComplexBot, guild_id: int, user: CurrentUser) -> bool:
     """Owner-level trust: the Discord owner or an unmocked super-admin.
 
-    An active access mock replaces the user's tier for the whole session,
-    so a super-admin previewing "member" or "admin" is not the owner while
-    it is on — otherwise the mock could not show what admins really see.
+    An active access mock replaces the user's tier for the whole session:
+    "owner" grants the trust, any other tier removes it — so a super-admin
+    previewing "admin" sees exactly what a real admin sees.
     """
-    if get_access_mock(user.session_id, guild_id) is not None:
-        return False
+    mock = get_access_mock(user.session_id, guild_id)
+    if mock is not None:
+        return mock == "owner"
     if user.is_superadmin:
         return True
     guild = bot.get_guild(guild_id)

@@ -1,4 +1,4 @@
-export type AccessMockTier = "admin" | "member" | "guest";
+export type AccessMockTier = "owner" | "admin" | "member" | "guest";
 
 export interface Me {
   discord_id: string;

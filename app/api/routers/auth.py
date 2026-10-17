@@ -149,10 +149,12 @@ async def my_guilds(
         is_discord_admin = is_owner or bool(permissions & 0x20)
         is_admin = is_discord_admin or gid in await db.list_guild_admins(gid)
         tier = is_admin or user.is_superadmin
-        # A mock overrides the real Discord tier for this session.
+        # A mock overrides the real Discord tier for this session. An owner
+        # mock is the full owner tier: admin trust plus owner-level controls,
+        # but without the super-admin shortcuts.
         mock = get_access_mock(user.session_id, gid)
         if mock is not None:
-            tier = mock == "admin"
+            tier = mock in ("admin", "owner")
             is_admin = tier
         settings = await db.get_guild_settings(gid)
         # The super-admin passes every gate on the backend, so the flags the
@@ -176,10 +178,10 @@ async def my_guilds(
         for key, ok in bot_access.items():
             access[key] = access[key] and ok
         # Owner-level controls (section access matrix, panel admin list).
-        # The Discord owner or a super-admin keeps them; ANY active mock
-        # removes owner-level trust, matching deps.is_guild_owner, so the
-        # preview shows exactly what a real admin would see.
-        effective_owner = (is_owner or user.is_superadmin) and mock is None
+        # The Discord owner or a super-admin keeps them; an "owner" mock
+        # grants them, any other mock removes them — matching
+        # deps.is_guild_owner, so the preview shows what that tier sees.
+        effective_owner = (is_owner or user.is_superadmin) if mock is None else mock == "owner"
         result.append(
             {
                 "id": str(gid),
@@ -198,7 +200,7 @@ async def my_guilds(
 
 class AccessMockBody(BaseModel):
     guild_id: str
-    tier: Literal["admin", "member", "guest"] | None = None
+    tier: Literal["owner", "admin", "member", "guest"] | None = None
 
 
 @router.get("/access-mock")
