@@ -196,7 +196,10 @@ function DrawerContent({
                   />
                 </ListItemIcon>
                 {!collapsed && (
-                  <ListItemText primary="Show more" slotProps={{ primary: { noWrap: true, variant: "body1" } }} />
+                  <ListItemText
+                    primary={moreOpen ? "Show less" : "Show more"}
+                    slotProps={{ primary: { noWrap: true, variant: "body1" } }}
+                  />
                 )}
               </ListItemButton>
             </Tooltip>
