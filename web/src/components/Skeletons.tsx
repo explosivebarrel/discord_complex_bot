@@ -34,16 +34,15 @@ export function RowsSkeleton({ rows = 4 }: { rows?: number }) {
 /** Player page placeholder mimicking the real two-column layout. */
 export function PlayerPageSkeleton() {
   return (
-    <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>
-      <Stack spacing={2} sx={{ flex: 1, minWidth: 0, width: "100%" }}>
-        <CardSkeleton />
+    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "3fr 2fr" }, gap: 2, alignItems: "start" }}>
+      <Stack spacing={2}>
         <CardSkeleton />
         <CardSkeleton />
       </Stack>
-      <Stack spacing={2} sx={{ width: { xs: "100%", lg: 340 }, flexShrink: 0, minWidth: 0 }}>
-        <CardSkeleton height={44} />
-        <CardSkeleton height={180} />
+      <Stack spacing={2}>
+        <CardSkeleton />
+        <CardSkeleton height={140} />
       </Stack>
-    </Stack>
+    </Box>
   );
 }

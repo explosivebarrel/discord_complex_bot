@@ -1,5 +1,5 @@
-import { type CSSProperties, type ReactNode, useCallback, useState } from "react";
-import { AppBar, Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { type ReactNode, useCallback, useState } from "react";
+import { Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import ArrowBack from "@mui/icons-material/ArrowBack";
 import BarChart from "@mui/icons-material/BarChart";
@@ -225,6 +225,12 @@ function DrawerContent({
   );
 }
 
+/**
+ * Inset-surface app frame (MD3): the whole app is one rounded card inset in
+ * the viewport by 16px. Nothing floats or sticks — nav, content column and
+ * the player sheet are flex children of the frame, and only the content
+ * column and the queue list scroll inside it.
+ */
 export function AppShell({
   me,
   title,
@@ -232,6 +238,7 @@ export function AppShell({
   onLogout,
   right,
   rightBadge,
+  dock,
   children,
 }: {
   me: Me | null;
@@ -239,18 +246,19 @@ export function AppShell({
   /** Show a back arrow that leads to the home page. */
   back?: boolean;
   onLogout?: () => void;
-  /** Optional second (right) column: the player sidebar on wide screens. */
+  /** Optional right column: the player queue sheet on wide screens. */
   right?: ReactNode;
   /** Badge number for the collapsed right rail (queue length). */
   rightBadge?: number;
+  /** Bottom dock of the content column (the player dock on the player page). */
+  dock?: ReactNode;
   children: ReactNode;
 }) {
   const theme = useTheme();
   const isWide = useMediaQuery(theme.breakpoints.up("md"));
-  // lg and up: the player sidebar is a pinned side sheet; below lg it is a
-  // modal drawer so it never jumps under the page content.
+  // lg and up: the player sidebar is a pinned column of the frame; below lg
+  // it is a modal drawer so it never squeezes the page content.
   const isLarge = useMediaQuery(theme.breakpoints.up("lg"));
-  const isXl = useMediaQuery(theme.breakpoints.up("xl"));
   const [navCollapsed, setNavCollapsed] = useLocalPref("ui.navCollapsed", false);
   const [sheetOpen, setSheetOpen] = useLocalPref("ui.rightOpen", true);
   // On wide screens the sheet open/closed state persists; below lg the
@@ -275,81 +283,29 @@ export function AppShell({
   const activeGuildId = subMatch?.params.guildId ?? exactMatch?.params.guildId ?? null;
 
   const navWidth = navCollapsed ? DRAWER_RAIL_WIDTH : DRAWER_WIDTH;
-  const drawerPaperSx = {
+  const navPaperSx = {
     width: DRAWER_WIDTH,
     boxSizing: "border-box" as const,
-    bgcolor: m3.surfaceContainer,
+    bgcolor: m3.surface,
   };
-  // Exposed as CSS vars so the fixed PlayerBar hugs the drawer and the
-  // player sheet slot instead of sliding under them.
-  const sheetSlotWidth = right && isLarge ? (rightOpen ? (isXl ? 340 : 320) : 56) : 0;
 
   return (
     <Box
-      sx={{ minHeight: "100dvh" }}
-      style={
-        {
-          "--nav-w": `${isWide ? navWidth : 0}px`,
-          "--sheet-w": `${sheetSlotWidth}px`,
-        } as CSSProperties
-      }
+      sx={{
+        height: "100dvh",
+        p: 2,
+        boxSizing: "border-box",
+        bgcolor: m3.surfaceContainerLowest,
+        overflow: "hidden",
+      }}
     >
-      <AppBar
-        position="fixed"
-        elevation={0}
-        sx={{
-          bgcolor: m3.surfaceContainer,
-          borderBottom: `1px solid ${m3.outlineVariant}`,
-          width: { md: `calc(100% - ${navWidth}px)` },
-          ml: { md: `${navWidth}px` },
-        }}
-      >
-        <Toolbar sx={{ gap: 1.5 }}>
-          {!isWide && me && (
-            <IconButton size="small" onClick={() => setModalOpen(true)} aria-label="Open navigation">
-              <MenuRounded />
-            </IconButton>
-          )}
-          {back && (
-            <Tooltip title="Back to servers">
-              <IconButton component={RouterLink} to="/" size="small">
-                <ArrowBack />
-              </IconButton>
-            </Tooltip>
-          )}
-          <Typography
-            variant="h6"
-            noWrap
-            sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
-          >
-            {title ?? ""}
-          </Typography>
-          {/* On lg+ the collapsed rail carries its own restore button, so
-              the appbar only needs one below lg. */}
-          {right && !rightOpen && !isLarge && (
-            <Tooltip title="Show player sidebar">
-              <IconButton size="small" onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
-                <ViewSidebar />
-              </IconButton>
-            </Tooltip>
-          )}
-          {me?.is_superadmin && !isWide && (
-            <Tooltip title="System settings">
-              <IconButton component={RouterLink} to="/settings" size="small">
-                <Settings />
-              </IconButton>
-            </Tooltip>
-          )}
-          {me && !isWide && <Avatar src={me.avatar_url} sx={{ width: 30, height: 30 }} />}
-        </Toolbar>
-      </AppBar>
-
+      {/* Temporary drawers (small screens): navigation and the player queue. */}
       <Drawer
         variant="temporary"
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         ModalProps={{ keepMounted: true }}
-        sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": drawerPaperSx }}
+        sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": navPaperSx }}
       >
         <DrawerContent
           me={me}
@@ -362,142 +318,26 @@ export function AppShell({
         />
       </Drawer>
 
-      {/* Main area next to the drawer. */}
-      <Box sx={{ display: { md: "flex" } }}>
-        {isWide && (
-          <Drawer
-            variant="permanent"
-            sx={{
-              width: navWidth,
-              flexShrink: 0,
-              transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
-              "& .MuiDrawer-paper": {
-                ...drawerPaperSx,
-                width: navWidth,
-                borderRight: `1px solid ${m3.outlineVariant}`,
-                transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
-                overflowX: "hidden",
-              },
-            }}
-          >
-            <DrawerContent
-              me={me}
-              guilds={guilds}
-              guildsLoading={guildsLoading}
-              activeGuildId={activeGuildId}
-              collapsed={navCollapsed}
-              onToggleCollapse={() => setNavCollapsed(!navCollapsed)}
-              onLogout={onLogout}
-            />
-          </Drawer>
-        )}
-        <Box
-          component="main"
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            width: "100%",
-          }}
-        >
-          <Box
-            sx={{
-              // Flex whenever the page has a right slot (open sheet or the
-              // collapsed rail) so they sit BESIDE the content pinned to the
-              // viewport's right edge; only the page column is centered.
-              display: { lg: right ? "flex" : "block" } as const,
-              gap: 3,
-              alignItems: "flex-start",
-            }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Box
-                sx={{
-                  maxWidth: 1400,
-                  mx: "auto",
-                  px: { xs: 1.5, sm: 3 },
-                  pt: { xs: 10, sm: 11 },
-                  pb: right ? { xs: 22, sm: 18 } : 4,
-                }}
-              >
-                {children}
-              </Box>
-            </Box>
-            {right && !rightOpen && isLarge && (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 1,
-                  position: "sticky",
-                  top: 0,
-                  height: "100dvh",
-                  justifyContent: "flex-start",
-                  pt: { sm: 11 },
-                  width: 56,
-                  flexShrink: 0,
-                }}
-              >
-                <Tooltip title="Show player sidebar">
-                  <IconButton onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
-                    <ViewSidebar />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Queue">
-                  <IconButton onClick={() => setRightOpen(true)} aria-label="Show queue">
-                    <Badge badgeContent={rightBadge ?? 0} color="primary">
-                      <QueueMusic />
-                    </Badge>
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            )}
-            {right && rightOpen && isLarge && (
-              <Box
-                sx={{
-                  width: { lg: 320, xl: 340 },
-                  flexShrink: 0,
-                  // A real side sheet on wide screens: full viewport height,
-                  // own scroll and surface, independent of the page scroll.
-                  position: "sticky",
-                  top: 0,
-                  height: "100dvh",
-                  overflowY: "auto",
-                  bgcolor: m3.surfaceContainerLow,
-                  borderLeft: `1px solid ${m3.outlineVariant}`,
-                  px: 2,
-                  pt: { sm: 10 },
-                  pb: 3,
-                }}
-              >
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
-                  <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
-                    Player
-                  </Typography>
-                  <Tooltip title="Hide player sidebar">
-                    <IconButton size="small" onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
-                      <ViewSidebar fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-                {right}
-              </Box>
-            )}
-          </Box>
-        </Box>
-      </Box>
-
-      {/* Below lg the same content becomes a modal side drawer instead of
-          jumping under the page content. */}
       {right && !isLarge && (
         <Drawer
           variant="temporary"
           anchor="right"
           open={rightOpen}
           onClose={() => setRightOpen(false)}
-          sx={{ display: { lg: "none" }, "& .MuiDrawer-paper": { bgcolor: m3.surfaceContainerLow, px: 2, pt: 2, width: 360, maxWidth: "88vw", boxSizing: "border-box" } }}
+          sx={{
+            display: { lg: "none" },
+            "& .MuiDrawer-paper": {
+              bgcolor: m3.surface,
+              width: 360,
+              maxWidth: "88vw",
+              boxSizing: "border-box",
+              display: "flex",
+              flexDirection: "column",
+              p: 2,
+            },
+          }}
         >
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5, flexShrink: 0 }}>
             <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
               Player
             </Typography>
@@ -510,6 +350,140 @@ export function AppShell({
           {right}
         </Drawer>
       )}
+
+      {/* The inset frame: nav | content | player sheet. */}
+      <Box
+        sx={{
+          height: "100%",
+          bgcolor: m3.surface,
+          borderRadius: "24px",
+          overflow: "hidden",
+          display: "flex",
+        }}
+      >
+        {isWide && (
+          <Box
+            sx={{
+              width: navWidth,
+              flexShrink: 0,
+              overflow: "hidden",
+              borderRight: `1px solid ${m3.outlineVariant}`,
+              transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
+            }}
+          >
+            <DrawerContent
+              me={me}
+              guilds={guilds}
+              guildsLoading={guildsLoading}
+              activeGuildId={activeGuildId}
+              collapsed={navCollapsed}
+              onToggleCollapse={() => setNavCollapsed(!navCollapsed)}
+              onLogout={onLogout}
+            />
+          </Box>
+        )}
+
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {/* Page header: typography on the frame surface, no bar panel.
+              Shares the centered content width so the title lines up with
+              the page column on wide screens. */}
+          <Box sx={{ px: 3, pt: 2, pb: 1.5, flexShrink: 0 }}>
+            <Box sx={{ maxWidth: 1400, mx: "auto", display: "flex", alignItems: "center", gap: 1 }}>
+            {!isWide && me && (
+              <IconButton size="small" onClick={() => setModalOpen(true)} aria-label="Open navigation">
+                <MenuRounded />
+              </IconButton>
+            )}
+            {back && (
+              <Tooltip title="Back to servers">
+                <IconButton component={RouterLink} to="/" size="small">
+                  <ArrowBack />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
+              {title ?? ""}
+            </Typography>
+            {/* Below lg the queue lives in a modal drawer, so the header
+                carries its restore button; on lg+ the rail does that. */}
+            {right && !rightOpen && !isLarge && (
+              <Tooltip title="Show player sidebar">
+                <IconButton size="small" onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
+                  <ViewSidebar />
+                </IconButton>
+              </Tooltip>
+            )}
+            {me?.is_superadmin && !isWide && (
+              <Tooltip title="System settings">
+                <IconButton component={RouterLink} to="/settings" size="small">
+                  <Settings />
+                </IconButton>
+              </Tooltip>
+            )}
+            {me && !isWide && <Avatar src={me.avatar_url} sx={{ width: 30, height: 30 }} />}
+            </Box>
+          </Box>
+
+          {/* The only page-level scroll container. */}
+          <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 3, pb: 3 }}>
+            <Box sx={{ maxWidth: 1400, mx: "auto" }}>{children}</Box>
+          </Box>
+
+          {dock && <Box sx={{ flexShrink: 0 }}>{dock}</Box>}
+        </Box>
+
+        {right && isLarge &&
+          (rightOpen ? (
+            <Box
+              sx={{
+                width: { lg: 320, xl: 340 },
+                flexShrink: 0,
+                borderLeft: `1px solid ${m3.outlineVariant}`,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 2, pt: 2, pb: 1, flexShrink: 0 }}>
+                <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
+                  Player
+                </Typography>
+                <Tooltip title="Hide player sidebar">
+                  <IconButton size="small" onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
+                    <ViewSidebar fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              <Box sx={{ flex: 1, minHeight: 0, px: 2, pb: 2 }}>{right}</Box>
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                width: 56,
+                flexShrink: 0,
+                borderLeft: `1px solid ${m3.outlineVariant}`,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 1,
+                pt: 2,
+              }}
+            >
+              <Tooltip title="Show player sidebar">
+                <IconButton onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
+                  <ViewSidebar />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Queue">
+                <IconButton onClick={() => setRightOpen(true)} aria-label="Show queue">
+                  <Badge badgeContent={rightBadge ?? 0} color="primary">
+                    <QueueMusic />
+                  </Badge>
+                </IconButton>
+              </Tooltip>
+            </Box>
+          ))}
+      </Box>
     </Box>
   );
 }

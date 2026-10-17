@@ -15,7 +15,7 @@ export function useFeedback(): Feedback {
       autoHideDuration={4500}
       onClose={() => setSnack(null)}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      sx={{ mb: 9 }}
+      sx={{ mb: 11 }}
     >
       {snack ? (
         <Alert severity={snack.severity} variant="filled" onClose={() => setSnack(null)} sx={{ width: "100%" }}>

@@ -17,7 +17,6 @@ import {
   MenuItem,
   Select,
   Skeleton,
-  Slider,
   Stack,
   TextField,
   Tooltip,
@@ -33,7 +32,6 @@ import RadioIcon from "@mui/icons-material/Radio";
 import LibraryMusic from "@mui/icons-material/LibraryMusic";
 import Folder from "@mui/icons-material/Folder";
 import YouTube from "@mui/icons-material/YouTube";
-import VolumeUp from "@mui/icons-material/VolumeUp";
 import AllInclusive from "@mui/icons-material/AllInclusive";
 import TagIcon from "@mui/icons-material/Tag";
 import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
@@ -55,7 +53,7 @@ import { PlayerPageSkeleton } from "../components/Skeletons";
 import { m3 } from "../theme";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
-import { PlayerBar } from "../components/PlayerBar";
+import { PlayerDock } from "../components/PlayerDock";
 import { PlaylistBrowser } from "../components/PlaylistBrowser";
 import { PlaylistAddMenu } from "../components/PlaylistAddMenu";
 import { useFeedback } from "../components/Feedback";
@@ -135,7 +133,6 @@ export function PlayerPage() {
   // HTML5 drag and drop of queue rows. The source index rides through the
   // dataTransfer so a re-render between dragstart and drop cannot lose it.
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [volInput, setVolInput] = useState<string | null>(null);
   const [openPl, setOpenPl] = useState<UserPlaylistFull | null>(null);
   const [newPlName, setNewPlName] = useState("");
   const [plBusy, setPlBusy] = useState(false);
@@ -237,18 +234,6 @@ export function PlayerPage() {
       .finally(() => setPlaylistBusy(false));
   };
 
-  const commitVolume = () => {
-    const parsed = Number(volInput);
-    if (Number.isNaN(parsed)) {
-      setVolInput(null);
-      return;
-    }
-    const clamped = Math.max(0, Math.min(200, Math.round(parsed)));
-    setVolInput(null);
-    setVolume(clamped);
-    act(() => api.volume(gid, clamped), `Volume: ${clamped}%`);
-  };
-
   const loadMyPls = () => {
     void queryClient.invalidateQueries({ queryKey: ["myPlaylists"] });
     return Promise.resolve();
@@ -311,10 +296,11 @@ export function PlayerPage() {
     );
   }
 
-  // Right sidebar: voice, volume and the queue (rendered by AppShell).
+  // Right sidebar: voice connection on top, the queue fills the rest and
+  // scrolls internally.
   const rightPanel = (
-    <Stack spacing={2} sx={{ minWidth: 0 }}>
-          <Card>
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minWidth: 0, gap: 2 }}>
+          <Card sx={{ flexShrink: 0 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
                 Voice connection
@@ -359,62 +345,9 @@ export function PlayerPage() {
               )}
             </CardContent>
           </Card>
-
-          {state?.connected && (
-            <Card>
-              {/* CardContent pads the last child to 24px; keep this compact card even. */}
-              <CardContent sx={{ py: 1.25, "&:last-child": { pb: 1.25 } }}>
-                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                  <VolumeUp sx={{ color: "text.secondary" }} />
-                  <Slider
-                    size="small"
-                    min={0}
-                    max={200}
-                    value={volume ?? 100}
-                    onChange={(_event, v) => setVolume(v as number)}
-                    onChangeCommitted={(_event, v) => act(() => api.volume(gid, v as number))}
-                    sx={{ flex: 1 }}
-                  />
-                  <TextField
-                    size="small"
-                    type="number"
-                    value={volInput ?? String(volume ?? 100)}
-                    onChange={(e) => setVolInput(e.target.value)}
-                    onBlur={commitVolume}
-                    onKeyDown={(e) => e.key === "Enter" && commitVolume()}
-                    slotProps={{
-                      htmlInput: { min: 0, max: 200, style: { textAlign: "center" } },
-                      input: { className: "volume-input", endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                    }}
-                    sx={{ width: 92 }}
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
-          )}
-          {playlist && (
-            <PlaylistBrowser
-              playlist={playlist}
-              busy={playlistBusy}
-              onClose={() => setPlaylist(null)}
-              onReload={(page, q) => openPlaylistPage(playlist.id, page, q)}
-              onPlay={(index) =>
-                playlistAction(() => api.playlistPlay(gid, playlist.id, index), "Playing from playlist")
-              }
-              onAdd={(indices) =>
-                playlistAction(
-                  () => api.playlistAdd(gid, playlist.id, indices),
-                  `Added ${indices.length} track(s) to the queue`,
-                )
-              }
-              onAddAll={() =>
-                playlistAction(() => api.playlistAddAll(gid, playlist.id), "Whole playlist queued (lazy)")
-              }
-            />
-          )}
-          <Card>
-            <CardContent>
-              <Stack spacing={1} sx={{ mb: 1.5 }}>
+          <Card sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <CardContent sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", "&:last-child": { pb: 2 } }}>
+              <Stack spacing={1} sx={{ mb: 1.5, flexShrink: 0 }}>
                 <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                   <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
                     Queue ({state?.queue.length ?? 0})
@@ -473,6 +406,7 @@ export function PlayerPage() {
                   )}
                 </Stack>
               </Stack>
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
               {queueView === "next" ? (
                 state && state.queue.length > 0 ? (
                   <List disablePadding>
@@ -624,7 +558,7 @@ export function PlayerPage() {
                   </List>
                 ) : (
                   <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                    Queue is empty. Add something above.
+                    Queue is empty. Add tracks from the search.
                   </Typography>
                 )
               ) : state && state.played.length > 0 ? (
@@ -702,10 +636,25 @@ export function PlayerPage() {
                   Nothing played yet in this session.
                 </Typography>
               )}
+              </Box>
             </CardContent>
           </Card>
+    </Box>
+  );
 
-    </Stack>
+  const dock = (
+    <PlayerDock
+      state={state}
+      volume={volume ?? 100}
+      onVolumeChange={(v) => setVolume(v)}
+      onVolumeCommit={(v) => act(() => api.volume(gid, v))}
+      onPauseToggle={() => act(() => api.simpleAction(gid, state?.current?.paused ? "resume" : "pause"))}
+      onPrevious={() => act(() => api.simpleAction(gid, "previous"), "Playing the previous track")}
+      onSkip={() => act(() => api.simpleAction(gid, "skip"))}
+      onStop={() => act(() => api.simpleAction(gid, "stop"), "Stopped, queue cleared")}
+      onSeek={(p) => act(() => api.seek(gid, p))}
+      onRepeatCycle={cycleRepeat}
+    />
   );
 
   return (
@@ -715,8 +664,11 @@ export function PlayerPage() {
       title={state?.guild_name ?? undefined}
       right={rightPanel}
       rightBadge={state?.queue.length ?? 0}
+      dock={dock}
     >
-      <Stack spacing={2} sx={{ minWidth: 0 }}>
+      {/* Wide screens: search/add on the left, playlists on the right. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "3fr 2fr" }, gap: 2, alignItems: "start" }}>
+        <Stack spacing={2} sx={{ minWidth: 0 }}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -997,7 +949,9 @@ export function PlayerPage() {
               </CardContent>
             </Card>
           )}
-          <Card sx={{ mt: 2 }}>
+        </Stack>
+        <Stack spacing={2} sx={{ minWidth: 0 }}>
+          <Card>
             <CardContent>
               {openPl ? (
                 <>
@@ -1161,20 +1115,29 @@ export function PlayerPage() {
               )}
             </CardContent>
           </Card>
-      </Stack>
+          {playlist && (
+            <PlaylistBrowser
+              playlist={playlist}
+              busy={playlistBusy}
+              onClose={() => setPlaylist(null)}
+              onReload={(page, q) => openPlaylistPage(playlist.id, page, q)}
+              onPlay={(index) =>
+                playlistAction(() => api.playlistPlay(gid, playlist.id, index), "Playing from playlist")
+              }
+              onAdd={(indices) =>
+                playlistAction(
+                  () => api.playlistAdd(gid, playlist.id, indices),
+                  `Added ${indices.length} track(s) to the queue`,
+                )
+              }
+              onAddAll={() =>
+                playlistAction(() => api.playlistAddAll(gid, playlist.id), "Whole playlist queued (lazy)")
+              }
+            />
+          )}
+        </Stack>
+      </Box>
 
-      <PlayerBar
-        state={state}
-        volume={volume ?? 100}
-        onVolumeChange={(v) => setVolume(v)}
-        onVolumeCommit={(v) => act(() => api.volume(gid, v))}
-        onPauseToggle={() => act(() => api.simpleAction(gid, state?.current?.paused ? "resume" : "pause"))}
-        onPrevious={() => act(() => api.simpleAction(gid, "previous"), "Playing the previous track")}
-        onSkip={() => act(() => api.simpleAction(gid, "skip"))}
-        onStop={() => act(() => api.simpleAction(gid, "stop"), "Stopped, queue cleared")}
-        onSeek={(p) => act(() => api.seek(gid, p))}
-        onRepeatCycle={cycleRepeat}
-      />
       {feedback.node}
     </AppShell>
   );
