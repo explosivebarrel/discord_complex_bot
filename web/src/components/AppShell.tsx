@@ -298,9 +298,11 @@ export function AppShell({
           >
             {title ?? ""}
           </Typography>
-          {right && (
-            <Tooltip title={rightOpen ? "Hide player sidebar" : "Show player sidebar"}>
-              <IconButton size="small" onClick={() => setRightOpen(!rightOpen)} aria-label="Toggle player sidebar">
+          {/* The open sheet closes itself from its own header; the appbar
+              button only brings it back. */}
+          {right && !rightOpen && (
+            <Tooltip title="Show player sidebar">
+              <IconButton size="small" onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
                 <ViewSidebar />
               </IconButton>
             </Tooltip>
@@ -376,12 +378,14 @@ export function AppShell({
         >
           <Box
             sx={{
-              display: { lg: right && rightOpen ? "flex" : "block" } as const,
+              // Flex whenever the page has a right slot (open sheet or the
+              // collapsed rail) so the rail always sits BESIDE the content.
+              display: { lg: right ? "flex" : "block" } as const,
               gap: 3,
               alignItems: "flex-start",
             }}
           >
-            <Box sx={{ flex: 1, minWidth: 0, pt: { xs: 10, sm: 11 }, pb: right && rightOpen ? { xs: 22, sm: 18 } : 4 }}>
+            <Box sx={{ flex: 1, minWidth: 0, pt: { xs: 10, sm: 11 }, pb: right ? { xs: 22, sm: 18 } : 4 }}>
               {children}
             </Box>
             {right && !rightOpen && (
