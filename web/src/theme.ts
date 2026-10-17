@@ -97,7 +97,14 @@ const theme = createTheme({
       defaultProps: { elevation: 0 },
     },
     MuiPaper: { styleOverrides: { root: { backgroundImage: "none" } } },
-    MuiChip: { styleOverrides: { root: { borderRadius: 8 } } },
+    MuiChip: {
+      styleOverrides: {
+        root: { borderRadius: 8 },
+        // MUI's default 5px left margin is visibly narrower than the
+        // label's 12px right padding; even them out.
+        icon: { marginLeft: 12 },
+      },
+    },
     MuiListItemButton: {
       styleOverrides: {
         root: {

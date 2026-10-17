@@ -324,6 +324,17 @@ export function PlayerPage() {
                     value={selectedChannel}
                     onChange={(e) => setSelectedChannel(e.target.value as string)}
                     displayEmpty
+                    // The closed select renders bare children (no flex), so
+                    // build the display row here to match the menu items.
+                    renderValue={(value) => {
+                      const channel = channels.find((c) => c.id === value);
+                      return (
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                          <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
+                          {channel?.name}
+                        </Stack>
+                      );
+                    }}
                   >
                     {channels.map((c) => (
                       <MenuItem key={c.id} value={c.id} sx={{ gap: 1 }}>
