@@ -10,7 +10,6 @@ import {
   Chip,
   CircularProgress,
   IconButton,
-  InputAdornment,
   List,
   ListItem,
   ListItemAvatar,
@@ -126,6 +125,7 @@ export function PlayerPage() {
   const [query, setQuery] = useState("");
   // A non-empty query turns the search marker into an action button.
   const hasQuery = query.trim().length > 0;
+  const [searchActive, setSearchActive] = useState(false);
   const [source, setSource] = useState("yt");
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -758,67 +758,70 @@ export function PlayerPage() {
                 spacing={1}
                 sx={{ alignItems: { xs: "stretch", sm: "center" } }}
               >
-                <TextField
-                  fullWidth
-                  placeholder={PLACEHOLDERS[source]}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && doSearch()}
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          {/* Empty field: a plain search marker. With a query
-                              it hands over to the action button on the right. */}
-                          <SearchIcon
-                            fontSize="small"
-                            sx={{
-                              color: hasQuery ? "transparent" : "text.secondary",
-                              transform: hasQuery ? "translateX(24px)" : "none",
-                              opacity: hasQuery ? 0 : 1,
-                              transition: (t: Theme) =>
-                                t.transitions.create(["opacity", "transform", "color"], {
-                                  duration: t.transitions.duration.short,
-                                }),
-                            }}
-                          />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          {/* The action magnifier is always mounted at the
-                              field's right edge and fades/slides in when a
-                              query appears; the "Search" caption gives way. */}
-                          {!hasQuery && (
-                            <Typography variant="body2" sx={{ color: "text.secondary", pr: 1 }}>
-                              Search
-                            </Typography>
-                          )}
-                          <Tooltip title="Search">
-                            <IconButton
-                              aria-label="Search"
-                              onClick={doSearch}
-                              disabled={searching}
-                              sx={{
-                                position: "absolute",
-                                right: 8,
-                                opacity: hasQuery ? 1 : 0,
-                                pointerEvents: hasQuery ? "auto" : "none",
-                                transform: hasQuery ? "translateX(0)" : "translateX(-24px)",
-                                transition: (t: Theme) =>
-                                  t.transitions.create(["opacity", "transform"], {
-                                    duration: t.transitions.duration.short,
-                                  }),
-                              }}
-                            >
-                              {searching ? <CircularProgress size={18} /> : <SearchIcon fontSize="small" />}
-                            </IconButton>
-                          </Tooltip>
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                />
+                <Box sx={{ position: "relative", flex: 1, minWidth: 0 }}>
+                  <TextField
+                    fullWidth
+                    placeholder={PLACEHOLDERS[source]}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onFocus={() => setSearchActive(true)}
+                    onBlur={() => setSearchActive(false)}
+                    onKeyDown={(e) => e.key === "Enter" && doSearch()}
+                    sx={{
+                      // Text clears the magnifier slot it currently sits in.
+                      "& .MuiOutlinedInput-input": {
+                        pl: searchActive || hasQuery ? 1.75 : 5.5,
+                        pr: searchActive || hasQuery ? 5.5 : 1.75,
+                        transition: (t: Theme) =>
+                          t.transitions.create("padding", { duration: t.transitions.duration.short }),
+                      },
+                    }}
+                  />
+                  {/* One magnifier for all three states: a left marker while
+                      the field is idle, an indicator on the right once the
+                      field is active, the search action when there is a
+                      query. It fades between the two slots. */}
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      left: 13,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      display: "flex",
+                      pointerEvents: "none",
+                      opacity: searchActive || hasQuery ? 0 : 1,
+                      transition: (t: Theme) =>
+                        t.transitions.create(["opacity", "transform"], { duration: t.transitions.duration.short }),
+                    }}
+                  >
+                    <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+                  </Box>
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      right: 8,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      display: "flex",
+                      pointerEvents: searchActive || hasQuery ? "auto" : "none",
+                      opacity: searchActive || hasQuery ? 1 : 0,
+                      transition: (t: Theme) =>
+                        t.transitions.create(["opacity", "transform"], { duration: t.transitions.duration.short }),
+                    }}
+                  >
+                    {hasQuery ? (
+                      <Tooltip title="Search">
+                        <span>
+                          <IconButton aria-label="Search" onClick={doSearch} disabled={searching}>
+                            {searching ? <CircularProgress size={18} /> : <SearchIcon fontSize="small" />}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+                    )}
+                  </Box>
+                </Box>
                 <Tooltip title="Add the link to the queue without searching">
                   <Button
                     variant="tonal"
