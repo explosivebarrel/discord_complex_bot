@@ -152,8 +152,12 @@ export function PlayerPage() {
   }, [state, volume]);
 
   useEffect(() => {
-    setSelectedChannel((s) => s || channels[0]?.id || "");
-  }, [channels]);
+    // A channel picked on another server is not valid here: fall back to
+    // the first channel of the current guild until the user picks one.
+    if (!channels.some((c) => c.id === selectedChannel)) {
+      setSelectedChannel(channels[0]?.id ?? "");
+    }
+  }, [channels, selectedChannel]);
 
   const toggleFavorite = (t: TrackInfo) => {
     const existing = favorites.find((f) => f.uri === t.uri);
@@ -332,17 +336,29 @@ export function PlayerPage() {
                     renderValue={(value) => {
                       const channel = channels.find((c) => c.id === value);
                       return (
-                        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                           <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
-                          {channel?.name}
-                        </Stack>
+                          <Box
+                            component="span"
+                            sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          >
+                            {channel?.name ?? ""}
+                          </Box>
+                        </Box>
                       );
                     }}
                   >
                     {channels.map((c) => (
-                      <MenuItem key={c.id} value={c.id} sx={{ gap: 1 }}>
-                        <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
-                        {c.name}
+                      <MenuItem key={c.id} value={c.id}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                          <MsIcon name="volume_up" fontSize={18} sx={{ color: "text.secondary" }} />
+                          <Box
+                            component="span"
+                            sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          >
+                            {c.name}
+                          </Box>
+                        </Box>
                       </MenuItem>
                     ))}
                   </Select>
