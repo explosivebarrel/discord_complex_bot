@@ -41,12 +41,13 @@ function GuildTab({
         selected={pathname === to}
         onClick={onClick}
         sx={{
-          borderRadius: 999,
-          mx: 1.25,
+          borderRadius: collapsed ? "50%" : 999,
           mb: 0.5,
-          minHeight: 44,
           justifyContent: collapsed ? "center" : "flex-start",
-          px: collapsed ? 0 : 2,
+          // Collapsed rail: circular highlight; expanded: capsule.
+          ...(collapsed
+            ? { width: 48, height: 48, minHeight: 48, px: 0, mx: "auto" }
+            : { minHeight: 44, px: 2, mx: 1.25 }),
         }}
       >
         <ListItemIcon sx={{ minWidth: collapsed ? 0 : 40, justifyContent: "center" }}>{icon}</ListItemIcon>
@@ -180,13 +181,12 @@ function DrawerContent({
               selected={g.id === activeGuildId}
               onClick={onNavigate}
               sx={{
-                borderRadius: 999,
-                mx: collapsed ? "auto" : 1.25,
+                borderRadius: collapsed ? "50%" : 999,
                 mb: 0.5,
-                width: collapsed ? 48 : undefined,
-                px: collapsed ? 0 : 2,
-                minHeight: 44,
-                justifyContent: "center",
+                // Collapsed rail: circular highlight; expanded: capsule.
+                ...(collapsed
+                  ? { width: 48, height: 48, minHeight: 48, px: 0, mx: "auto" }
+                  : { minHeight: 44, px: 2, mx: 1.25 }),
               }}
             >
               <ListItemIcon sx={{ minWidth: collapsed ? 0 : 40, justifyContent: "center" }}>
@@ -440,48 +440,56 @@ export function AppShell({
           {dock && <Box sx={{ flexShrink: 0 }}>{dock}</Box>}
         </Box>
 
-        {right && isLarge &&
-          (rightOpen ? (
+        {right && isLarge && (
+          <Box
+            sx={{
+              // One column that animates its width between the sheet and
+              // the rail; content crossfades, the toggle stays put.
+              width: rightOpen ? { lg: 320, xl: 340 } : 56,
+              flexShrink: 0,
+              position: "relative",
+              borderLeft: `1px solid ${m3.outlineVariant}`,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
+            }}
+          >
             <Box
               sx={{
                 width: { lg: 320, xl: 340 },
-                flexShrink: 0,
-                borderLeft: `1px solid ${m3.outlineVariant}`,
+                flex: 1,
+                minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
-                overflow: "hidden",
+                opacity: rightOpen ? 1 : 0,
+                pointerEvents: rightOpen ? "auto" : "none",
+                transition: theme.transitions.create("opacity", { duration: theme.transitions.duration.short }),
               }}
             >
-              <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 2, pt: 2, pb: 1, flexShrink: 0 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 2, pt: 2, pb: 1, flexShrink: 0, pr: 7 }}>
                 <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
                   Player
                 </Typography>
-                <Tooltip title="Hide player sidebar">
-                  <IconButton onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
-                    {Ic.rightClose}
-                  </IconButton>
-                </Tooltip>
               </Stack>
               <Box sx={{ flex: 1, minHeight: 0, px: 2, pb: 2 }}>{right}</Box>
             </Box>
-          ) : (
+
             <Box
               sx={{
-                width: 56,
-                flexShrink: 0,
-                borderLeft: `1px solid ${m3.outlineVariant}`,
+                position: "absolute",
+                top: 64,
+                left: 0,
+                right: 0,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 1,
-                pt: 2,
+                opacity: rightOpen ? 0 : 1,
+                pointerEvents: rightOpen ? "none" : "auto",
+                transition: theme.transitions.create("opacity", { duration: theme.transitions.duration.short }),
               }}
             >
-              <Tooltip title="Show player sidebar">
-                <IconButton onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
-                  {Ic.rightOpen}
-                </IconButton>
-              </Tooltip>
               <Tooltip title="Queue">
                 <IconButton onClick={() => setRightOpen(true)} aria-label="Show queue">
                   <Badge badgeContent={rightBadge ?? 0} color="primary">
@@ -490,7 +498,18 @@ export function AppShell({
                 </IconButton>
               </Tooltip>
             </Box>
-          ))}
+
+            <Tooltip title={rightOpen ? "Hide player sidebar" : "Show player sidebar"}>
+              <IconButton
+                onClick={() => setRightOpen(!rightOpen)}
+                aria-label={rightOpen ? "Hide player sidebar" : "Show player sidebar"}
+                sx={{ position: "absolute", top: 8, right: 8 }}
+              >
+                {rightOpen ? Ic.rightClose : Ic.rightOpen}
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
       </Box>
     </Box>
   );
