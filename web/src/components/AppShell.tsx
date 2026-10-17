@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useState } from "react";
-import { Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Avatar, Badge, Box, Collapse, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import { IconGraphicEq } from "./icons";
 import { MsIcon } from "./MsIcon";
@@ -114,6 +114,10 @@ function DrawerContent({
   // Super-admin testing override for the current guild, if any.
   const meQuery = useMe();
   const activeMock = active ? meQuery.data?.access_mock?.[active.id] ?? null : null;
+  // Secondary sections sit behind "Show more"; start expanded when the
+  // current route already points into that group.
+  const { pathname } = useLocation();
+  const [moreOpen, setMoreOpen] = useState(() => /\/(moderation|admin)$/.test(pathname));
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* The expand/collapse toggle lives in AppShell, pinned to the top
@@ -161,14 +165,59 @@ function DrawerContent({
               disabled={!guildAllows(active, "posts")}
               onClick={onNavigate}
             />
-            <GuildTab
-              to={`/guild/${active.id}/moderation`}
-              icon={Ic.moderation}
-              label="Moderation"
-              collapsed={collapsed}
-              disabled={!guildAllows(active, "moderation")}
-              onClick={onNavigate}
-            />
+            {/* Secondary sections live one click deeper so the rail stays
+                short; the arrow turns as the group expands. */}
+            <Tooltip
+              title={collapsed ? (moreOpen ? "Show less" : "Show more") : undefined}
+              placement="right"
+              disableInteractive
+            >
+              <ListItemButton
+                onClick={() => setMoreOpen(!moreOpen)}
+                aria-expanded={moreOpen}
+                sx={{
+                  borderRadius: collapsed ? "50%" : 999,
+                  mb: 0.5,
+                  justifyContent: collapsed ? "center" : "flex-start",
+                  ...(collapsed
+                    ? { width: 48, height: 48, minHeight: 48, px: 0, mx: "auto" }
+                    : { minHeight: 44, px: 2, mx: 1.25 }),
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: collapsed ? 0 : 40, justifyContent: "center" }}>
+                  <MsIcon
+                    name="keyboard_arrow_down"
+                    sx={{
+                      color: "text.secondary",
+                      transform: moreOpen ? "rotate(180deg)" : "none",
+                      transition: (t) =>
+                        t.transitions.create("transform", { duration: t.transitions.duration.short }),
+                    }}
+                  />
+                </ListItemIcon>
+                {!collapsed && (
+                  <ListItemText primary="Show more" slotProps={{ primary: { noWrap: true, variant: "body1" } }} />
+                )}
+              </ListItemButton>
+            </Tooltip>
+            <Collapse in={moreOpen}>
+              <GuildTab
+                to={`/guild/${active.id}/moderation`}
+                icon={Ic.moderation}
+                label="Moderation"
+                collapsed={collapsed}
+                disabled={!guildAllows(active, "moderation")}
+                onClick={onNavigate}
+              />
+              <GuildTab
+                to={`/guild/${active.id}/admin`}
+                icon={Ic.settings}
+                label="Manage"
+                collapsed={collapsed}
+                disabled={!guildAllows(active, "manage")}
+                onClick={onNavigate}
+              />
+            </Collapse>
             {activeMock && !collapsed && (
               <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 2.75, pt: 0.5 }}>
                 <MsIcon name="switch_account" fontSize={16} sx={{ color: "secondary.main" }} />
