@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { CssBaseline, ThemeProvider } from "@mui/material";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import theme from "./theme";
 import "@fontsource/roboto/400.css";
 import "@fontsource/roboto/500.css";
@@ -15,22 +16,34 @@ import { StatsPage } from "./pages/StatsPage";
 import { PostsPage } from "./pages/PostsPage";
 import { ModerationPage } from "./pages/ModerationPage";
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // A failed request shows the page error; 401 already redirects in api.ts.
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<GuildsPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/guild/:guildId" element={<PlayerPage />} />
-          <Route path="/guild/:guildId/admin" element={<AdminPage />} />
-          <Route path="/guild/:guildId/stats" element={<StatsPage />} />
-          <Route path="/guild/:guildId/posts" element={<PostsPage />} />
-          <Route path="/guild/:guildId/moderation" element={<ModerationPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </BrowserRouter>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<GuildsPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/guild/:guildId" element={<PlayerPage />} />
+            <Route path="/guild/:guildId/admin" element={<AdminPage />} />
+            <Route path="/guild/:guildId/stats" element={<StatsPage />} />
+            <Route path="/guild/:guildId/posts" element={<PostsPage />} />
+            <Route path="/guild/:guildId/moderation" element={<ModerationPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </BrowserRouter>
+      </ThemeProvider>
+    </QueryClientProvider>
   </React.StrictMode>,
 );

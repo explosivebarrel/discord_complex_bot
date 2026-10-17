@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Box,
   Button,
@@ -16,7 +17,9 @@ import {
 import CheckCircle from "@mui/icons-material/CheckCircle";
 import Cancel from "@mui/icons-material/Cancel";
 import ErrorOutline from "@mui/icons-material/Error";
-import { api, Integrations } from "../api";
+import { api } from "../api";
+import { useIntegrations } from "../queries";
+import { CardSkeleton } from "../components/Skeletons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { useFeedback } from "../components/Feedback";
@@ -35,7 +38,9 @@ function StatusRow({ ok, text }: { ok: boolean; text: string }) {
 export function SettingsPage() {
   const { me, loading } = useAuth();
   const feedback = useFeedback();
-  const [info, setInfo] = useState<Integrations | null>(null);
+  const queryClient = useQueryClient();
+  const infoQuery = useIntegrations();
+  const info = infoQuery.data ?? null;
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState("");
   const [poToken, setPoToken] = useState("");
@@ -47,14 +52,7 @@ export function SettingsPage() {
     if (e.message !== "unauthorized") setError(e.message);
   };
 
-  const refresh = useCallback(() => {
-    api
-      .integrations()
-      .then(setInfo)
-      .catch(guard);
-  }, []);
-
-  useEffect(refresh, [refresh]);
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["integrations"] });
 
   const yt = info?.youtube;
   const ym = info?.yandexmusic;
@@ -63,9 +61,10 @@ export function SettingsPage() {
   if (loading) {
     return (
       <AppShell me={me} back title="Settings">
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Loading…
-        </Typography>
+        <CardSkeleton />
+        <Box sx={{ mt: 2 }}>
+          <CardSkeleton />
+        </Box>
       </AppShell>
     );
   }
@@ -108,11 +107,15 @@ export function SettingsPage() {
                 />
                 <StatusRow
                   ok={!!yt?.oauth_configured}
-                  text={`YouTube OAuth: ${yt?.refresh_token_masked ?? "not configured"}`}
+                  text={`YouTube OAuth: ${(yt?.refresh_token_masked ?? "not configured").replace(/ \(\d+ chars\)$/, "")}`}
                 />
                 <StatusRow
                   ok={!!ym?.configured}
-                  text={`Yandex Music: ${ym?.token_masked ?? "not configured"}`}
+                  text={`Yandex Music: ${(ym?.token_masked ?? "not configured").replace(/ \(\d+ chars\)$/, "")}`}
+                />
+                <StatusRow
+                  ok={!!vk?.configured}
+                  text={`VK Music: ${(vk?.token_masked ?? "not configured").replace(/ \(\d+ chars\)$/, "")}`}
                 />
               </List>
             ) : (
@@ -141,7 +144,16 @@ export function SettingsPage() {
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
               Playback needs a Google account token. Run Lavalink without a token, open the login URL from its logs
-              (docker logs dcbot-lavalink) at google.com/device, then paste the printed refresh token here.
+              (docker logs dcbot-lavalink) at{" "}
+              <a
+                href="https://google.com/device"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#D0BCFF" }}
+              >
+                google.com/device
+              </a>
+              , then paste the printed refresh token here.
             </Typography>
             <Stack direction="row" spacing={1}>
               <TextField

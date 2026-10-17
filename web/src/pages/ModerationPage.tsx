@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Box,
   Button,
@@ -15,10 +16,12 @@ import {
   Typography,
 } from "@mui/material";
 import Gavel from "@mui/icons-material/Gavel";
-import { api, ModerationAction, ModerationWarning } from "../api";
+import { api } from "../api";
+import { useModerationUsers, useModerationWarnings, useModerationLog } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { useFeedback } from "../components/Feedback";
+import { CardSkeleton, RowsSkeleton } from "../components/Skeletons";
 
 const DURATIONS: { label: string; minutes: number }[] = [
   { label: "10 minutes", minutes: 10 },
@@ -45,9 +48,14 @@ export function ModerationPage() {
   const gid = guildId ?? "";
   const { me, loading } = useAuth();
   const feedback = useFeedback();
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
-  const [warnings, setWarnings] = useState<ModerationWarning[]>([]);
-  const [log, setLog] = useState<ModerationAction[]>([]);
+  const queryClient = useQueryClient();
+  const usersQuery = useModerationUsers(gid);
+  const users = usersQuery.data ?? [];
+  const warningsQuery = useModerationWarnings(gid);
+  const warnings = warningsQuery.data ?? [];
+  const logQuery = useModerationLog(gid);
+  const log = logQuery.data ?? [];
+  const pending = usersQuery.isPending || warningsQuery.isPending || logQuery.isPending;
   const [canAct, setCanAct] = useState(false);
   const [action, setAction] = useState<"timeout" | "kick" | "ban">("timeout");
   const [userId, setUserId] = useState("");
@@ -59,35 +67,18 @@ export function ModerationPage() {
     if (e.message !== "unauthorized") feedback.show(e.message, "error");
   };
 
-  const refresh = useCallback(() => {
-    api
-      .moderationUsers(gid)
-      .then((u) => {
-        setUsers(u);
-        setSelectedOrDefault(u);
-      })
-      .catch(guard);
-    api
-      .moderationWarnings(gid)
-      .then(setWarnings)
-      .catch(guard);
-    api
-      .moderationLog(gid)
-      .then(setLog)
-      .catch(guard);
-    // The access endpoint answers 403 for visitors without section access;
-    // the server owner gets can_act=true, everyone-level viewers false.
+  useEffect(() => {
+    setUserId((current) => current || users[0]?.id || "");
+  }, [users]);
+
+  // The access endpoint answers 403 for visitors without section access;
+  // the server owner gets can_act=true, everyone-level viewers false.
+  useEffect(() => {
     fetch(`/api/guilds/${gid}/moderation/access`)
       .then((r) => (r.ok ? r.json() : { can_act: false }))
       .then((j) => setCanAct(!!j.can_act))
       .catch(() => setCanAct(false));
   }, [gid]);
-
-  const setSelectedOrDefault = (u: { id: string; name: string }[]) => {
-    setUserId((current) => current || u[0]?.id || "");
-  };
-
-  useEffect(refresh, [refresh]);
 
   const apply = () => {
     if (!userId.trim()) return;
@@ -101,7 +92,8 @@ export function ModerationPage() {
       .then((r) => {
         feedback.show(`Done: ${Object.values(r)[0]}`);
         setReason("");
-        refresh();
+        void queryClient.invalidateQueries({ queryKey: ["moderationWarnings", gid] });
+        void queryClient.invalidateQueries({ queryKey: ["moderationLog", gid] });
       })
       .catch(guard)
       .finally(() => setApplying(false));
@@ -110,19 +102,20 @@ export function ModerationPage() {
   if (loading) {
     return (
       <AppShell me={me} back title="Moderation">
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Loading…
-        </Typography>
+        <CardSkeleton />
       </AppShell>
     );
   }
 
   return (
     <AppShell me={me} back title="Moderation">
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Moderation
-      </Typography>
       <Stack spacing={2} sx={{ maxWidth: 760 }}>
+        {pending && (
+          <>
+            <CardSkeleton height={120} />
+            <RowsSkeleton rows={4} />
+          </>
+        )}
         {canAct && (
           <Card>
             <CardContent>
@@ -131,7 +124,12 @@ export function ModerationPage() {
               </Typography>
               <Stack spacing={1.5}>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <Select size="small" value={action} onChange={(e) => setAction(e.target.value as typeof action)}>
+                  <Select
+                    size="small"
+                    value={action}
+                    onChange={(e) => setAction(e.target.value as typeof action)}
+                    sx={{ width: { sm: 150 }, flexShrink: 0 }}
+                  >
                     <MenuItem value="timeout">Timeout</MenuItem>
                     <MenuItem value="kick">Kick</MenuItem>
                     <MenuItem value="ban">Ban</MenuItem>
@@ -161,7 +159,12 @@ export function ModerationPage() {
                   onChange={(e) => setUserId(e.target.value)}
                 />
                 {action === "timeout" && (
-                  <Select size="small" value={minutes} onChange={(e) => setMinutes(e.target.value as number)}>
+                  <Select
+                    size="small"
+                    value={minutes}
+                    onChange={(e) => setMinutes(e.target.value as number)}
+                    sx={{ width: { sm: 150 } }}
+                  >
                     {DURATIONS.map((d) => (
                       <MenuItem key={d.minutes} value={d.minutes}>
                         {d.label}

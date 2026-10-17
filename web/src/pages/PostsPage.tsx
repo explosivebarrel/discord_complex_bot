@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Box,
@@ -34,7 +34,9 @@ import Campaign from "@mui/icons-material/Campaign";
 import EmojiEmotions from "@mui/icons-material/EmojiEmotions";
 import Visibility from "@mui/icons-material/Visibility";
 import Edit from "@mui/icons-material/Edit";
-import { api, ComposerData, PostChannel } from "../api";
+import { api, PostChannel } from "../api";
+import { usePostComposer } from "../queries";
+import { CardSkeleton } from "../components/Skeletons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { useFeedback } from "../components/Feedback";
@@ -48,8 +50,8 @@ const previewSx = {
   overflowY: "auto",
   p: 1.5,
   borderRadius: "12px",
-  border: "1px solid #2B2930",
-  bgcolor: "#141218",
+  border: "1px solid rgba(255,255,255,0.06)",
+  bgcolor: "rgba(255,255,255,0.02)",
   "& .md-mention": {
     bgcolor: "rgba(88,101,242,.3)",
     color: "#C9CDFB",
@@ -58,8 +60,8 @@ const previewSx = {
     fontWeight: 500,
   },
   "& .md-emoji": { width: 22, height: 22, verticalAlign: "-0.4em" },
-  "& code": { bgcolor: "#2B2930", borderRadius: "4px", px: 0.5, fontFamily: "monospace", fontSize: "0.9em" },
-  "& pre": { bgcolor: "#2B2930", borderRadius: "8px", p: 1.5, overflowX: "auto", my: 1 },
+  "& code": { bgcolor: "rgba(255,255,255,0.06)", borderRadius: "4px", px: 0.5, fontFamily: "monospace", fontSize: "0.9em" },
+  "& pre": { bgcolor: "rgba(255,255,255,0.06)", borderRadius: "8px", p: 1.5, overflowX: "auto", my: 1 },
   "& pre code": { bgcolor: "transparent", p: 0 },
   "& blockquote": { margin: 0, pl: 1.5, borderLeft: "4px solid #4A4458", color: "text.secondary" },
   "& ul": { margin: 0, pl: 3 },
@@ -74,7 +76,8 @@ export function PostsPage() {
   const gid = guildId ?? "";
   const { me, loading } = useAuth();
   const feedback = useFeedback();
-  const [composer, setComposer] = useState<ComposerData | null>(null);
+  const composerQuery = usePostComposer(gid);
+  const composer = composerQuery.data ?? null;
   const [channelId, setChannelId] = useState("");
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
@@ -90,17 +93,9 @@ export function PostsPage() {
     if (e.message !== "unauthorized") setError(e.message);
   };
 
-  const refresh = useCallback(() => {
-    api
-      .postComposer(gid)
-      .then((data) => {
-        setComposer(data);
-        setChannelId((current) => current || data.channels[0]?.id || "");
-      })
-      .catch(guard);
-  }, [gid]);
-
-  useEffect(refresh, [refresh]);
+  useEffect(() => {
+    setChannelId((current) => current || composer?.channels[0]?.id || "");
+  }, [composer]);
 
   const selected = composer?.channels.find((c) => c.id === channelId);
   const canSend =
@@ -165,9 +160,7 @@ export function PostsPage() {
   if (loading) {
     return (
       <AppShell me={me} back title="Posts">
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Loading…
-        </Typography>
+        <CardSkeleton />
       </AppShell>
     );
   }
@@ -182,9 +175,6 @@ export function PostsPage() {
 
   return (
     <AppShell me={me} back title="Posts">
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Create a post
-      </Typography>
       {error && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
           {error}

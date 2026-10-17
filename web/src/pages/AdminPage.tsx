@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Box,
@@ -20,6 +20,8 @@ import {
 } from "@mui/material";
 import Delete from "@mui/icons-material/Delete";
 import { api, GuildSettings } from "../api";
+import { useGuildSettings, useVoiceChannels, usePostComposer } from "../queries";
+import { CardSkeleton } from "../components/Skeletons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { useFeedback } from "../components/Feedback";
@@ -29,12 +31,20 @@ export function AdminPage() {
   const gid = guildId ?? "";
   const { me, loading } = useAuth();
   const feedback = useFeedback();
-  const [settings, setSettings] = useState<GuildSettings | null>(null);
-  const [channels, setChannels] = useState<{ id: string; name: string }[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const settingsQuery = useGuildSettings(gid);
+  // The forms edit a local draft; it re-syncs whenever the query refetches.
+  const [draftSettings, setDraftSettings] = useState<GuildSettings | null>(null);
+  useEffect(() => {
+    setDraftSettings(settingsQuery.data ?? null);
+  }, [settingsQuery.data]);
+  const settings = draftSettings ?? settingsQuery.data ?? null;
+  const error = settingsQuery.error ? (settingsQuery.error as Error).message : null;
+  const channelsQuery = useVoiceChannels(gid);
+  const channels = channelsQuery.data ?? [];
+  const composerQuery = usePostComposer(gid);
+  const textChannels = (composerQuery.data?.channels ?? []).filter((ch) => ch.type === "text");
   const [newAdmin, setNewAdmin] = useState("");
   const [autoplay, setAutoplay] = useState<{ enabled: boolean; query: string } | null>(null);
-  const [textChannels, setTextChannels] = useState<{ id: string; name: string }[]>([]);
   const [access, setAccess] = useState<{
     stats: string;
     posts: string;
@@ -44,25 +54,7 @@ export function AdminPage() {
 
   const guard = (e: Error) => feedback.show(e.message, "error");
 
-  const refresh = useCallback(() => {
-    api
-      .guildSettings(gid)
-      .then(setSettings)
-      .catch((e: Error) => setError(e.message));
-    api
-      .voiceChannels(gid)
-      .then(setChannels)
-      .catch(() => setChannels([]));
-  }, [gid]);
-
-  useEffect(refresh, [refresh]);
-
-  useEffect(() => {
-    api
-      .postComposer(gid)
-      .then((c) => setTextChannels(c.channels.filter((ch) => ch.type === "text")))
-      .catch(() => setTextChannels([]));
-  }, [gid]);
+  const refresh = () => void settingsQuery.refetch();
 
   // Keep local forms in sync with the loaded settings.
   useEffect(() => {
@@ -85,18 +77,13 @@ export function AdminPage() {
   if (loading) {
     return (
       <AppShell me={me} back title="Manage">
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Loading…
-        </Typography>
+        <CardSkeleton />
       </AppShell>
     );
   }
 
   return (
     <AppShell me={me} back title={settings?.guild.name ?? "Manage"}>
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Manage server
-      </Typography>
       {error && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
           {error}
@@ -119,7 +106,7 @@ export function AdminPage() {
                   displayEmpty
                   value={settings.default_voice_channel_id ?? ""}
                   onChange={(e) =>
-                    setSettings({
+                    setDraftSettings({
                       ...settings,
                       default_voice_channel_id: e.target.value || null,
                     })
@@ -140,7 +127,7 @@ export function AdminPage() {
                     api
                       .updateGuildSettings(gid, { default_voice_channel_id: settings.default_voice_channel_id })
                       .then((s) => {
-                        setSettings(s);
+                        setDraftSettings(s);
                         feedback.show("Settings saved");
                       })
                       .catch(guard)
@@ -188,7 +175,7 @@ export function AdminPage() {
                           autoplay_query: autoplay.query,
                         })
                         .then((s) => {
-                          setSettings(s);
+                          setDraftSettings(s);
                           setAutoplay({ enabled: s.autoplay_enabled, query: s.autoplay_query });
                           feedback.show("Autoplay saved");
                         })
@@ -269,7 +256,7 @@ export function AdminPage() {
                             mod_log_channel_id: access.modLog || null,
                           })
                           .then((s) => {
-                            setSettings(s);
+                            setDraftSettings(s);
                             setAccess({
                               stats: s.stats_access,
                               posts: s.posts_access,
@@ -308,8 +295,8 @@ export function AdminPage() {
                   onClick={() =>
                     api
                       .addGuildAdmin(gid, newAdmin)
-                      .then((r) => {
-                        setSettings({ ...settings, admins: r.admins });
+                      .then(() => {
+                        refresh();
                         setNewAdmin("");
                         feedback.show("Admin added");
                       })
@@ -336,7 +323,7 @@ export function AdminPage() {
                             onClick={() =>
                               api
                                 .removeGuildAdmin(gid, a)
-                                .then((r) => setSettings({ ...settings, admins: r.admins }))
+                                .then(() => refresh())
                                 .catch(guard)
                             }
                           >

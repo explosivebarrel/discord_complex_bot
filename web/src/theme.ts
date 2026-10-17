@@ -86,7 +86,13 @@ const theme = createTheme({
     },
     MuiCard: {
       styleOverrides: {
-        root: { backgroundImage: "none", border: `1px solid ${m3.surfaceContainerHigh}` },
+        root: {
+          // MD3 elevated card: tonal surface plus a soft level-1 shadow,
+          // no hairline borders.
+          backgroundImage: "none",
+          backgroundColor: m3.surfaceContainerLow,
+          boxShadow: "0 1px 3px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.14)",
+        },
       },
       defaultProps: { elevation: 0 },
     },

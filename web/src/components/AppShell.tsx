@@ -1,10 +1,9 @@
-import { type ReactNode, useEffect, useState } from "react";
-import { AppBar, Avatar, Badge, Box, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { type ReactNode, useState } from "react";
+import { AppBar, Avatar, Badge, Box, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import ArrowBack from "@mui/icons-material/ArrowBack";
 import BarChart from "@mui/icons-material/BarChart";
 import ChevronLeft from "@mui/icons-material/ChevronLeft";
-import ChevronRight from "@mui/icons-material/ChevronRight";
 import Forum from "@mui/icons-material/Forum";
 import Gavel from "@mui/icons-material/Gavel";
 import GraphicEq from "@mui/icons-material/GraphicEq";
@@ -16,8 +15,10 @@ import MenuRounded from "@mui/icons-material/Menu";
 import ViewSidebar from "@mui/icons-material/ViewSidebar";
 import type { GuildBrief, Me } from "../api";
 import { api } from "../api";
+import { useGuilds } from "../queries";
 import { useBotName } from "../useMeta";
 import { useLocalPref } from "../useLocalPref";
+import { m3 } from "../theme";
 
 export const DRAWER_WIDTH = 264;
 export const DRAWER_RAIL_WIDTH = 80;
@@ -68,6 +69,7 @@ function GuildTab({
 function DrawerContent({
   me,
   guilds,
+  guildsLoading,
   activeGuildId,
   collapsed,
   onToggleCollapse,
@@ -76,6 +78,7 @@ function DrawerContent({
 }: {
   me: Me | null;
   guilds: GuildBrief[];
+  guildsLoading: boolean;
   activeGuildId: string | null;
   collapsed: boolean;
   onToggleCollapse?: () => void;
@@ -118,11 +121,6 @@ function DrawerContent({
       <List component="nav" sx={{ flex: 1, overflowY: "auto", pt: 1.5 }} disablePadding>
         {active && (
           <>
-            {!collapsed && (
-              <Typography variant="overline" sx={{ px: 2.75, color: "text.secondary" }}>
-                {active.name}
-              </Typography>
-            )}
             <GuildTab
               to={`/guild/${active.id}`}
               icon={<PlayCircle fontSize="small" />}
@@ -165,6 +163,7 @@ function DrawerContent({
             Servers
           </Typography>
         )}
+        {guildsLoading && <LinearProgress sx={{ mx: 2, my: 1, borderRadius: 999 }} />}
         {guilds.map((g) => (
           <Tooltip key={g.id} title={collapsed ? g.name : undefined} placement="right" disableInteractive>
             <ListItemButton
@@ -251,25 +250,20 @@ export function AppShell({
   const [navCollapsed, setNavCollapsed] = useLocalPref("ui.navCollapsed", false);
   const [rightOpen, setRightOpen] = useLocalPref("ui.rightOpen", true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [guilds, setGuilds] = useState<GuildBrief[]>([]);
+  // Shared cache with GuildsPage: the drawer renders instantly on revisit.
+  const guildsQuery = useGuilds();
+  const guilds = guildsQuery.data ?? [];
+  const guildsLoading = !!me && guildsQuery.isPending;
   const location = useLocation();
   const subMatch = matchPath("/guild/:guildId/*", location.pathname);
   const exactMatch = matchPath("/guild/:guildId", location.pathname);
   const activeGuildId = subMatch?.params.guildId ?? exactMatch?.params.guildId ?? null;
 
-  useEffect(() => {
-    if (!me) return;
-    api
-      .myGuilds()
-      .then(setGuilds)
-      .catch(() => setGuilds([]));
-  }, [me]);
-
   const navWidth = navCollapsed ? DRAWER_RAIL_WIDTH : DRAWER_WIDTH;
   const drawerPaperSx = {
     width: DRAWER_WIDTH,
     boxSizing: "border-box" as const,
-    bgcolor: "#211F26",
+    bgcolor: m3.surfaceContainer,
   };
 
   return (
@@ -278,8 +272,8 @@ export function AppShell({
         position="fixed"
         elevation={0}
         sx={{
-          bgcolor: "#211F26",
-          borderBottom: "1px solid #2B2930",
+          bgcolor: m3.surfaceContainer,
+          borderBottom: `1px solid ${m3.outlineVariant}`,
           width: { md: `calc(100% - ${navWidth}px)` },
           ml: { md: `${navWidth}px` },
         }}
@@ -307,7 +301,7 @@ export function AppShell({
           {right && (
             <Tooltip title={rightOpen ? "Hide player sidebar" : "Show player sidebar"}>
               <IconButton size="small" onClick={() => setRightOpen(!rightOpen)} aria-label="Toggle player sidebar">
-                {rightOpen ? <ChevronRight /> : <ViewSidebar />}
+                <ViewSidebar />
               </IconButton>
             </Tooltip>
           )}
@@ -332,6 +326,7 @@ export function AppShell({
         <DrawerContent
           me={me}
           guilds={guilds}
+          guildsLoading={guildsLoading}
           activeGuildId={activeGuildId}
           collapsed={false}
           onNavigate={() => setModalOpen(false)}
@@ -351,7 +346,7 @@ export function AppShell({
               "& .MuiDrawer-paper": {
                 ...drawerPaperSx,
                 width: navWidth,
-                borderRight: "1px solid #2B2930",
+                borderRight: `1px solid ${m3.outlineVariant}`,
                 transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
                 overflowX: "hidden",
               },
@@ -360,6 +355,7 @@ export function AppShell({
             <DrawerContent
               me={me}
               guilds={guilds}
+              guildsLoading={guildsLoading}
               activeGuildId={activeGuildId}
               collapsed={navCollapsed}
               onToggleCollapse={() => setNavCollapsed(!navCollapsed)}
@@ -373,7 +369,7 @@ export function AppShell({
             flex: 1,
             minWidth: 0,
             width: "100%",
-            maxWidth: right && rightOpen ? 1560 : 1100,
+            maxWidth: 1400,
             mx: "auto",
             px: { xs: 1.5, sm: 3 },
           }}
@@ -389,10 +385,24 @@ export function AppShell({
               {children}
             </Box>
             {right && !rightOpen && (
-              <Box sx={{ display: { xs: "none", lg: "flex" }, flexDirection: "column", alignItems: "center", gap: 1, pt: { sm: 11 }, width: 56, flexShrink: 0 }}>
+              <Box
+                sx={{
+                  display: { xs: "none", lg: "flex" },
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 1,
+                  position: "sticky",
+                  top: 0,
+                  height: "100dvh",
+                  justifyContent: "flex-start",
+                  pt: { sm: 11 },
+                  width: 56,
+                  flexShrink: 0,
+                }}
+              >
                 <Tooltip title="Show player sidebar">
                   <IconButton onClick={() => setRightOpen(true)} aria-label="Show player sidebar">
-                    <ChevronLeft />
+                    <ViewSidebar />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Queue">
@@ -407,12 +417,31 @@ export function AppShell({
             {right && rightOpen && (
               <Box
                 sx={{
-                  width: { lg: 340 },
+                  width: { xs: "100%", lg: 340 },
                   flexShrink: 0,
-                  pt: { xs: 2, sm: 11 },
+                  // A real side sheet on wide screens: full viewport height,
+                  // own scroll and surface, independent of the page scroll.
+                  position: { lg: "sticky" },
+                  top: 0,
+                  height: { lg: "100dvh" },
+                  overflowY: { lg: "auto" },
+                  bgcolor: m3.surfaceContainerLow,
+                  borderLeft: { lg: `1px solid ${m3.outlineVariant}` },
+                  px: { xs: 0, sm: 2 },
+                  pt: { xs: 2, sm: 10 },
                   pb: { xs: 22, sm: 18 },
                 }}
               >
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: { xs: 1.5 }, mb: 1.5 }}>
+                  <Typography variant="overline" sx={{ color: "text.secondary", flex: 1 }}>
+                    Player
+                  </Typography>
+                  <Tooltip title="Hide player sidebar">
+                    <IconButton size="small" onClick={() => setRightOpen(false)} aria-label="Hide player sidebar">
+                      <ViewSidebar fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
                 {right}
               </Box>
             )}

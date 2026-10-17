@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import {
   Box,
@@ -45,14 +46,13 @@ import Shuffle from "@mui/icons-material/Shuffle";
 import History from "@mui/icons-material/History";
 import {
   api,
-  FavoriteTrackInfo,
-  PlayerState,
   PlaylistPageInfo,
   TrackInfo,
-  UserPlaylistBrief,
   UserPlaylistFull,
-  VoiceChannel,
 } from "../api";
+import { usePlayerState, useVoiceChannels, useFavorites, useMyPlaylists } from "../queries";
+import { PlayerPageSkeleton } from "../components/Skeletons";
+import { m3 } from "../theme";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { PlayerBar } from "../components/PlayerBar";
@@ -109,9 +109,19 @@ export function PlayerPage() {
   const gid = guildId ?? "";
   const { me, loading } = useAuth();
   const feedback = useFeedback();
+  const queryClient = useQueryClient();
 
-  const [state, setState] = useState<PlayerState | null>(null);
-  const [channels, setChannels] = useState<VoiceChannel[]>([]);
+  // Server state lives in the query cache: revisits render instantly while
+  // the refresh happens in the background; the player state polls every 3s.
+  const stateQuery = usePlayerState(gid);
+  const state = stateQuery.data ?? null;
+  const channelsQuery = useVoiceChannels(gid);
+  const channels = channelsQuery.data ?? [];
+  const favoritesQuery = useFavorites();
+  const favorites = favoritesQuery.data ?? [];
+  const myPlsQuery = useMyPlaylists();
+  const myPls = myPlsQuery.data ?? [];
+
   const [selectedChannel, setSelectedChannel] = useState<string>("");
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("yt");
@@ -126,48 +136,29 @@ export function PlayerPage() {
   // dataTransfer so a re-render between dragstart and drop cannot lose it.
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [volInput, setVolInput] = useState<string | null>(null);
-  const [myPls, setMyPls] = useState<UserPlaylistBrief[]>([]);
   const [openPl, setOpenPl] = useState<UserPlaylistFull | null>(null);
   const [newPlName, setNewPlName] = useState("");
   const [plBusy, setPlBusy] = useState(false);
-  const [favorites, setFavorites] = useState<FavoriteTrackInfo[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refresh = useCallback(() => {
-    api
-      .myPlaylists()
-      .then(setMyPls)
-      .catch(() => {});
-    api
-      .playerState(gid)
-      .then((s) => {
-        setState(s);
-        setVolume((v) => (v === null ? Math.min(s.volume, 200) : v));
-      })
-      .catch((e: Error) => {
-        if (e.message !== "unauthorized") feedback.show(e.message, "error");
-      });
-  }, [gid]);
-
-  const loadFavorites = useCallback(() => {
-    api
-      .favorites()
-      .then(setFavorites)
-      .catch(() => setFavorites([]));
-  }, []);
+  const invalidatePlayer = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["player", gid] });
+    void queryClient.invalidateQueries({ queryKey: ["myPlaylists"] });
+  }, [gid, queryClient]);
 
   useEffect(() => {
-    loadFavorites();
-  }, [loadFavorites]);
+    if (state && volume === null) setVolume(Math.min(state.volume, 200));
+  }, [state, volume]);
+
+  useEffect(() => {
+    setSelectedChannel((s) => s || channels[0]?.id || "");
+  }, [channels]);
 
   const toggleFavorite = (t: TrackInfo) => {
     const existing = favorites.find((f) => f.uri === t.uri);
+    const done = () => void queryClient.invalidateQueries({ queryKey: ["favorites"] });
     if (existing) {
-      api
-        .removeFavorite(existing.id)
-        .then(() => loadFavorites())
-        .catch(guard);
+      api.removeFavorite(existing.id).then(done).catch(guard);
       return;
     }
     api
@@ -179,24 +170,9 @@ export function PlayerPage() {
         length_ms: t.length,
         artwork: t.artwork,
       })
-      .then(() => loadFavorites())
+      .then(done)
       .catch(guard);
   };
-
-  useEffect(() => {
-    refresh();
-    api
-      .voiceChannels(gid)
-      .then((ch) => {
-        setChannels(ch);
-        setSelectedChannel((s) => s || ch[0]?.id || "");
-      })
-      .catch(() => setChannels([]));
-    pollRef.current = setInterval(refresh, 3000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [gid, refresh]);
 
   const guard = (e: Error) => {
     if (e.message !== "unauthorized") feedback.show(e.message, "error");
@@ -206,7 +182,7 @@ export function PlayerPage() {
     fn()
       .then(() => {
         if (okMessage) feedback.show(okMessage);
-        refresh();
+        invalidatePlayer();
       })
       .catch(guard);
   };
@@ -235,7 +211,7 @@ export function PlayerPage() {
         }
         setResults(null);
         setQuery("");
-        refresh();
+        invalidatePlayer();
       })
       .catch(guard)
       .finally(() => setEnqueueing(null));
@@ -255,7 +231,7 @@ export function PlayerPage() {
     fn()
       .then(() => {
         feedback.show(okMsg);
-        refresh();
+        invalidatePlayer();
       })
       .catch(guard)
       .finally(() => setPlaylistBusy(false));
@@ -273,11 +249,10 @@ export function PlayerPage() {
     act(() => api.volume(gid, clamped), `Volume: ${clamped}%`);
   };
 
-  const loadMyPls = () =>
-    api
-      .myPlaylists()
-      .then(setMyPls)
-      .catch(guard);
+  const loadMyPls = () => {
+    void queryClient.invalidateQueries({ queryKey: ["myPlaylists"] });
+    return Promise.resolve();
+  };
 
   const plAction = (fn: () => Promise<unknown>, okMsg?: string, after?: () => void) => {
     setPlBusy(true);
@@ -323,6 +298,15 @@ export function PlayerPage() {
         <Box sx={{ display: "grid", placeItems: "center", py: 10 }}>
           <CircularProgress />
         </Box>
+      </AppShell>
+    );
+  }
+
+  // First load of the player state: skeleton mimicking the real layout.
+  if (stateQuery.isPending) {
+    return (
+      <AppShell me={me} back>
+        <PlayerPageSkeleton />
       </AppShell>
     );
   }
@@ -430,54 +414,64 @@ export function PlayerPage() {
           )}
           <Card>
             <CardContent>
-              <Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", mb: 1, flexWrap: "wrap" }}>
-                <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 160 }}>
-                  Queue ({state?.queue.length ?? 0})
-                </Typography>
-                {/* MD3 segmented button: the view of the queue card. */}
-                <Box
-                  sx={{
-                    display: "inline-flex",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 999,
-                    overflow: "hidden",
-                  }}
-                >
-                  <Button
-                    size="small"
-                    variant={queueView === "next" ? "tonal" : "text"}
-                    onClick={() => setQueueView("next")}
-                    sx={{ borderRadius: 999, minWidth: 0, px: 1.5 }}
+              <Stack spacing={1} sx={{ mb: 1.5 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  <Typography variant="h6" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                    Queue ({state?.queue.length ?? 0})
+                  </Typography>
+                  {!!state?.queue.length && (
+                    <Tooltip title="Clear the queue">
+                      <IconButton
+                        size="small"
+                        aria-label="Clear the queue"
+                        onClick={() => act(() => api.clearQueue(gid), "Queue cleared")}
+                      >
+                        <DeleteOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Stack>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  {/* MD3 outlined segmented button: the view of the queue card. */}
+                  <Box
+                    sx={{
+                      display: "inline-flex",
+                      flex: 1,
+                      border: "1px solid",
+                      borderColor: "outlineVariant" as const,
+                      borderRadius: 999,
+                      overflow: "hidden",
+                    }}
                   >
-                    Up next
-                  </Button>
-                  <Button
-                    size="small"
-                    variant={queueView === "recent" ? "tonal" : "text"}
-                    onClick={() => setQueueView("recent")}
-                    sx={{ borderRadius: 999, minWidth: 0, px: 1.5 }}
-                  >
-                    Recent
-                  </Button>
-                </Box>
-                <Button
-                  size="small"
-                  variant="tonal"
-                  startIcon={<Shuffle />}
-                  disabled={!state?.queue.length}
-                  onClick={() => act(() => api.shuffleQueue(gid), "Queue shuffled")}
-                >
-                  Shuffle
-                </Button>
-                <Button
-                  size="small"
-                  variant="tonal"
-                  disabled={!state?.queue.length}
-                  onClick={() => act(() => api.clearQueue(gid), "Queue cleared")}
-                >
-                  Clear
-                </Button>
+                    <Button
+                      size="small"
+                      variant={queueView === "next" ? "tonal" : "text"}
+                      onClick={() => setQueueView("next")}
+                      sx={{ borderRadius: 999, flex: 1, minWidth: 0, px: 1.5 }}
+                    >
+                      Up next
+                    </Button>
+                    <Button
+                      size="small"
+                      variant={queueView === "recent" ? "tonal" : "text"}
+                      onClick={() => setQueueView("recent")}
+                      sx={{ borderRadius: 999, flex: 1, minWidth: 0, px: 1.5 }}
+                    >
+                      Recent
+                    </Button>
+                  </Box>
+                  {!!state?.queue.length && (
+                    <Tooltip title="Shuffle the queue">
+                      <IconButton
+                        size="small"
+                        aria-label="Shuffle the queue"
+                        onClick={() => act(() => api.shuffleQueue(gid), "Queue shuffled")}
+                      >
+                        <Shuffle fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Stack>
               </Stack>
               {queueView === "next" ? (
                 state && state.queue.length > 0 ? (
@@ -566,7 +560,7 @@ export function PlayerPage() {
                                   e.stopPropagation();
                                   act(() => api.moveQueued(gid, i, i - 1));
                                 }}
-                                sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
+                                sx={{ bgcolor: m3.surfaceContainerHighest, "&:hover": { bgcolor: m3.secondaryContainer } }}
                               >
                                 <KeyboardArrowUp fontSize="small" />
                               </IconButton>
@@ -579,7 +573,7 @@ export function PlayerPage() {
                                   e.stopPropagation();
                                   act(() => api.moveQueued(gid, i, i + 1));
                                 }}
-                                sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
+                                sx={{ bgcolor: m3.surfaceContainerHighest, "&:hover": { bgcolor: m3.secondaryContainer }, ml: 0.25 }}
                               >
                                 <KeyboardArrowDown fontSize="small" />
                               </IconButton>
@@ -591,7 +585,7 @@ export function PlayerPage() {
                                   e.stopPropagation();
                                   act(() => api.removeQueued(gid, i));
                                 }}
-                                sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#4A3038", color: "error.main" }, ml: 0.25 }}
+                                sx={{ bgcolor: m3.surfaceContainerHighest, "&:hover": { bgcolor: "rgba(242,185,181,0.12)", color: "error.main" }, ml: 0.25 }}
                               >
                                 <DeleteOutlined fontSize="small" />
                               </IconButton>
@@ -659,8 +653,8 @@ export function PlayerPage() {
                                 act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`);
                               }}
                               sx={{
-                                bgcolor: "#313038",
-                                "&:hover": { bgcolor: "#3D3847" },
+                                bgcolor: m3.surfaceContainerHighest,
+                                "&:hover": { bgcolor: m3.secondaryContainer },
                                 visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
                                 ["@media (hover: none)"]: { visibility: "visible" },
                               }}
@@ -677,8 +671,8 @@ export function PlayerPage() {
                                 act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`);
                               }}
                               sx={{
-                                bgcolor: "#313038",
-                                "&:hover": { bgcolor: "#3D3847" },
+                                bgcolor: m3.surfaceContainerHighest,
+                                "&:hover": { bgcolor: m3.secondaryContainer },
                                 visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
                                 ["@media (hover: none)"]: { visibility: "visible" },
                               }}
@@ -765,42 +759,46 @@ export function PlayerPage() {
                   ))}
                 </Stack>
               )}
-              <TextField
-                fullWidth
-                placeholder={PLACEHOLDERS[source]}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && doSearch()}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
-                      </InputAdornment>
-                    ),
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <Button onClick={doSearch} disabled={searching || !query.trim()}>
-                          {searching ? <CircularProgress size={18} /> : "Search"}
-                        </Button>
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <Button
-                variant="tonal"
-                sx={{ mt: 1.5 }}
-                disabled={!query.trim() || enqueueing !== null}
-                onClick={() => query.trim() && enqueue("url", { query, source })}
-              >
-                {enqueueing === "url" ? (
-                  <CircularProgress size={16} sx={{ mr: 0.75 }} />
-                ) : (
-                  <AddQueue fontSize="small" sx={{ mr: 0.75 }} />
-                )}
-                Queue URL
-              </Button>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <TextField
+                  fullWidth
+                  placeholder={PLACEHOLDERS[source]}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && doSearch()}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <Button onClick={doSearch} disabled={searching || !query.trim()}>
+                            {searching ? <CircularProgress size={18} /> : "Search"}
+                          </Button>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+                <Tooltip title="Add the link to the queue without searching">
+                  <Button
+                    variant="tonal"
+                    sx={{ height: 40, flexShrink: 0 }}
+                    disabled={!query.trim() || enqueueing !== null}
+                    onClick={() => query.trim() && enqueue("url", { query, source })}
+                  >
+                    {enqueueing === "url" ? (
+                      <CircularProgress size={16} sx={{ mr: 0.75 }} />
+                    ) : (
+                      <AddQueue fontSize="small" sx={{ mr: 0.75 }} />
+                    )}
+                    Queue URL
+                  </Button>
+                </Tooltip>
+              </Stack>
 
               <Box sx={{ mt: 2 }}>
                 {searching ? (
@@ -900,7 +898,7 @@ export function PlayerPage() {
                                   width: 48,
                                   height: 48,
                                   borderRadius: "8px",
-                                  bgcolor: "#2B2930",
+                                  bgcolor: m3.surfaceContainerHigh,
                                   display: "grid",
                                   placeItems: "center",
                                 }}
@@ -965,7 +963,7 @@ export function PlayerPage() {
                           <Tooltip title="Remove from favorites">
                             <IconButton
                               size="small"
-                              onClick={() => api.removeFavorite(f.id).then(loadFavorites).catch(guard)}
+                              onClick={() => api.removeFavorite(f.id).then(() => queryClient.invalidateQueries({ queryKey: ["favorites"] })).catch(guard)}
                             >
                               <Favorite fontSize="small" sx={{ color: "primary.main" }} />
                             </IconButton>

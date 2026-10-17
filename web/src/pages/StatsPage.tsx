@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Box, Card, CardContent, List, ListItem, ListItemText, Typography } from "@mui/material";
 import BarChart from "@mui/icons-material/BarChart";
-import { api, GuildStats } from "../api";
+import { useGuildStats } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
+import { CardSkeleton, RowsSkeleton } from "../components/Skeletons";
 
 function timeAgo(iso: string): string {
   // SQLite stores naive UTC; the api returns it without a zone suffix.
@@ -37,24 +37,12 @@ export function StatsPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const gid = guildId ?? "";
   const { me, loading } = useAuth();
-  const [stats, setStats] = useState<GuildStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(() => {
-    api
-      .guildStats(gid)
-      .then(setStats)
-      .catch((e: Error) => setError(e.message));
-  }, [gid]);
-
-  useEffect(refresh, [refresh]);
+  const { data: stats, isPending, error } = useGuildStats(gid);
 
   if (loading) {
     return (
       <AppShell me={me} back title="Stats">
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Loading…
-        </Typography>
+        <CardSkeleton />
       </AppShell>
     );
   }
@@ -66,11 +54,24 @@ export function StatsPage() {
       </Typography>
       {error && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
-          {error}
+          {(error as Error).message}
         </Typography>
       )}
+      {isPending && (
+        <Box sx={{ maxWidth: 760 }}>
+          <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap" }}>
+            <CardSkeleton height={40} />
+            <CardSkeleton height={40} />
+            <CardSkeleton height={40} />
+          </Box>
+          <CardSkeleton />
+          <Box sx={{ mt: 2 }}>
+            <RowsSkeleton rows={5} />
+          </Box>
+        </Box>
+      )}
       {stats && (
-        <Box sx={{ maxWidth: 760, mx: "auto" }}>
+        <Box sx={{ maxWidth: 760 }}>
           <Box sx={{ display: "flex", gap: 2, mb: 2, flexWrap: "wrap" }}>
             <StatTile label="plays, last 30 days" value={stats.totals.plays_30d} />
             <StatTile label="unique tracks" value={stats.totals.unique_tracks} />

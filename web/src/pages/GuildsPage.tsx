@@ -1,25 +1,20 @@
-import { useState } from "react";
 import { Box, Button, Card, CardContent, Chip, Grid, Skeleton, Typography } from "@mui/material";
 import GraphicEq from "@mui/icons-material/GraphicEq";
 import Settings from "@mui/icons-material/Settings";
 import BarChart from "@mui/icons-material/BarChart";
 import PostAdd from "@mui/icons-material/PostAdd";
 import Gavel from "@mui/icons-material/Gavel";
-import { api, GuildBrief } from "../api";
+import { api } from "../api";
+import { useGuilds } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
+import { m3 } from "../theme";
 
 export function GuildsPage() {
   const { me, loading } = useAuth();
-  const [guilds, setGuilds] = useState<GuildBrief[] | null>(null);
-  const [guildsError, setGuildsError] = useState<string | null>(null);
-
-  if (!loading && me && guilds === null && guildsError === null) {
-    api
-      .myGuilds()
-      .then(setGuilds)
-      .catch((e: Error) => setGuildsError(e.message));
-  }
+  const guildsQuery = useGuilds();
+  const guilds = guildsQuery.data;
+  const guildsError = guildsQuery.error ? (guildsQuery.error as Error).message : null;
 
   const shell = (children: React.ReactNode) => (
     <AppShell me={me} title="Servers" onLogout={() => api.logout().then(() => window.location.reload())}>
@@ -58,9 +53,6 @@ export function GuildsPage() {
 
   return shell(
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>
-        Your servers
-      </Typography>
       {guildsError && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 2 }}>
           {guildsError}
@@ -82,7 +74,7 @@ export function GuildsPage() {
                       width: 44,
                       height: 44,
                       borderRadius: "12px",
-                      bgcolor: "#2B2930",
+                      bgcolor: m3.surfaceContainerHigh,
                       display: "grid",
                       placeItems: "center",
                       flexShrink: 0,
