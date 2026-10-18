@@ -45,8 +45,8 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
       sx={{
         position: "absolute",
         top: -9,
-        left: 0,
-        right: 0,
+        left: 28,
+        right: 28,
         zIndex: 1,
         height: 20,
         cursor: "pointer",
@@ -159,13 +159,19 @@ export function PlayerDock({
       ref={attachDock}
       sx={(t) => ({
         position: "relative",
+        // Floating dock: narrower than the column, inset from the edges,
+        // rounded — glass panels read as objects, not sheet edges.
+        mx: { xs: 1.5, md: 3 },
+        mb: 1.25,
+        borderRadius: "20px",
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1.5, md: 2 },
         pb: 1.5,
+        boxShadow: "0 12px 32px rgba(0,0,0,.30)",
         ...(refract ? {} : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
       })}
     >
-      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} bezel={20} pinch={0.3} />}
+      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} radius={20} bezel={20} pinch={0.3} />}
       {/* Warp layer (liquid-glass-react structure): a plain blur/saturate
           backdrop-filter plus the SVG lens as the element's own filter.
           Never put url() inside backdrop-filter (Chromium paint bug) and
@@ -178,6 +184,7 @@ export function PlayerDock({
             inset: 0,
             zIndex: 0,
             pointerEvents: "none",
+            borderRadius: "inherit",
             bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.4),
             backdropFilter: "blur(2px) saturate(1.5)",
             filter: "url(#liquid-glass-dock) contrast(1.15) brightness(1.05)",
@@ -186,7 +193,7 @@ export function PlayerDock({
       )}
       {/* Specular sheen sweeping across the glass; clipped here so it never
           paints outside the dock, and compositor-only (transform). */}
-      <Box sx={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 1 }}>
+      <Box sx={{ position: "absolute", inset: 0, borderRadius: "inherit", overflow: "hidden", pointerEvents: "none", zIndex: 1 }}>
         <Box
           sx={{
             position: "absolute",
