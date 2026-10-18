@@ -5,6 +5,8 @@ import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayAr
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
+import { glassCanvasHolder } from "./GlassBackground";
+import { WebGLGlass } from "./WebGLGlass";
 import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
 
 const LIVE_LENGTH = 9223372036854775807;
@@ -142,7 +144,10 @@ export function PlayerDock({
     return () => ro.disconnect();
   }, []);
   const refract = svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
-  const { glassTuning } = useAppTheme();
+  const { glassTuning, scheme } = useAppTheme();
+  // True WebGL glass: available on islands themes whose backdrop canvas
+  // (GlassBackground) is mounted — it is the texture the lens samples.
+  const webgl = !!scheme.surface.islands && !!glassCanvasHolder.canvas;
 
   // Advance the progress line locally between 3-second polls.
   useEffect(() => {
@@ -170,36 +175,26 @@ export function PlayerDock({
         pt: { xs: 1.5, md: 2 },
         pb: 1.5,
         boxShadow: "0 12px 32px rgba(0,0,0,.30)",
-        ...(refract ? {} : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
+        ...(webgl
+          ? { bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.25) }
+          : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
       })}
     >
-      {refract && size && (
-        <LiquidGlassFilter
-          id="liquid-glass-dock"
-          width={size.w}
-          height={size.h}
+      {/* True WebGL liquid glass: the lens samples our own backdrop canvas
+          (stars/stripes/checker), so the refraction is real shader work —
+          no DOM sampling involved. Non-WebGL browsers fall back to the
+          frosted CSS surface. */}
+      {webgl && (
+        <WebGLGlass
           radius={20}
           bezel={glassTuning.bezel}
-          maxDisp={glassTuning.maxDisp}
-        />
-      )}
-      {/* Warp layer (liquid-glass-react structure): a plain blur/saturate
-          backdrop-filter plus the SVG lens as the element's own filter.
-          Never put url() inside backdrop-filter (Chromium paint bug) and
-          never transform this layer. Content stays above, unwarped. */}
-      {refract && (
-        <Box
-          aria-hidden
-          sx={(t) => ({
-            position: "absolute",
-            inset: 0,
-            zIndex: 0,
-            pointerEvents: "none",
-            borderRadius: "inherit",
-            bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.4),
-            backdropFilter: `blur(${glassTuning.dockBlur}px) saturate(1.5)`,
-            filter: "url(#liquid-glass-dock) contrast(1.15) brightness(1.05)",
-          })}
+          refraction={glassTuning.maxDisp}
+          aberration={2}
+          blur={glassTuning.dockBlur}
+          tint="#181226"
+          tintAlpha={0.42}
+          specular={0.5}
+          alpha={0.94}
         />
       )}
       {/* Specular sheen sweeping across the glass; clipped here so it never

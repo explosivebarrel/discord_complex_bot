@@ -1,6 +1,7 @@
 import type { FC } from "react";
 import { glassPinchDef } from "./experiments/GlassPinch";
 import { glassSnellDef } from "./experiments/GlassSnell";
+import { glassSvgShaderDef } from "./experiments/GlassSvgShader";
 import { glassWebGLDef } from "./experiments/GlassWebGL";
 
 /** A tunable number rendered as a slider in the sandbox inspector. */
@@ -45,4 +46,9 @@ export function defaultParams(def: ExperimentDef): Record<string, number> {
 }
 
 /** All registered sandbox experiments, in palette order. */
-export const EXPERIMENTS: ExperimentDef[] = [glassPinchDef, glassSnellDef, glassWebGLDef];
+export const EXPERIMENTS: ExperimentDef[] = [
+  glassPinchDef,
+  glassSnellDef,
+  glassWebGLDef,
+  glassSvgShaderDef,
+];

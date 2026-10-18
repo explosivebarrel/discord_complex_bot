@@ -25,22 +25,44 @@ const METEOR_MIN_GAP = 8000;
 const METEOR_VAR = 8000;
 const STAR_DENSITY: Record<string, number> = { "stars-sparse": 1, "stars-medium": 2.4, "stars-dense": 5 };
 
+/** Live handle to the glass backdrop canvas — WebGL glass samples it. */
+export const glassCanvasHolder: { canvas: HTMLCanvasElement | null } = { canvas: null };
+
+function drawStaticBackdrop(ctx: CanvasRenderingContext2D, kind: string, w: number, h: number) {
+  if (kind === "stripes") {
+    ctx.fillStyle = "#0b0b10";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#eceaf0";
+    for (let x = 0; x < w; x += 180) ctx.fillRect(x, 0, 90, h);
+  } else {
+    // Checkerboard.
+    const cell = 44;
+    for (let y = 0; y < Math.ceil(h / cell); y++) {
+      for (let x = 0; x < Math.ceil(w / cell); x++) {
+        ctx.fillStyle = (x + y) % 2 ? "#d6d2de" : "#16121f";
+        ctx.fillRect(x * cell, y * cell, cell, cell);
+      }
+    }
+  }
+}
+
 /**
- * Fixed backdrop of the Liquid Glass theme. The default starfield twinkles
- * with an occasional meteor; denser star fields, car-body-shop vertical
- * stripes and a checkerboard are selectable in the theme settings — all of
- * them give the lens something to refract. A lilac-white neon light rakes
- * from the left to backlight the glass. The rAF loop pauses with the tab;
- * the system "reduce motion" setting renders a single still frame.
+ * Fixed backdrop of the Liquid Glass theme, always rendered into one
+ * canvas so WebGL glass surfaces can sample it as a texture: twinkling
+ * stars with occasional meteors, or dense star fields / wide vertical
+ * stripes / a checkerboard (selected in the theme settings). A lilac-white
+ * neon light rakes from the left to backlight the glass. The rAF loop
+ * pauses with the tab; the system "reduce motion" setting renders a
+ * single still frame.
  */
 export function GlassBackground() {
   const { glassBackdrop } = useAppTheme();
-  const stars = glassBackdrop in STAR_DENSITY;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stars = glassBackdrop in STAR_DENSITY;
   useEffect(() => {
-    if (!stars) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    glassCanvasHolder.canvas = canvas;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -68,55 +90,56 @@ export function GlassBackground() {
       }));
     };
 
-    const drawStar = (s: Star, alpha: number) => {
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = "#E8E3FF";
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fill();
-    };
-
     const draw = (t: number) => {
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      for (const s of starsArr) {
-        const a = reduced
-          ? s.base + s.amp * 0.5
-          : Math.max(0.05, Math.min(1, s.base + s.amp * Math.sin(s.phase + (t / 1000) * s.speed)));
-        drawStar(s, a);
-      }
-      if (meteor) {
-        const p = (t - meteor.born) / meteor.dur;
-        if (p >= 1) {
-          meteor = null;
-        } else {
-          // Bright head with a fading trail along the flight direction.
-          const hx = meteor.x + meteor.vx * p;
-          const hy = meteor.y + meteor.vy * p;
-          const tailX = hx - meteor.vx * 0.18;
-          const tailY = hy - meteor.vy * 0.18;
-          const grad = ctx.createLinearGradient(tailX, tailY, hx, hy);
-          grad.addColorStop(0, "rgba(232,227,255,0)");
-          grad.addColorStop(1, `rgba(232,227,255,${0.9 * (1 - p)})`);
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = grad;
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.moveTo(tailX, tailY);
-          ctx.lineTo(hx, hy);
-          ctx.stroke();
-          ctx.globalAlpha = 0.9 * (1 - p);
+      if (stars) {
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        ctx.fillStyle = "#0d0a18";
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+        for (const s of starsArr) {
+          const a = reduced
+            ? s.base + s.amp * 0.5
+            : Math.max(0.05, Math.min(1, s.base + s.amp * Math.sin(s.phase + (t / 1000) * s.speed)));
+          ctx.globalAlpha = a;
           ctx.fillStyle = "#E8E3FF";
           ctx.beginPath();
-          ctx.arc(hx, hy, 1.8, 0, Math.PI * 2);
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
           ctx.fill();
         }
+        if (meteor) {
+          const p = (t - meteor.born) / meteor.dur;
+          if (p >= 1) {
+            meteor = null;
+          } else {
+            const hx = meteor.x + meteor.vx * p;
+            const hy = meteor.y + meteor.vy * p;
+            const tailX = hx - meteor.vx * 0.18;
+            const tailY = hy - meteor.vy * 0.18;
+            const grad = ctx.createLinearGradient(tailX, tailY, hx, hy);
+            grad.addColorStop(0, "rgba(232,227,255,0)");
+            grad.addColorStop(1, `rgba(232,227,255,${0.9 * (1 - p)})`);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.moveTo(tailX, tailY);
+            ctx.lineTo(hx, hy);
+            ctx.stroke();
+            ctx.globalAlpha = 0.9 * (1 - p);
+            ctx.fillStyle = "#E8E3FF";
+            ctx.beginPath();
+            ctx.arc(hx, hy, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        drawStaticBackdrop(ctx, glassBackdrop, window.innerWidth, window.innerHeight);
       }
-      ctx.globalAlpha = 1;
     };
 
     const tick = (t: number) => {
       if (!running) return;
-      if (!meteor && t >= nextMeteorAt) {
+      if (stars && !meteor && t >= nextMeteorAt) {
         meteor = {
           x: Math.random() * window.innerWidth * 0.7,
           y: Math.random() * window.innerHeight * 0.3,
@@ -142,18 +165,24 @@ export function GlassBackground() {
     };
 
     resize();
-    window.addEventListener("resize", resize);
-    document.addEventListener("visibilitychange", onVisibility);
-    if (reduced) {
+    // Static backdrops only need one frame.
+    if (!stars || reduced) {
       draw(performance.now());
     } else {
       raf = requestAnimationFrame(tick);
     }
+    const onResize = () => {
+      resize();
+      draw(performance.now());
+    };
+    window.addEventListener("resize", onResize);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       running = false;
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibility);
+      glassCanvasHolder.canvas = null;
     };
   }, [stars, glassBackdrop]);
 
@@ -178,29 +207,7 @@ export function GlassBackground() {
             "radial-gradient(95vw 130vh at -18% 42%, rgba(214,196,255,0.30), rgba(150,120,255,0.12) 42%, transparent 68%)",
         }}
       />
-      {stars && (
-        <Box component="canvas" ref={canvasRef} sx={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
-      )}
-      {/* Refraction-test backdrops: car-body-shop stripes / checkerboard.
-          Wide bars survive the glass blur and give the lens sharp edges. */}
-      {glassBackdrop === "stripes" && (
-        <Box
-          sx={{
-            position: "absolute",
-            inset: 0,
-            background: "repeating-linear-gradient(90deg, #0b0b10 0px, #0b0b10 90px, #eceaf0 90px, #eceaf0 180px)",
-          }}
-        />
-      )}
-      {glassBackdrop === "grid" && (
-        <Box
-          sx={{
-            position: "absolute",
-            inset: 0,
-            background: "repeating-conic-gradient(#141020 0% 25%, #241f36 0% 50%) 50% / 44px 44px",
-          }}
-        />
-      )}
+      <Box component="canvas" ref={canvasRef} sx={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
     </Box>
   );
 }
