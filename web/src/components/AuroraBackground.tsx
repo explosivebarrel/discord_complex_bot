@@ -89,8 +89,9 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     const cx = blob.x * w;
     const cy = blob.y * h;
     const r = blob.r * unit;
-    const hasHole = (cfg.innerRadius ?? 0.3) > 0.01;
-    const rIn = r * (hasHole ? cfg.innerRadius! : 0);
+    const holeFraction = cfg.innerRadius ?? 0.3;
+    const hasHole = holeFraction > 0.01;
+    const rIn = r * holeFraction;
     // The inner edge wobbles too — its own harmonic phases and a slightly
     // faster time scale, so hole and rim never move in sync.
     const ampOut = 0.14;
