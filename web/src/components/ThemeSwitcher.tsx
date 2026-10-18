@@ -1,8 +1,23 @@
 import { useState } from "react";
-import { Box, Divider, IconButton, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip, Typography } from "@mui/material";
-import { useAppTheme } from "../themes/AppThemeContext";
+import {
+  Box,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import { useAppTheme, GLASS_BACKDROPS, type GlassBackdrop } from "../themes/AppThemeContext";
 import { ADVANCED_SCHEMES, BASE_SCHEMES, type AppThemeScheme } from "../themes/palettes";
-import { IconCheck, IconPalette } from "./icons";
+import { IconCheck, IconPalette, IconTune } from "./icons";
 
 /** Half primary / half surface circle: a compact preview of a theme. */
 function Swatch({ scheme }: { scheme: AppThemeScheme }) {
@@ -22,7 +37,50 @@ function Swatch({ scheme }: { scheme: AppThemeScheme }) {
   );
 }
 
-function ThemeMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) {
+/** Miniature backdrop previews for the Liquid Glass settings dialog. */
+const BACKDROP_PREVIEWS: Record<GlassBackdrop, object> = {
+  "stars-sparse": { background: "radial-gradient(circle, #efeaff 1px, transparent 1.6px) 0 0 / 20px 20px, #14101f" },
+  "stars-medium": { background: "radial-gradient(circle, #efeaff 1px, transparent 1.6px) 0 0 / 12px 12px, #14101f" },
+  "stars-dense": { background: "radial-gradient(circle, #efeaff 0.8px, transparent 1.3px) 0 0 / 7px 7px, #14101f" },
+  stripes: { background: "repeating-linear-gradient(90deg, #101014 0 10px, #e8e6ec 10px 20px)" },
+  grid: { background: "repeating-conic-gradient(#14101f 0% 25%, #b9b3c9 0% 50%) 0 / 10px 10px" },
+};
+
+function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { glassBackdrop, setGlassBackdrop } = useAppTheme();
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Liquid Glass settings</DialogTitle>
+      <DialogContent dividers sx={{ pt: 1 }}>
+        <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
+          Backdrop the glass refracts. Stripes and the checkerboard make the
+          lens effect the most visible.
+        </Typography>
+        <List disablePadding>
+          {GLASS_BACKDROPS.map((o) => (
+            <ListItemButton
+              key={o.id}
+              selected={glassBackdrop === o.id}
+              onClick={() => setGlassBackdrop(o.id)}
+              sx={{ borderRadius: 2, mb: 0.5 }}
+            >
+              <ListItemIcon sx={{ minWidth: 44, justifyContent: "center" }}>
+                <Box
+                  aria-hidden
+                  sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid", borderColor: "divider", ...BACKDROP_PREVIEWS[o.id] }}
+                />
+              </ListItemIcon>
+              <ListItemText primary={o.label} slotProps={{ primary: { noWrap: true } }} />
+              {glassBackdrop === o.id && <IconCheck fontSize={18} sx={{ color: "primary.main" }} />}
+            </ListItemButton>
+          ))}
+        </List>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLElement | null; onClose: () => void; onOpenGlassSettings: () => void }) {
   const { scheme, setThemeId } = useAppTheme();
   const item = (s: AppThemeScheme) => (
     <MenuItem
@@ -37,7 +95,24 @@ function ThemeMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: (
         <Swatch scheme={s} />
       </ListItemIcon>
       <ListItemText primary={s.label} slotProps={{ primary: { noWrap: true } }} />
-      {s.id === scheme.id && <IconCheck fontSize={18} sx={{ color: "primary.main" }} />}
+      {s.id === "glass" ? (
+        <Tooltip title="Liquid Glass settings">
+          <IconButton
+            size="small"
+            aria-label="Liquid Glass settings"
+            onClick={(e) => {
+              e.stopPropagation();
+              setThemeId("glass");
+              onClose();
+              onOpenGlassSettings();
+            }}
+          >
+            <IconTune fontSize={18} />
+          </IconButton>
+        </Tooltip>
+      ) : s.id === scheme.id ? (
+        <IconCheck fontSize={18} sx={{ color: "primary.main" }} />
+      ) : null}
     </MenuItem>
   );
   return (
@@ -56,7 +131,11 @@ function ThemeMenu({ anchor, onClose }: { anchor: HTMLElement | null; onClose: (
 export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
   const { scheme } = useAppTheme();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const menu = <ThemeMenu anchor={anchor} onClose={() => setAnchor(null)} />;
+  const [glassSettings, setGlassSettings] = useState(false);
+  const menu = (
+    <ThemeMenu anchor={anchor} onClose={() => setAnchor(null)} onOpenGlassSettings={() => setGlassSettings(true)} />
+  );
+  const glassDialog = <GlassSettingsDialog open={glassSettings} onClose={() => setGlassSettings(false)} />;
   if (collapsed) {
     return (
       <>
@@ -70,6 +149,7 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
           </IconButton>
         </Tooltip>
         {menu}
+        {glassDialog}
       </>
     );
   }
@@ -89,6 +169,7 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
         />
       </ListItemButton>
       {menu}
+      {glassDialog}
     </>
   );
 }

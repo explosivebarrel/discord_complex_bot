@@ -175,7 +175,7 @@ export function PlayerDock({
         flexWrap: { xs: "wrap", md: "nowrap" },
       })}
     >
-      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} bezel={40} />}
+      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} bezel={48} />}
       {/* Specular sheen sweeping across the glass; clipped here so it never
           paints outside the dock, and compositor-only (transform). */}
       <Box sx={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>

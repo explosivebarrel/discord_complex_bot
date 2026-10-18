@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { CssBaseline, GlobalStyles, ThemeProvider } from "@mui/material";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppThemeContext } from "./themes/AppThemeContext";
+import { AppThemeContext, getGlassBackdrop } from "./themes/AppThemeContext";
 import { buildTheme } from "./themes/buildTheme";
 import { getScheme } from "./themes/palettes";
 import { useLocalPrefValue } from "./useLocalPrefValue";
@@ -34,6 +34,7 @@ const queryClient = new QueryClient({
 /** Theme provider + persisted theme choice + animated backdrops. */
 function ThemedApp({ children }: { children: React.ReactNode }) {
   const [themeId, setThemeId] = useLocalPrefValue("ui.theme", "dark");
+  const [glassBg, setGlassBg] = useLocalPrefValue("ui.glassBg", "stars-sparse");
   const scheme = getScheme(themeId);
   const theme = useMemo(() => buildTheme(scheme), [scheme]);
   // Native widgets (scrollbars, form controls) follow the color scheme.
@@ -41,7 +42,9 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
     document.documentElement.style.colorScheme = scheme.mode;
   }, [scheme]);
   return (
-    <AppThemeContext.Provider value={{ scheme, setThemeId }}>
+    <AppThemeContext.Provider
+      value={{ scheme, setThemeId, glassBackdrop: getGlassBackdrop(glassBg), setGlassBackdrop: setGlassBg }}
+    >
       <ThemeProvider theme={theme}>
         {scheme.aurora && <AuroraBackground />}
         {scheme.id === "glass" && <GlassBackground />}

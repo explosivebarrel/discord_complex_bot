@@ -138,7 +138,7 @@ export function LiquidGlassFilter({
           <feImage href={url} x={0} y={0} width={Math.round(width)} height={Math.round(height)} preserveAspectRatio="none" result="map" />
           {/* Displace the backdrop like a lens rim, then soften and enrich it. */}
           <feDisplacementMap in="SourceGraphic" in2="map" scale={scale} xChannelSelector="R" yChannelSelector="G" result="refracted" />
-          <feGaussianBlur in="refracted" stdDeviation="5" />
+          <feGaussianBlur in="refracted" stdDeviation="2" />
           <feColorMatrix type="saturate" values="1.5" />
         </filter>
       </defs>

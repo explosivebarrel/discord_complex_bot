@@ -435,10 +435,12 @@ const glass: AppThemeScheme = {
   label: "Liquid Glass",
   mode: "dark",
   surface: {
+    // Moderate blur: heavy blur turns any backdrop test pattern into mush
+    // before the dock lens gets to bend it (nested-glass limitation).
     shellAlpha: 0.62,
     cardAlpha: 0.6,
-    shellBlur: 24,
-    cardBlur: 18,
+    shellBlur: 12,
+    cardBlur: 12,
     saturate: 1.35,
     neonBorder: "rgba(205,186,255,0.38)",
   },

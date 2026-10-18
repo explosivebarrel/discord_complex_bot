@@ -69,6 +69,8 @@ export const IconStop = ic("stop");
 export const IconStrikethrough = ic("strikethrough_s");
 /** Outlined like the previous Tag glyph. */
 export const IconTag = ic("tag", false);
+/** Advanced-theme settings trigger. */
+export const IconTune = ic("tune");
 export const IconTitle = ic("title");
 export const IconVisibility = ic("visibility");
 export const IconVolumeUp = ic("volume_up");
