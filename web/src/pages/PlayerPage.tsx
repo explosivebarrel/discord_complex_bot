@@ -51,7 +51,7 @@ import {
 } from "../api";
 import { usePlayerState, useVoiceChannels, useFavorites, useGuilds, useGuildUploads, useMyPlaylists } from "../queries";
 import { PlayerPageSkeleton } from "../components/Skeletons";
-import { m3 } from "../theme";
+import { alpha } from "@mui/material/styles";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { MsIcon } from "../components/MsIcon";
@@ -522,7 +522,7 @@ export function PlayerPage() {
                             sx={{
                               cursor: "pointer",
                               borderRadius: 1,
-                              "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                              "&:hover": { bgcolor: "action.hover" },
                             }}
                           >
                             <ListItemAvatar sx={{ minWidth: 36 }}>
@@ -566,8 +566,8 @@ export function PlayerPage() {
                         sx={{
                           cursor: "pointer",
                           borderRadius: 1,
-                          "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
-                          ...(dragOverIndex === i && { bgcolor: "rgba(255,255,255,0.09)" }),
+                          "&:hover": { bgcolor: "action.hover" },
+                          ...(dragOverIndex === i && { bgcolor: "action.selected" }),
                         }}
                         onMouseEnter={() => setHoveredRow(`q${i}`)}
                         onMouseLeave={() => setHoveredRow((h) => (h === `q${i}` ? null : h))}
@@ -590,7 +590,10 @@ export function PlayerPage() {
                                   e.stopPropagation();
                                   act(() => api.moveQueued(gid, i, i - 1));
                                 }}
-                                sx={{ bgcolor: m3.surfaceContainerHighest, "&:hover": { bgcolor: m3.secondaryContainer } }}
+                                sx={(t) => ({
+                                  bgcolor: t.palette.m3.surfaceContainerHighest,
+                                  "&:hover": { bgcolor: t.palette.m3.secondaryContainer },
+                                })}
                               >
                                 <KeyboardArrowUp fontSize="small" />
                               </IconButton>
@@ -603,7 +606,11 @@ export function PlayerPage() {
                                   e.stopPropagation();
                                   act(() => api.moveQueued(gid, i, i + 1));
                                 }}
-                                sx={{ bgcolor: m3.surfaceContainerHighest, "&:hover": { bgcolor: m3.secondaryContainer }, ml: 0.25 }}
+                                sx={(t) => ({
+                                  bgcolor: t.palette.m3.surfaceContainerHighest,
+                                  "&:hover": { bgcolor: t.palette.m3.secondaryContainer },
+                                  ml: 0.25,
+                                })}
                               >
                                 <KeyboardArrowDown fontSize="small" />
                               </IconButton>
@@ -615,7 +622,11 @@ export function PlayerPage() {
                                   e.stopPropagation();
                                   act(() => api.removeQueued(gid, i));
                                 }}
-                                sx={{ bgcolor: m3.surfaceContainerHighest, "&:hover": { bgcolor: "rgba(242,185,181,0.12)", color: "error.main" }, ml: 0.25 }}
+                                sx={(t) => ({
+                                  bgcolor: t.palette.m3.surfaceContainerHighest,
+                                  "&:hover": { bgcolor: alpha(t.palette.error.main, 0.12), color: "error.main" },
+                                  ml: 0.25,
+                                })}
                               >
                                 <DeleteOutlined fontSize="small" />
                               </IconButton>
@@ -668,7 +679,7 @@ export function PlayerPage() {
                       sx={{
                         cursor: "pointer",
                         borderRadius: 1,
-                        "&:hover": { bgcolor: "rgba(255,255,255,0.04)" },
+                        "&:hover": { bgcolor: "action.hover" },
                       }}
                       onMouseEnter={() => setHoveredRow(`r${i}`)}
                       onMouseLeave={() => setHoveredRow((h) => (h === `r${i}` ? null : h))}
@@ -682,12 +693,12 @@ export function PlayerPage() {
                                 e.stopPropagation();
                                 act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`);
                               }}
-                              sx={{
-                                bgcolor: m3.surfaceContainerHighest,
-                                "&:hover": { bgcolor: m3.secondaryContainer },
+                              sx={(t) => ({
+                                bgcolor: t.palette.m3.surfaceContainerHighest,
+                                "&:hover": { bgcolor: t.palette.m3.secondaryContainer },
                                 visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
                                 ["@media (hover: none)"]: { visibility: "visible" },
-                              }}
+                              })}
                             >
                               <PlaylistAdd fontSize="small" />
                             </IconButton>
@@ -700,12 +711,12 @@ export function PlayerPage() {
                                 e.stopPropagation();
                                 act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`);
                               }}
-                              sx={{
-                                bgcolor: m3.surfaceContainerHighest,
-                                "&:hover": { bgcolor: m3.secondaryContainer },
+                              sx={(t) => ({
+                                bgcolor: t.palette.m3.surfaceContainerHighest,
+                                "&:hover": { bgcolor: t.palette.m3.secondaryContainer },
                                 visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
                                 ["@media (hover: none)"]: { visibility: "visible" },
-                              }}
+                              })}
                             >
                               <PlayArrow fontSize="small" />
                             </IconButton>
@@ -1042,14 +1053,14 @@ export function PlayerPage() {
                               />
                             ) : (
                               <Box
-                                sx={{
+                                sx={(t) => ({
                                   width: 48,
                                   height: 48,
                                   borderRadius: "8px",
-                                  bgcolor: m3.surfaceContainerHigh,
+                                  bgcolor: t.palette.m3.surfaceContainerHigh,
                                   display: "grid",
                                   placeItems: "center",
-                                }}
+                                })}
                               >
                                 <MusicNote sx={{ color: "text.secondary" }} />
                               </Box>

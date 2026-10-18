@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, IconButton, LinearProgress, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
-import { m3 } from "../theme";
+import { surfaceStyle } from "../themes/buildTheme";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -54,7 +54,15 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
         "&:hover .seek-thumb": { opacity: 1 },
       }}
     >
-      <Box sx={{ position: "relative", height: 4, width: "100%", borderRadius: 999, bgcolor: m3.surfaceContainerHighest }}>
+      <Box
+        sx={(t) => ({
+          position: "relative",
+          height: 4,
+          width: "100%",
+          borderRadius: 999,
+          bgcolor: t.palette.m3.surfaceContainerHighest,
+        })}
+      >
         <Box sx={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`, borderRadius: 999, bgcolor: "primary.main" }} />
         <Box
           className="seek-thumb"
@@ -128,9 +136,9 @@ export function PlayerDock({
 
   return (
     <Box
-      sx={{
+      sx={(t) => ({
         position: "relative",
-        bgcolor: m3.surfaceContainerLow,
+        ...surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card"),
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1.5, md: 2 },
         pb: 1.5,
@@ -138,7 +146,7 @@ export function PlayerDock({
         alignItems: "center",
         gap: 2,
         flexWrap: { xs: "wrap", md: "nowrap" },
-      }}
+      })}
     >
       {current && (isLoading ? (
         <Box sx={{ position: "absolute", top: 0, left: 0, right: 0 }}>
@@ -165,14 +173,14 @@ export function PlayerDock({
           />
         ) : (
           <Box
-            sx={{
+            sx={(t) => ({
               width: 48,
               height: 48,
               borderRadius: "12px",
-              bgcolor: m3.surfaceContainerHighest,
+              bgcolor: t.palette.m3.surfaceContainerHighest,
               display: "grid",
               placeItems: "center",
-            }}
+            })}
           >
             <GraphicEq sx={{ color: "text.secondary" }} />
           </Box>
@@ -227,18 +235,18 @@ export function PlayerDock({
             <IconButton
               disabled={isLoading || !current}
               onClick={onPauseToggle}
-              sx={{
+              sx={(t) => ({
                 width: 60,
                 height: 60,
                 borderRadius: "999px",
                 mt: -4.5,
                 bgcolor: "primary.main",
                 color: "primary.contrastText",
-                boxShadow: "0 6px 16px rgba(0,0,0,.4)",
+                boxShadow: t.palette.mode === "dark" ? "0 6px 16px rgba(0,0,0,.4)" : "0 6px 16px rgba(0,0,0,.18)",
                 "&:hover": { bgcolor: "primary.main", filter: "brightness(1.08)" },
                 // Keep the raised disc lavender while disabled (idle).
                 "&.Mui-disabled": { bgcolor: "primary.main", color: "primary.contrastText", opacity: 0.45 },
-              }}
+              })}
             >
               {paused || !current ? <PlayArrow /> : <Pause />}
             </IconButton>

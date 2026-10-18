@@ -17,7 +17,9 @@ import {
   TextField,
   Tooltip,
   Typography,
+  type Theme,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { IconAlternateEmail as AlternateEmail, IconCampaign as Campaign, IconCode as Code, IconEdit as Edit, IconFormatBold as Bold, IconFormatItalic as Italic, IconFormatListBulleted as FormatListBulleted, IconFormatQuote as FormatQuote, IconFormatUnderlined as Underline, IconLink as LinkIcon, IconMood as EmojiEmotions, IconStrikethrough as Strikethrough, IconTag as Tag, IconTitle as TitleIcon, IconVisibility as Visibility, IconWorkspaces as Workspaces } from "../components/icons";
 import { api, PostChannel } from "../api";
 import { usePostComposer } from "../queries";
@@ -29,30 +31,33 @@ import { renderDiscordHtml } from "../discordMd";
 
 const CONTENT_LIMIT = 2000;
 
-const previewSx = {
+// Discord-markdown preview derived from theme tokens, so it holds up on
+// light themes too. The mention keeps Discord's blurple as a brand accent;
+// its text uses the theme primary, which is readable in both modes.
+const previewSx = (t: Theme) => ({
   minHeight: 148,
   maxHeight: 340,
   overflowY: "auto",
   p: 1.5,
   borderRadius: "12px",
-  border: "1px solid rgba(255,255,255,0.06)",
-  bgcolor: "rgba(255,255,255,0.02)",
+  border: `1px solid ${alpha(t.palette.m3.onSurface, 0.08)}`,
+  bgcolor: alpha(t.palette.m3.onSurface, 0.03),
   "& .md-mention": {
-    bgcolor: "rgba(88,101,242,.3)",
-    color: "#C9CDFB",
+    bgcolor: "rgba(88,101,242,.25)",
+    color: t.palette.primary.main,
     borderRadius: "4px",
     px: 0.5,
     fontWeight: 500,
   },
   "& .md-emoji": { width: 22, height: 22, verticalAlign: "-0.4em" },
-  "& code": { bgcolor: "rgba(255,255,255,0.06)", borderRadius: "4px", px: 0.5, fontFamily: "monospace", fontSize: "0.9em" },
-  "& pre": { bgcolor: "rgba(255,255,255,0.06)", borderRadius: "8px", p: 1.5, overflowX: "auto", my: 1 },
+  "& code": { bgcolor: alpha(t.palette.m3.onSurface, 0.06), borderRadius: "4px", px: 0.5, fontFamily: "monospace", fontSize: "0.9em" },
+  "& pre": { bgcolor: alpha(t.palette.m3.onSurface, 0.06), borderRadius: "8px", p: 1.5, overflowX: "auto", my: 1 },
   "& pre code": { bgcolor: "transparent", p: 0 },
-  "& blockquote": { margin: 0, pl: 1.5, borderLeft: "4px solid #4A4458", color: "text.secondary" },
+  "& blockquote": { margin: 0, pl: 1.5, borderLeft: `4px solid ${t.palette.m3.secondaryContainer}`, color: "text.secondary" },
   "& ul": { margin: 0, pl: 3 },
-  "& a": { color: "#00A8FC" },
+  "& a": { color: t.palette.primary.main },
   "& img": { maxWidth: "100%" },
-} as const;
+});
 
 type MenuKind = "user" | "channel" | "role" | "emoji" | null;
 
@@ -257,7 +262,7 @@ export function PostsPage() {
 
             {preview ? (
               <Box
-                sx={previewSx}
+                sx={(t) => previewSx(t)}
                 dangerouslySetInnerHTML={{ __html: renderDiscordHtml(text, composer ?? { users: [], roles: [], channels: [] }) }}
               />
             ) : (
@@ -337,13 +342,13 @@ export function PostsPage() {
           <MenuItem key={role.id} onClick={() => insertToken(`<@&${role.id}>`)} dense>
             <ListItemIcon sx={{ minWidth: 28 }}>
               <Box
-                sx={{
+                sx={(t) => ({
                   width: 12,
                   height: 12,
                   borderRadius: "50%",
                   bgcolor: role.color ?? "#99AAB5",
-                  border: role.color ? "none" : "1px solid #49454F",
-                }}
+                  border: role.color ? "none" : `1px solid ${t.palette.m3.outlineVariant}`,
+                })}
               />
             </ListItemIcon>
             <ListItemText primary={role.name} slotProps={{ primary: { noWrap: true, variant: "body2" } }} />

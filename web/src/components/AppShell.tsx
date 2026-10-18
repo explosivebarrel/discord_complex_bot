@@ -1,14 +1,15 @@
 import { type ReactNode, useCallback, useState } from "react";
-import { Avatar, Badge, Box, Collapse, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Avatar, Badge, Box, Collapse, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme, type Theme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import { IconGraphicEq } from "./icons";
 import { MsIcon } from "./MsIcon";
+import { ThemeSwitcher } from "./ThemeSwitcher";
+import { surfaceStyle } from "../themes/buildTheme";
 import type { GuildBrief, Me } from "../api";
 import { api, guildAllows } from "../api";
 import { useGuilds, useMe } from "../queries";
 import { useBotName } from "../useMeta";
 import { useLocalPref } from "../useLocalPref";
-import { m3 } from "../theme";
 
 export const DRAWER_WIDTH = 264;
 export const DRAWER_RAIL_WIDTH = 80;
@@ -276,6 +277,7 @@ function DrawerContent({
       </List>
       <Divider />
       <List component="nav" disablePadding sx={{ py: 1 }}>
+        <ThemeSwitcher collapsed={collapsed} />
         {me?.is_superadmin && (
           <GuildTab to="/settings" icon={Ic.settings} label="Settings" collapsed={collapsed} onClick={onNavigate} />
         )}
@@ -366,11 +368,13 @@ export function AppShell({
   const activeGuildId = subMatch?.params.guildId ?? exactMatch?.params.guildId ?? null;
 
   const navWidth = navCollapsed ? DRAWER_RAIL_WIDTH : DRAWER_WIDTH;
-  const navPaperSx = {
+  // Shared by the pinned nav column and the modal drawer paper: glass themes
+  // render it translucent over the animated backdrop.
+  const navPaperSx = (t: Theme) => ({
     width: DRAWER_WIDTH,
     boxSizing: "border-box" as const,
-    bgcolor: m3.surface,
-  };
+    ...surfaceStyle(t, t.palette.m3.surface, "shell"),
+  });
 
   return (
     <Box
@@ -379,7 +383,9 @@ export function AppShell({
         // Slimmer inset on phones: screen width is scarce there.
         p: { xs: 1, md: 2 },
         boxSizing: "border-box",
-        bgcolor: m3.surfaceContainerLowest,
+        // Translucent themes let the animated backdrop fill the whole
+        // viewport, so this gap stays transparent there.
+        bgcolor: (t) => (t.surface.shellAlpha < 1 ? "transparent" : t.palette.m3.surfaceContainerLowest),
         overflow: "hidden",
       }}
     >
@@ -410,15 +416,15 @@ export function AppShell({
           onClose={() => setRightOpen(false)}
           sx={{
             display: { lg: "none" },
-            "& .MuiDrawer-paper": {
-              bgcolor: m3.surface,
+            "& .MuiDrawer-paper": (t: Theme) => ({
               width: 360,
               maxWidth: "88vw",
               boxSizing: "border-box",
               display: "flex",
               flexDirection: "column",
               p: 2,
-            },
+              ...surfaceStyle(t, t.palette.m3.surface, "shell"),
+            }),
           }}
         >
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1.5, flexShrink: 0 }}>
@@ -437,13 +443,13 @@ export function AppShell({
 
       {/* The inset frame: nav | content | player sheet. */}
       <Box
-        sx={{
+        sx={(t) => ({
           height: "100%",
-          bgcolor: m3.surface,
+          ...surfaceStyle(t, t.palette.m3.surface, "shell"),
           borderRadius: { xs: "16px", md: "24px" },
           overflow: "hidden",
           display: "flex",
-        }}
+        })}
       >
         {isWide && (
           <Box
@@ -455,7 +461,9 @@ export function AppShell({
               flexShrink: 0,
               position: "relative",
               overflow: "hidden",
-              borderRight: `1px solid ${m3.outlineVariant}`,
+              // Glass themes edge the frame with a neon hairline instead of
+              // the plain outline.
+              borderRight: (t) => `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
               transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
             }}
           >
@@ -582,7 +590,7 @@ export function AppShell({
               width: rightOpen ? { lg: 320, xl: 340 } : 56,
               flexShrink: 0,
               position: "relative",
-              borderLeft: `1px solid ${m3.outlineVariant}`,
+              borderLeft: (t) => `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",

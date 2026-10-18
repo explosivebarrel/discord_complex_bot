@@ -17,6 +17,7 @@ import {
 import { IconAddToQueue as AddQueue, IconClose as Close, IconLibraryMusic as LibraryMusic, IconPlayArrow as PlayArrow, IconSearch as SearchIcon, IconShuffle as Shuffle } from "./icons";
 import { PlaylistPageInfo } from "../api";
 import { PlaylistAddMenu } from "./PlaylistAddMenu";
+import { mixHex } from "../themes/palettes";
 
 function fmt(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -99,7 +100,10 @@ export function PlaylistBrowser({
                       size="small"
                       disabled={busy}
                       onClick={() => onPlay(t.index)}
-                      sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" } }}
+                      sx={(t) => ({
+                        bgcolor: t.palette.m3.secondaryContainer,
+                        "&:hover": { bgcolor: mixHex(t.palette.m3.secondaryContainer, t.palette.m3.onSecondaryContainer, 0.15) },
+                      })}
                       aria-label="Play now"
                     >
                       <PlayArrow fontSize="small" />
@@ -110,7 +114,11 @@ export function PlaylistBrowser({
                       size="small"
                       disabled={busy}
                       onClick={() => onAdd([t.index])}
-                      sx={{ bgcolor: "#313038", "&:hover": { bgcolor: "#3D3847" }, ml: 0.25 }}
+                      sx={(t) => ({
+                        bgcolor: t.palette.m3.secondaryContainer,
+                        "&:hover": { bgcolor: mixHex(t.palette.m3.secondaryContainer, t.palette.m3.onSecondaryContainer, 0.15) },
+                        ml: 0.25,
+                      })}
                       aria-label="Add to queue"
                     >
                       <AddQueue fontSize="small" />

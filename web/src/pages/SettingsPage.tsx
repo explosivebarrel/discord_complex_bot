@@ -10,6 +10,7 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
+  Link,
   Stack,
   TextField,
   Typography,
@@ -140,14 +141,13 @@ export function SettingsPage() {
             <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
               Playback needs a Google account token. Run Lavalink without a token, open the login URL from its logs
               (docker logs dcbot-lavalink) at{" "}
-              <a
+              <Link
                 href="https://google.com/device"
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "#D0BCFF" }}
               >
                 google.com/device
-              </a>
+              </Link>
               , then paste the printed refresh token here.
             </Typography>
             <Stack direction="row" spacing={1}>
@@ -184,14 +184,13 @@ export function SettingsPage() {
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
               Needs a Yandex account with Plus. Open{" "}
-              <a
+              <Link
                 href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d"
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "#D0BCFF" }}
               >
                 oauth.yandex.ru/authorize
-              </a>
+              </Link>
               , log in, grant access, then copy <code>access_token</code> from the redirect URL (it flashes by).
               Current: {ym?.configured ? ym.token_masked : "not set"}.
             </Typography>
@@ -229,14 +228,13 @@ export function SettingsPage() {
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
               Needs a token with the audio scope (mobile-client trick). Open{" "}
-              <a
+              <Link
                 href="https://oauth.vk.com/authorize?client_id=2685278&display=mobile&response_type=token&scope=audio&redirect_uri=https://oauth.vk.com/blank.html&v=5.199"
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "#D0BCFF" }}
               >
                 this VK OAuth link
-              </a>{" "}
+              </Link>{" "}
               while logged into the VK account, allow access, then copy <code>access_token</code> from the
               blank-page URL. Applied without a restart. Current: {vk?.configured ? vk.token_masked : "not set"}.
             </Typography>

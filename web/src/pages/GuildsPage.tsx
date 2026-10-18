@@ -6,7 +6,6 @@ import { useGuilds, useMe, useSetAccessMock } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { MsIcon } from "../components/MsIcon";
-import { m3 } from "../theme";
 
 function guildIconUrl(guild: GuildBrief) {
   if (!guild.icon) return undefined;
@@ -143,7 +142,7 @@ export function GuildsPage() {
                   <Avatar
                     src={guildIconUrl(g)}
                     variant="rounded"
-                    sx={{ width: 44, height: 44, borderRadius: "12px", bgcolor: m3.surfaceContainerHigh, fontSize: 18, flexShrink: 0 }}
+                    sx={(t) => ({ width: 44, height: 44, borderRadius: "12px", bgcolor: t.palette.m3.surfaceContainerHigh, fontSize: 18, flexShrink: 0 })}
                   >
                     {g.name.slice(0, 1)}
                   </Avatar>
@@ -162,7 +161,11 @@ export function GuildsPage() {
                         <Chip size="small" label="admin" color="secondary" />
                       ) : null
                     : g.is_superadmin ? (
-                        <Chip size="small" label="superadmin" sx={{ bgcolor: m3.tertiaryContainer, color: "#F5EFF7" }} />
+                        <Chip
+                          size="small"
+                          label="superadmin"
+                          sx={(t) => ({ bgcolor: t.palette.m3.tertiaryContainer, color: t.palette.m3.onTertiaryContainer })}
+                        />
                       ) : g.is_owner ? (
                         <Chip size="small" label="owner" color="primary" />
                       ) : g.is_admin ? (

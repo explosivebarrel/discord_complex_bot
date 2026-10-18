@@ -1,9 +1,14 @@
-import React from "react";
+import React, { useEffect, useMemo } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { CssBaseline, GlobalStyles, ThemeProvider } from "@mui/material";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import theme from "./theme";
+import { AppThemeContext } from "./themes/AppThemeContext";
+import { buildTheme } from "./themes/buildTheme";
+import { getScheme } from "./themes/palettes";
+import { useLocalPrefValue } from "./useLocalPrefValue";
+import { AuroraBackground } from "./components/AuroraBackground";
+import { GlassBackground } from "./components/GlassBackground";
 import "@fontsource/roboto/400.css";
 import "@fontsource/roboto/500.css";
 import "@fontsource/roboto/700.css";
@@ -26,10 +31,20 @@ const queryClient = new QueryClient({
   },
 });
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
+/** Theme provider + persisted theme choice + animated backdrops. */
+function ThemedApp({ children }: { children: React.ReactNode }) {
+  const [themeId, setThemeId] = useLocalPrefValue("ui.theme", "dark");
+  const scheme = getScheme(themeId);
+  const theme = useMemo(() => buildTheme(scheme), [scheme]);
+  // Native widgets (scrollbars, form controls) follow the color scheme.
+  useEffect(() => {
+    document.documentElement.style.colorScheme = scheme.mode;
+  }, [scheme]);
+  return (
+    <AppThemeContext.Provider value={{ scheme, setThemeId }}>
       <ThemeProvider theme={theme}>
+        {scheme.aurora && <AuroraBackground />}
+        {scheme.id === "glass" && <GlassBackground />}
         <CssBaseline />
         {/* Local subset of Material Symbols Rounded (Google Material icons,
             https://fonts.google.com/icons): only the glyph names used by
@@ -45,6 +60,16 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             },
           }}
         />
+        {children}
+      </ThemeProvider>
+    </AppThemeContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <ThemedApp>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<GuildsPage />} />
@@ -57,7 +82,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </BrowserRouter>
-      </ThemeProvider>
+      </ThemedApp>
     </QueryClientProvider>
   </React.StrictMode>,
 );
