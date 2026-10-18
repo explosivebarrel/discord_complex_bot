@@ -95,9 +95,11 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
         <Swatch scheme={s} />
       </ListItemIcon>
       <ListItemText primary={s.label} slotProps={{ primary: { noWrap: true } }} />
-      {/* The check sits flush at the menu's right padding; the settings
-          button overhangs its own 5px side padding so its 18px glyph lands
-          exactly on the check's position. */}
+      {/* The check sits flush at the menu's right padding. The settings
+          button keeps its full 28x28 box (this row is the widest and sets
+          the menu width) and only its glyph shifts right 5px, cancelling
+          the button's own side padding, so the glyph lands exactly on the
+          check position without narrowing the menu. */}
       {s.id === "glass" ? (
         <Tooltip title="Liquid Glass settings">
           <IconButton
@@ -109,7 +111,7 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
               onClose();
               onOpenGlassSettings();
             }}
-            sx={{ mr: "-5px" }}
+            sx={{ "& > span": { transform: "translateX(5px)" } }}
           >
             <IconTune fontSize={18} />
           </IconButton>
