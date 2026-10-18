@@ -12,10 +12,11 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Slider,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useAppTheme, GLASS_BACKDROPS, type GlassBackdrop } from "../themes/AppThemeContext";
+import { useAppTheme, GLASS_BACKDROPS, type GlassBackdrop, type GlassTuning } from "../themes/AppThemeContext";
 import { ADVANCED_SCHEMES, BASE_SCHEMES, type AppThemeScheme } from "../themes/palettes";
 import { IconCheck, IconPalette, IconTune } from "./icons";
 
@@ -47,7 +48,8 @@ const BACKDROP_PREVIEWS: Record<GlassBackdrop, object> = {
 };
 
 function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { glassBackdrop, setGlassBackdrop } = useAppTheme();
+  const { glassBackdrop, setGlassBackdrop, glassTuning, setGlassTuning } = useAppTheme();
+  const tune = (patch: Partial<GlassTuning>) => setGlassTuning({ ...glassTuning, ...patch });
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Liquid Glass settings</DialogTitle>
@@ -75,6 +77,61 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
             </ListItemButton>
           ))}
         </List>
+        {/* Live lens tuning: every change rebuilds the displacement map and
+            re-renders immediately (persisted per browser). */}
+        <Typography variant="overline" sx={{ display: "block", mt: 1.5, color: "text.secondary" }}>
+          Lens tuning
+        </Typography>
+        <Box sx={{ px: 1 }}>
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Lens strength — peak rim shift, px (dock + FAB)
+          </Typography>
+          <Slider
+            size="small"
+            min={0}
+            max={36}
+            step={1}
+            value={glassTuning.maxDisp}
+            onChange={(_, v) => tune({ maxDisp: v as number })}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Lens band — rim thickness, px
+          </Typography>
+          <Slider
+            size="small"
+            min={6}
+            max={40}
+            step={1}
+            value={glassTuning.bezel}
+            onChange={(_, v) => tune({ bezel: v as number })}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Dock blur, px
+          </Typography>
+          <Slider
+            size="small"
+            min={0}
+            max={10}
+            step={0.5}
+            value={glassTuning.dockBlur}
+            onChange={(_, v) => tune({ dockBlur: v as number })}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Content tint opacity
+          </Typography>
+          <Slider
+            size="small"
+            min={0}
+            max={0.45}
+            step={0.05}
+            value={glassTuning.scrim}
+            onChange={(_, v) => tune({ scrim: v as number })}
+            valueLabelDisplay="auto"
+          />
+        </Box>
       </DialogContent>
     </Dialog>
   );

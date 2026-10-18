@@ -4,6 +4,7 @@ import { alpha } from "@mui/material/styles";
 import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
+import { useAppTheme } from "../themes/AppThemeContext";
 import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
 
 const LIVE_LENGTH = 9223372036854775807;
@@ -141,6 +142,7 @@ export function PlayerDock({
     return () => ro.disconnect();
   }, []);
   const refract = svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
+  const { glassTuning } = useAppTheme();
 
   // Advance the progress line locally between 3-second polls.
   useEffect(() => {
@@ -171,7 +173,16 @@ export function PlayerDock({
         ...(refract ? {} : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
       })}
     >
-      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} radius={20} bezel={20} pinch={0.3} />}
+      {refract && size && (
+        <LiquidGlassFilter
+          id="liquid-glass-dock"
+          width={size.w}
+          height={size.h}
+          radius={20}
+          bezel={glassTuning.bezel}
+          maxDisp={glassTuning.maxDisp}
+        />
+      )}
       {/* Warp layer (liquid-glass-react structure): a plain blur/saturate
           backdrop-filter plus the SVG lens as the element's own filter.
           Never put url() inside backdrop-filter (Chromium paint bug) and
@@ -186,7 +197,7 @@ export function PlayerDock({
             pointerEvents: "none",
             borderRadius: "inherit",
             bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.4),
-            backdropFilter: "blur(2px) saturate(1.5)",
+            backdropFilter: `blur(${glassTuning.dockBlur}px) saturate(1.5)`,
             filter: "url(#liquid-glass-dock) contrast(1.15) brightness(1.05)",
           })}
         />
@@ -338,7 +349,14 @@ export function PlayerDock({
             >
               {refract && (
                 <>
-                  <LiquidGlassFilter id="liquid-glass-fab" width={60} height={60} radius={30} bezel={12} pinch={0.45} />
+                  <LiquidGlassFilter
+                    id="liquid-glass-fab"
+                    width={60}
+                    height={60}
+                    radius={30}
+                    bezel={Math.max(8, Math.round(glassTuning.bezel * 0.6))}
+                    maxDisp={Math.round(glassTuning.maxDisp * 0.7)}
+                  />
                   <Box
                     aria-hidden
                     sx={{

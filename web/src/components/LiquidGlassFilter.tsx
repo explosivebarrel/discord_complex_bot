@@ -29,19 +29,22 @@ function roundedRectSdf(x: number, y: number, w: number, h: number, r: number): 
   return Math.hypot(ax, ay) + Math.min(Math.max(qx, qy), 0) - r;
 }
 
-const MAP_SIZE = 256;
+const MAP_SIZE = 512;
 const mapCache = new Map<string, { url: string; scale: number }>();
 
 /**
  * Displacement map over a W×H element, rasterized at MAP_SIZE and encoded
  * for feDisplacementMap (R = X shift, G = Y shift, 128 = neutral).
- * Magnifier-style "pinch" (the recipe of shuding/liquid-glass and Atlas
- * Pup): within a rim band of constant `bezel` px the sample point is
- * pulled toward the element center, so the backdrop compresses and
- * magnifies at the rim; the center stays identity.
+ * Rim-only lens: within a band of constant `bezel` px the sample is
+ * pulled toward the element center by at most `maxDisp` px (peak at the
+ * very edge, easing to zero at the band's inner boundary). The magnitude
+ * is BOUNDED - unlike a center-distance pinch, which scales with the
+ * element size and shifts long edges by hundreds of px (banding steps of
+ * scale/127 become visible as terracing). With maxDisp ~14 the 8-bit
+ * quantization step is ~0.11 px: invisible.
  */
-function buildDisplacementMap(w: number, h: number, radius: number, bezel: number, pinch: number) {
-  const key = `${Math.round(w)}x${Math.round(h)}r${Math.round(radius)}b${Math.round(bezel)}p${pinch}`;
+function buildDisplacementMap(w: number, h: number, radius: number, bezel: number, maxDisp: number) {
+  const key = `${Math.round(w)}x${Math.round(h)}r${Math.round(radius)}b${Math.round(bezel)}m${Math.round(maxDisp)}`;
   const hit = mapCache.get(key);
   if (hit) return hit;
   const canvas = document.createElement("canvas");
@@ -52,9 +55,6 @@ function buildDisplacementMap(w: number, h: number, radius: number, bezel: numbe
   const img = ctx.createImageData(MAP_SIZE, MAP_SIZE);
   const data = img.data;
 
-  let maxAbs = 0;
-  const dxs = new Float32Array(MAP_SIZE * MAP_SIZE);
-  const dys = new Float32Array(MAP_SIZE * MAP_SIZE);
   for (let j = 0; j < MAP_SIZE; j++) {
     for (let i = 0; i < MAP_SIZE; i++) {
       const idx = j * MAP_SIZE + i;
@@ -64,27 +64,22 @@ function buildDisplacementMap(w: number, h: number, radius: number, bezel: numbe
       const y = ((j + 0.5) / MAP_SIZE) * h;
       const d = -roundedRectSdf(x, y, w, h, radius); // px inside from the edge
       if (d <= 0 || d >= bezel) continue;
-      // 0 at the band's inner boundary, 1 at the very edge (smooth).
-      const u = 1 - d / bezel;
-      const e = u * u * (3 - 2 * u);
-      // Sample toward the center: content magnifies into the rim.
-      const dx = -(x - w / 2) * pinch * e;
-      const dy = -(y - h / 2) * pinch * e;
-      dxs[idx] = dx;
-      dys[idx] = dy;
-      const m = Math.max(Math.abs(dx), Math.abs(dy));
-      if (m > maxAbs) maxAbs = m;
+      // Direction toward the center; on a convex shape this matches the
+      // surface normal direction of the lens rim.
+      const cx = w / 2 - x;
+      const cy = h / 2 - y;
+      const len = Math.hypot(cx, cy) || 1;
+      // Peak at the very edge, easing to zero at the band's inner boundary.
+      const u = d / bezel;
+      const mag = maxDisp * Math.pow(1 - u, 1.25);
+      data[idx * 4] = Math.round(128 + (cx / len) * (mag / maxDisp) * 127);
+      data[idx * 4 + 1] = Math.round(128 + (cy / len) * (mag / maxDisp) * 127);
+      data[idx * 4 + 2] = 128;
+      data[idx * 4 + 3] = 255;
     }
   }
-  if (maxAbs <= 0) maxAbs = 1;
-  for (let idx = 0; idx < dxs.length; idx++) {
-    data[idx * 4] = Math.round(128 + (dxs[idx] / maxAbs) * 127);
-    data[idx * 4 + 1] = Math.round(128 + (dys[idx] / maxAbs) * 127);
-    data[idx * 4 + 2] = 128;
-    data[idx * 4 + 3] = 255;
-  }
   ctx.putImageData(img, 0, 0);
-  const entry = { url: canvas.toDataURL(), scale: maxAbs };
+  const entry = { url: canvas.toDataURL(), scale: maxDisp };
   if (mapCache.size > 24) mapCache.clear();
   mapCache.set(key, entry);
   return entry;
@@ -104,18 +99,18 @@ export function LiquidGlassFilter({
   height,
   radius = 0,
   bezel = 20,
-  pinch = 0.3,
+  maxDisp = 14,
 }: {
   id: string;
   width: number;
   height: number;
   radius?: number;
   bezel?: number;
-  pinch?: number;
+  maxDisp?: number;
 }) {
   const { url, scale } = useMemo(
-    () => buildDisplacementMap(width, height, radius, bezel, pinch),
-    [width, height, radius, bezel, pinch],
+    () => buildDisplacementMap(width, height, radius, bezel, maxDisp),
+    [width, height, radius, bezel, maxDisp],
   );
   if (!url) return null;
   return (
