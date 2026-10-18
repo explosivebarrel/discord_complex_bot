@@ -95,13 +95,26 @@ export function buildTheme(scheme: AppThemeScheme): Theme {
       MuiButton: {
         variants: [
           {
-            // MD3 tonal button: secondary container.
+            // MD3 tonal button: secondary container; on islands-glass themes
+            // it becomes a small liquid-glass pill (tint + backdrop blur +
+            // specular/border insets — CSS only, cheap enough for many).
             props: { variant: "tonal" },
-            style: {
-              backgroundColor: t.secondaryContainer,
-              color: t.onSecondaryContainer,
-              "&:hover": { backgroundColor: mixHex(t.secondaryContainer, t.onSecondaryContainer, 0.12) },
-            },
+            style: translucent
+              ? {
+                  backgroundColor: alpha(t.surfaceContainerHighest, 0.35),
+                  color: t.onSurface,
+                  backdropFilter: "blur(3px) saturate(1.4) contrast(1.1)",
+                  boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", 0.22)}, inset 0 0 0 1px ${alpha("#FFFFFF", 0.1)}`,
+                  "&:hover": {
+                    backgroundColor: alpha(t.surfaceContainerHighest, 0.5),
+                    boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", 0.22)}, inset 0 0 0 1px ${alpha("#FFFFFF", 0.12)}, 0 4px 14px rgba(0,0,0,.25)`,
+                  },
+                }
+              : {
+                  backgroundColor: t.secondaryContainer,
+                  color: t.onSecondaryContainer,
+                  "&:hover": { backgroundColor: mixHex(t.secondaryContainer, t.onSecondaryContainer, 0.12) },
+                },
           },
           {
             props: { variant: "contained", color: "primary" },

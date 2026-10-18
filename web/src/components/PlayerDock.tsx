@@ -308,15 +308,46 @@ export function PlayerDock({
                 height: 60,
                 borderRadius: "999px",
                 mt: -4.5,
-                bgcolor: "primary.main",
-                color: "primary.contrastText",
-                boxShadow: t.palette.mode === "dark" ? "0 6px 16px rgba(0,0,0,.4)" : "0 6px 16px rgba(0,0,0,.18)",
-                "&:hover": { bgcolor: "primary.main", filter: "brightness(1.08)" },
-                // Keep the raised disc lavender while disabled (idle).
-                "&.Mui-disabled": { bgcolor: "primary.main", color: "primary.contrastText", opacity: 0.45 },
+                position: "relative",
+                ...(t.surface.islands
+                  ? {
+                      // Liquid-glass FAB: translucent tint; the round lens
+                      // lives on a warp layer inside, the glyph stays sharp.
+                      bgcolor: alpha(t.palette.primary.main, 0.42),
+                      color: t.palette.primary.contrastText,
+                      boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", 0.3)}, 0 6px 20px rgba(0,0,0,.45)`,
+                      "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.55) },
+                      "&.Mui-disabled": { bgcolor: alpha(t.palette.primary.main, 0.42), color: t.palette.primary.contrastText, opacity: 0.45 },
+                    }
+                  : {
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      boxShadow: t.palette.mode === "dark" ? "0 6px 16px rgba(0,0,0,.4)" : "0 6px 16px rgba(0,0,0,.18)",
+                      "&:hover": { bgcolor: "primary.main", filter: "brightness(1.08)" },
+                      // Keep the raised disc lavender while disabled (idle).
+                      "&.Mui-disabled": { bgcolor: "primary.main", color: "primary.contrastText", opacity: 0.45 },
+                    }),
               })}
             >
-              {paused || !current ? <PlayArrow /> : <Pause />}
+              {refract && (
+                <>
+                  <LiquidGlassFilter id="liquid-glass-fab" width={60} height={60} radius={30} bezel={12} pinch={0.45} />
+                  <Box
+                    aria-hidden
+                    sx={{
+                      position: "absolute",
+                      inset: 0,
+                      borderRadius: "50%",
+                      pointerEvents: "none",
+                      backdropFilter: "blur(2px) saturate(1.4)",
+                      filter: "url(#liquid-glass-fab) contrast(1.12)",
+                    }}
+                  />
+                </>
+              )}
+              <Box component="span" sx={{ position: "relative", zIndex: 1, display: "flex" }}>
+                {paused || !current ? <PlayArrow /> : <Pause />}
+              </Box>
             </IconButton>
           </span>
         </Tooltip>
