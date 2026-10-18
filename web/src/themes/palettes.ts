@@ -80,6 +80,8 @@ export interface AuroraBlob {
 export interface AuroraConfig {
   /** Additive blending: glowing rings on dark backgrounds. */
   glow: boolean;
+  /** Hole radius as a fraction of the blob radius; 0 = filled discs. */
+  innerRadius?: number;
   blobs: AuroraBlob[];
 }
 
@@ -380,6 +382,8 @@ const auroraDark: AppThemeScheme = {
   surface: AURORA_SURFACE,
   aurora: {
     glow: true,
+    // Glowing discs read better than rings on the dark backdrop.
+    innerRadius: 0,
     blobs: [
       { x: 0.18, y: 0.24, r: 0.62, colors: ["#6A48D7", "#3F8CFF", "#8A7BFF"], wobble: 0.07, drift: 0.05 },
       { x: 0.82, y: 0.3, r: 0.58, colors: ["#B84DFF", "#FF5DA2", "#7A5CFF"], wobble: 0.06, drift: 0.04 },

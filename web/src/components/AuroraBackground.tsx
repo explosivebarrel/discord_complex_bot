@@ -89,7 +89,8 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     const cx = blob.x * w;
     const cy = blob.y * h;
     const r = blob.r * unit;
-    const rIn = r * 0.3;
+    const hasHole = (cfg.innerRadius ?? 0.3) > 0.01;
+    const rIn = r * (hasHole ? cfg.innerRadius! : 0);
     // The inner edge wobbles too — its own harmonic phases and a slightly
     // faster time scale, so hole and rim never move in sync.
     const ampOut = 0.14;
@@ -108,8 +109,9 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     sx.clearRect(0, 0, M, M);
     sx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, M / 2, M / 2);
     // Torus bands: radial gradient spanning the ring between the two base
-    // radii, color bands cycling from the center outward with soft blends.
-    const grad = sx.createRadialGradient(0, 0, rIn * 0.92, 0, 0, r);
+    // radii (or from the center for filled discs), color bands cycling
+    // from the center outward with soft blends.
+    const grad = sx.createRadialGradient(0, 0, hasHole ? rIn * 0.92 : 0, 0, 0, r);
     for (let s = 0; s <= RING_STEPS; s++) {
       const p = s / RING_STEPS;
       const u = p * BANDS - t * blob.drift;
@@ -122,18 +124,24 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     }
     sx.fillStyle = grad;
     sx.beginPath();
-    // Annulus: outer contour, then the inner one ("evenodd" cuts the hole).
+    // Annulus: outer contour, then the inner one ("evenodd" cuts the
+    // hole); without a hole just the wobbly disc.
     contourPath(sx, r, ampOut, t, blob.x * 9, 1);
-    for (let i = 0; i <= SEGMENTS; i++) {
-      const a = (i / SEGMENTS) * Math.PI * 2;
-      const rr = rIn * (1 + ampIn * wobbleAt(a, t, blob.y * 7, 1.35));
-      const x = Math.cos(a) * rr;
-      const y = Math.sin(a) * rr;
-      if (i === 0) sx.moveTo(x, y);
-      else sx.lineTo(x, y);
+    if (hasHole) {
+      for (let i = 0; i <= SEGMENTS; i++) {
+        const a = (i / SEGMENTS) * Math.PI * 2;
+        const rr = rIn * (1 + ampIn * wobbleAt(a, t, blob.y * 7, 1.35));
+        const x = Math.cos(a) * rr;
+        const y = Math.sin(a) * rr;
+        if (i === 0) sx.moveTo(x, y);
+        else sx.lineTo(x, y);
+      }
+      sx.closePath();
+      sx.fill("evenodd");
+    } else {
+      sx.closePath();
+      sx.fill();
     }
-    sx.closePath();
-    sx.fill("evenodd");
 
     // Soft edges: the half-resolution buffer is upscaled with a real blur,
     // so BOTH the inner and the outer rim dissolve into the background.
