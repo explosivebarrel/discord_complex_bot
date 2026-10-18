@@ -907,19 +907,20 @@ export function PlayerPage() {
                     </Tooltip>
                   </Box>
                 </Box>
+                {/* Icon-only between sm and xl: with labels the pair eats the
+                    search field at 1200-1400px. Text stays on phones (the
+                    buttons are full-width there) and on xl+ screens. */}
                 <Tooltip title="Add the link to the queue without searching">
                   <Button
                     variant="tonal"
-                    sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+                    sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" }, minWidth: 40 }}
                     disabled={!query.trim() || enqueueing !== null}
                     onClick={() => query.trim() && enqueue("url", { query, source })}
                   >
-                    {enqueueing === "url" ? (
-                      <CircularProgress size={16} sx={{ mr: 0.75 }} />
-                    ) : (
-                      <AddQueue fontSize="small" sx={{ mr: 0.75 }} />
-                    )}
-                    Queue URL
+                    {enqueueing === "url" ? <CircularProgress size={16} /> : <AddQueue fontSize="small" />}
+                    <Box component="span" sx={{ display: { xs: "inline", sm: "none", xl: "inline" }, ml: 0.75 }}>
+                      Queue URL
+                    </Box>
                   </Button>
                 </Tooltip>
                 {/* Uploads belong to the Local library, so the button only
@@ -929,16 +930,14 @@ export function PlayerPage() {
                     <Tooltip title="Upload your own audio file (mp3, ogg, flac, m4a, wav, opus)">
                       <Button
                         variant="tonal"
-                        sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+                        sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" }, minWidth: 40 }}
                         disabled={uploading !== null}
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        {uploading ? (
-                          <CircularProgress size={16} sx={{ mr: 0.75 }} />
-                        ) : (
-                          <UploadIcon fontSize="small" sx={{ mr: 0.75 }} />
-                        )}
-                        {uploading ? "Uploading…" : "Upload audio"}
+                        {uploading ? <CircularProgress size={16} /> : <UploadIcon fontSize="small" />}
+                        <Box component="span" sx={{ display: { xs: "inline", sm: "none", xl: "inline" }, ml: 0.75 }}>
+                          {uploading ? "Uploading…" : "Upload audio"}
+                        </Box>
                       </Button>
                     </Tooltip>
                     <input
@@ -1312,6 +1311,8 @@ export function PlayerPage() {
               )}
             </CardContent>
           </Card>
+          {/* The uploads list pairs with the upload button: Local only. */}
+          {source === "local" && (
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -1372,6 +1373,7 @@ export function PlayerPage() {
               )}
             </CardContent>
           </Card>
+          )}
           {playlist && (
             <PlaylistBrowser
               playlist={playlist}
