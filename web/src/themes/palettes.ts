@@ -64,14 +64,35 @@ export interface SurfaceTreatment {
   neonBorder?: string;
 }
 
+export interface AuroraBlob {
+  /** Center as a fraction of the viewport; r as a fraction of its smaller side. */
+  x: number;
+  y: number;
+  r: number;
+  /** Ring colors cycling from the center outward. */
+  colors: [string, string, string];
+  /** Edge wobble amplitude as a fraction of the radius. */
+  wobble: number;
+  /** Gradient cycle speed: band positions per second, center -> outward. */
+  drift: number;
+}
+
+export interface AuroraConfig {
+  /** Thin contrast ring drawn at every color band boundary. */
+  separator: string;
+  /** Additive blending: glowing rings on dark backgrounds. */
+  glow: boolean;
+  blobs: AuroraBlob[];
+}
+
 export interface AppThemeScheme {
   id: ThemeId;
   label: string;
   mode: "light" | "dark";
   tokens: M3Tokens;
   surface: SurfaceTreatment;
-  /** Aurora blob colors; their presence turns on AuroraBackground. */
-  aurora?: string[];
+  /** Aurora blob config; its presence turns on AuroraBackground. */
+  aurora?: AuroraConfig;
 }
 
 const OPAQUE: SurfaceTreatment = { shellAlpha: 1, cardAlpha: 1, shellBlur: 0, cardBlur: 0, saturate: 1 };
@@ -307,7 +328,17 @@ const auroraLight: AppThemeScheme = {
   label: "Aurora Light",
   mode: "light",
   surface: AURORA_SURFACE,
-  aurora: ["#B69DFF", "#FFB3D9", "#8FD3FF", "#A8EFCB"],
+  // One blob per color family: warm, cool, green, plus a mixed accent.
+  aurora: {
+    separator: "#3E3E48",
+    glow: false,
+    blobs: [
+      { x: 0.16, y: 0.2, r: 0.55, colors: ["#FFB454", "#FF7E5F", "#FFD166"], wobble: 0.07, drift: 0.05 },
+      { x: 0.84, y: 0.28, r: 0.5, colors: ["#7FA8FF", "#8A7BFF", "#5EC8E8"], wobble: 0.06, drift: 0.042 },
+      { x: 0.3, y: 0.8, r: 0.46, colors: ["#57C785", "#9BE8B0", "#2FA872"], wobble: 0.08, drift: 0.06 },
+      { x: 0.78, y: 0.82, r: 0.4, colors: ["#FF9AA8", "#FFD166", "#7FB2FF"], wobble: 0.07, drift: 0.048 },
+    ],
+  },
   tokens: {
     primary: "#6750A4",
     onPrimary: "#FFFFFF",
@@ -350,7 +381,16 @@ const auroraDark: AppThemeScheme = {
   label: "Aurora Dark",
   mode: "dark",
   surface: AURORA_SURFACE,
-  aurora: ["#6A48D7", "#B84DFF", "#1FA2C9", "#4F46E5"],
+  aurora: {
+    separator: "#D9D4EC",
+    glow: true,
+    blobs: [
+      { x: 0.18, y: 0.24, r: 0.55, colors: ["#6A48D7", "#3F8CFF", "#8A7BFF"], wobble: 0.07, drift: 0.05 },
+      { x: 0.82, y: 0.3, r: 0.5, colors: ["#B84DFF", "#FF5DA2", "#7A5CFF"], wobble: 0.06, drift: 0.04 },
+      { x: 0.34, y: 0.8, r: 0.48, colors: ["#1FC9A8", "#41E0C0", "#2E8BC0"], wobble: 0.08, drift: 0.055 },
+      { x: 0.78, y: 0.8, r: 0.4, colors: ["#4F46E5", "#9C6BFF", "#B84DFF"], wobble: 0.07, drift: 0.045 },
+    ],
+  },
   tokens: {
     primary: "#CFBDFF",
     onPrimary: "#3A1D71",

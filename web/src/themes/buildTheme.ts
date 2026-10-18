@@ -27,14 +27,20 @@ declare module "@mui/material/Button" {
  * Background of a shell (frame, nav, sheets) or card surface, honoring the
  * active theme's translucency: plain themes get the solid token, animated
  * themes get an alpha plus a backdrop blur so the backdrop shows through.
+ * Glass tiers (blur > 0) also gain a brightness lift and a specular
+ * highlight along the top edge — the base "liquid glass" read.
  */
 export function surfaceStyle(theme: Theme, base: string, tier: "shell" | "card") {
   const s = theme.surface;
   const a = tier === "shell" ? s.shellAlpha : s.cardAlpha;
   const blur = tier === "shell" ? s.shellBlur : s.cardBlur;
+  const dark = theme.palette.mode === "dark";
   return {
     bgcolor: a >= 1 ? base : alpha(base, a),
-    ...(blur > 0 && { backdropFilter: `blur(${blur}px) saturate(${s.saturate})` }),
+    ...(blur > 0 && {
+      backdropFilter: `blur(${blur}px) saturate(${s.saturate})${dark ? " brightness(1.08)" : ""}`,
+      boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", dark ? 0.1 : 0.35)}`,
+    }),
   };
 }
 
@@ -92,13 +98,24 @@ export function buildTheme(scheme: AppThemeScheme): Theme {
         styleOverrides: {
           root: {
             // MD3 filled card: one tone above the surface, no shadows.
-            backgroundImage: "none",
+            backgroundImage:
+              s.cardBlur > 0
+                ? // Glass tier: a faint diagonal sheen over the surface.
+                  `linear-gradient(135deg, ${alpha("#FFFFFF", scheme.mode === "dark" ? 0.06 : 0.2)}, transparent 45%)`
+                : "none",
             backgroundColor: s.cardAlpha >= 1 ? t.surfaceContainerLow : alpha(t.surfaceContainerLow, s.cardAlpha),
-            ...(s.cardBlur > 0 && { backdropFilter: `blur(${s.cardBlur}px) saturate(${s.saturate})` }),
+            ...(s.cardBlur > 0 && {
+              backdropFilter: `blur(${s.cardBlur}px) saturate(${s.saturate})${scheme.mode === "dark" ? " brightness(1.08)" : ""}`,
+              // "&&" out-specifies the Paper elevation shadow, which would
+              // otherwise override the glass speculars.
+              "&&": {
+                boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", scheme.mode === "dark" ? 0.12 : 0.45)}, 0 10px 30px rgba(0,0,0,.30)`,
+              },
+            }),
             // Translucent cards need a hairline to keep their edges over
             // the animated backdrop.
             ...(translucent && { border: `1px solid ${s.neonBorder ?? alpha(t.outlineVariant, 0.8)}` }),
-            boxShadow: "none",
+            ...(s.cardBlur === 0 && { boxShadow: "none" }),
             borderRadius: 16,
           },
         },

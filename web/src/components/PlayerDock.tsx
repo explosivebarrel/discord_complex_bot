@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, IconButton, LinearProgress, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
+import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -121,6 +123,23 @@ export function PlayerDock({
   const [livePos, setLivePos] = useState(0);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Liquid Glass refraction tracks the dock's live box (its map is built
+  // for an exact W×H, so it must rebuild on resize). The ref callback
+  // seeds the size synchronously, so the first paint is already glass.
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const attachDock = (el: HTMLDivElement | null) => {
+    dockRef.current = el;
+    if (el) setSize((p) => (p && p.w === el.offsetWidth && p.h === el.offsetHeight ? p : { w: el.offsetWidth, h: el.offsetHeight }));
+  };
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ w: el.offsetWidth, h: el.offsetHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const refract = svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
 
   // Advance the progress line locally between 3-second polls.
   useEffect(() => {
@@ -136,9 +155,17 @@ export function PlayerDock({
 
   return (
     <Box
+      ref={attachDock}
       sx={(t) => ({
         position: "relative",
-        ...surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card"),
+        ...(refract
+          ? {
+              // True Liquid Glass: the SVG filter lens replaces the plain
+              // blur; a lighter tint keeps the refraction visible.
+              bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.45),
+              backdropFilter: "url(#liquid-glass-dock) saturate(1.4) brightness(1.06)",
+            }
+          : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1.5, md: 2 },
         pb: 1.5,
@@ -148,6 +175,27 @@ export function PlayerDock({
         flexWrap: { xs: "wrap", md: "nowrap" },
       })}
     >
+      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} bezel={40} />}
+      {/* Specular sheen sweeping across the glass; clipped here so it never
+          paints outside the dock, and compositor-only (transform). */}
+      <Box sx={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            width: "34%",
+            background: "linear-gradient(105deg, transparent, rgba(255,255,255,0.09), transparent)",
+            transform: "translateX(-150%) skewX(-18deg)",
+            animation: "dock-sheen 11s ease-in-out infinite",
+            "@keyframes dock-sheen": {
+              "0%, 55%": { transform: "translateX(-150%) skewX(-18deg)" },
+              "85%, 100%": { transform: "translateX(400%) skewX(-18deg)" },
+            },
+            "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+          }}
+        />
+      </Box>
       {current && (isLoading ? (
         <Box sx={{ position: "absolute", top: 0, left: 0, right: 0 }}>
           <LinearProgress sx={{ height: 4, borderRadius: 0 }} />
