@@ -78,8 +78,6 @@ export interface AuroraBlob {
 }
 
 export interface AuroraConfig {
-  /** Thin contrast ring drawn at every color band boundary. */
-  separator: string;
   /** Additive blending: glowing rings on dark backgrounds. */
   glow: boolean;
   blobs: AuroraBlob[];
@@ -330,13 +328,12 @@ const auroraLight: AppThemeScheme = {
   surface: AURORA_SURFACE,
   // One blob per color family: warm, cool, green, plus a mixed accent.
   aurora: {
-    separator: "#3E3E48",
     glow: false,
     blobs: [
-      { x: 0.16, y: 0.2, r: 0.55, colors: ["#FFB454", "#FF7E5F", "#FFD166"], wobble: 0.07, drift: 0.05 },
-      { x: 0.84, y: 0.28, r: 0.5, colors: ["#7FA8FF", "#8A7BFF", "#5EC8E8"], wobble: 0.06, drift: 0.042 },
-      { x: 0.3, y: 0.8, r: 0.46, colors: ["#57C785", "#9BE8B0", "#2FA872"], wobble: 0.08, drift: 0.06 },
-      { x: 0.78, y: 0.82, r: 0.4, colors: ["#FF9AA8", "#FFD166", "#7FB2FF"], wobble: 0.07, drift: 0.048 },
+      { x: 0.16, y: 0.2, r: 0.62, colors: ["#FFB454", "#FF7E5F", "#FFD166"], wobble: 0.07, drift: 0.05 },
+      { x: 0.84, y: 0.28, r: 0.58, colors: ["#7FA8FF", "#8A7BFF", "#5EC8E8"], wobble: 0.06, drift: 0.042 },
+      { x: 0.3, y: 0.8, r: 0.55, colors: ["#57C785", "#9BE8B0", "#2FA872"], wobble: 0.08, drift: 0.06 },
+      { x: 0.78, y: 0.82, r: 0.5, colors: ["#FF9AA8", "#FFD166", "#7FB2FF"], wobble: 0.07, drift: 0.048 },
     ],
   },
   tokens: {
@@ -382,13 +379,12 @@ const auroraDark: AppThemeScheme = {
   mode: "dark",
   surface: AURORA_SURFACE,
   aurora: {
-    separator: "#D9D4EC",
     glow: true,
     blobs: [
-      { x: 0.18, y: 0.24, r: 0.55, colors: ["#6A48D7", "#3F8CFF", "#8A7BFF"], wobble: 0.07, drift: 0.05 },
-      { x: 0.82, y: 0.3, r: 0.5, colors: ["#B84DFF", "#FF5DA2", "#7A5CFF"], wobble: 0.06, drift: 0.04 },
-      { x: 0.34, y: 0.8, r: 0.48, colors: ["#1FC9A8", "#41E0C0", "#2E8BC0"], wobble: 0.08, drift: 0.055 },
-      { x: 0.78, y: 0.8, r: 0.4, colors: ["#4F46E5", "#9C6BFF", "#B84DFF"], wobble: 0.07, drift: 0.045 },
+      { x: 0.18, y: 0.24, r: 0.62, colors: ["#6A48D7", "#3F8CFF", "#8A7BFF"], wobble: 0.07, drift: 0.05 },
+      { x: 0.82, y: 0.3, r: 0.58, colors: ["#B84DFF", "#FF5DA2", "#7A5CFF"], wobble: 0.06, drift: 0.04 },
+      { x: 0.34, y: 0.8, r: 0.55, colors: ["#1FC9A8", "#41E0C0", "#2E8BC0"], wobble: 0.08, drift: 0.055 },
+      { x: 0.78, y: 0.8, r: 0.5, colors: ["#4F46E5", "#9C6BFF", "#B84DFF"], wobble: 0.07, drift: 0.045 },
     ],
   },
   tokens: {

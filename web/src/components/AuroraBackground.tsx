@@ -89,12 +89,15 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     const cx = blob.x * w;
     const cy = blob.y * h;
     const r = blob.r * unit;
-    const rIn = r * 0.46;
+    const rIn = r * 0.3;
     // The inner edge wobbles too — its own harmonic phases and a slightly
     // faster time scale, so hole and rim never move in sync.
-    const ampOut = 0.09;
-    const ampIn = 0.11;
-    const extent = r * (1 + ampOut) + 10;
+    const ampOut = 0.14;
+    const ampIn = 0.16;
+    // Feather width scales with the blob; the buffer margins cover both
+    // the wobble swing and the blur bleed.
+    const blurPx = Math.round(Math.min(20, Math.max(10, r * 0.04)));
+    const extent = r * (1 + ampOut) + blurPx + 6;
     const M = Math.max(4, Math.ceil(2 * extent * RENDER_SCALE));
     if (scratch.canvas.width !== M) {
       scratch.canvas.width = M;
@@ -105,8 +108,7 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     sx.clearRect(0, 0, M, M);
     sx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, M / 2, M / 2);
     // Torus bands: radial gradient spanning the ring between the two base
-    // radii, bands cycling from the center outward with a thin contrast
-    // separator at every boundary.
+    // radii, color bands cycling from the center outward with soft blends.
     const grad = sx.createRadialGradient(0, 0, rIn * 0.92, 0, 0, r);
     for (let s = 0; s <= RING_STEPS; s++) {
       const p = s / RING_STEPS;
@@ -115,9 +117,7 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
       const f = u - k;
       const cA = hexRgb(blob.colors[((k % BANDS) + BANDS) % BANDS]);
       const cB = hexRgb(blob.colors[(((k + 1) % BANDS) + BANDS) % BANDS]);
-      let c = mix(cA, cB, smooth(0.72, 1, f));
-      const sep = hexRgb(cfg.separator);
-      c = mix(sep, c, smooth(0.02, 0.12, f));
+      const c = mix(cA, cB, smooth(0.72, 1, f));
       grad.addColorStop(p, `rgb(${c.r | 0},${c.g | 0},${c.b | 0})`);
     }
     sx.fillStyle = grad;
@@ -140,7 +140,7 @@ export function drawAurora(ctx: CanvasRenderingContext2D, w: number, h: number, 
     ctx.save();
     ctx.globalAlpha = baseAlpha;
     ctx.globalCompositeOperation = cfg.glow ? "lighter" : "source-over";
-    if (scratch.blurOk) ctx.filter = "blur(6px)";
+    if (scratch.blurOk) ctx.filter = `blur(${blurPx}px)`;
     ctx.drawImage(scratch.canvas, cx - extent, cy - extent, extent * 2, extent * 2);
     ctx.restore();
   }
