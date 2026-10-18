@@ -922,29 +922,35 @@ export function PlayerPage() {
                     Queue URL
                   </Button>
                 </Tooltip>
-                <Tooltip title="Upload your own audio file (mp3, ogg, flac, m4a, wav, opus)">
-                  <Button
-                    variant="tonal"
-                    sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
-                    disabled={uploading !== null}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {uploading ? (
-                      <CircularProgress size={16} sx={{ mr: 0.75 }} />
-                    ) : (
-                      <UploadIcon fontSize="small" sx={{ mr: 0.75 }} />
-                    )}
-                    {uploading ? "Uploading…" : "Upload audio"}
-                  </Button>
-                </Tooltip>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={UPLOAD_ACCEPT}
-                  multiple
-                  hidden
-                  onChange={(e) => uploadFiles(e.target.files)}
-                />
+                {/* Uploads belong to the Local library, so the button only
+                    shows while that source is selected. */}
+                {source === "local" && (
+                  <>
+                    <Tooltip title="Upload your own audio file (mp3, ogg, flac, m4a, wav, opus)">
+                      <Button
+                        variant="tonal"
+                        sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+                        disabled={uploading !== null}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {uploading ? (
+                          <CircularProgress size={16} sx={{ mr: 0.75 }} />
+                        ) : (
+                          <UploadIcon fontSize="small" sx={{ mr: 0.75 }} />
+                        )}
+                        {uploading ? "Uploading…" : "Upload audio"}
+                      </Button>
+                    </Tooltip>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={UPLOAD_ACCEPT}
+                      multiple
+                      hidden
+                      onChange={(e) => uploadFiles(e.target.files)}
+                    />
+                  </>
+                )}
               </Stack>
 
               <Box sx={{ mt: 2 }}>
