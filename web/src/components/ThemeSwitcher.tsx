@@ -79,7 +79,7 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
         onClick={(e) => setAnchor(e.currentTarget)}
         sx={{ borderRadius: 999, mx: 1.25, mb: 0.5, px: 2, minHeight: 44 }}
       >
-        <ListItemIcon sx={{ minWidth: 40 }}>
+        <ListItemIcon sx={{ minWidth: 40, justifyContent: "center" }}>
           <IconPalette fontSize={20} />
         </ListItemIcon>
         <ListItemText

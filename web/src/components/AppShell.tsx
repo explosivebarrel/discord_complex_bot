@@ -283,7 +283,7 @@ function DrawerContent({
         )}
         {me && !collapsed && (
           <ListItemButton onClick={doLogout} sx={{ borderRadius: 999, mx: 1.25, mb: 0.5, px: 2, minHeight: 44 }}>
-            <ListItemIcon sx={{ minWidth: 40 }}>
+            <ListItemIcon sx={{ minWidth: 40, justifyContent: "center" }}>
               <Avatar src={me.avatar_url} sx={{ width: 26, height: 26, fontSize: 13 }} />
             </ListItemIcon>
             <ListItemText
