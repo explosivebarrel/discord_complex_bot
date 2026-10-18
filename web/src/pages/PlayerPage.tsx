@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import {
@@ -41,6 +41,7 @@ import {
   IconSearch as SearchIcon,
   IconShuffle as Shuffle,
   IconTag as TagIcon,
+  IconUpload as UploadIcon,
 } from "../components/icons";
 import {
   api,
@@ -48,7 +49,7 @@ import {
   TrackInfo,
   UserPlaylistFull,
 } from "../api";
-import { usePlayerState, useVoiceChannels, useFavorites, useMyPlaylists } from "../queries";
+import { usePlayerState, useVoiceChannels, useFavorites, useGuilds, useGuildUploads, useMyPlaylists } from "../queries";
 import { PlayerPageSkeleton } from "../components/Skeletons";
 import { m3 } from "../theme";
 import { useAuth } from "../useAuth";
@@ -95,7 +96,11 @@ const SOURCE_LABELS: Record<string, string> = {
   archive: "Archive.org",
   youtube: "YouTube",
   soundcloud: "SoundCloud",
+  local: "file",
 };
+
+/** Extensions the panel upload accepts (mirrors the backend check). */
+const UPLOAD_ACCEPT = ".mp3,.ogg,.oga,.flac,.m4a,.wav,.opus";
 
 function fmt(ms: number): string {
   if (ms >= LIVE_LENGTH) return "LIVE";
@@ -141,6 +146,16 @@ export function PlayerPage() {
   const [newPlName, setNewPlName] = useState("");
   const [plBusy, setPlBusy] = useState(false);
   const [volume, setVolume] = useState<number | null>(null);
+  // Uploads: the file name while its upload is in flight (single-flight).
+  const [uploading, setUploading] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadsQuery = useGuildUploads(gid);
+  const uploads = uploadsQuery.data ?? [];
+  const briefsQuery = useGuilds();
+  const canModerateUploads = (() => {
+    const brief = briefsQuery.data?.find((g) => g.id === gid);
+    return !!brief && (brief.is_admin || !!brief.is_owner);
+  })();
 
   const invalidatePlayer = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["player", gid] });
@@ -202,11 +217,11 @@ export function PlayerPage() {
       .catch(guard);
   };
 
-  const doSearch = () => {
-    if (!query.trim()) return;
+  const doSearch = (q: string = query, src: string = source) => {
+    if (!q.trim()) return;
     setSearching(true);
     api
-      .search(gid, query, source)
+      .search(gid, q, src)
       .then((r) => setResults(r))
       .catch(guard)
       .finally(() => setSearching(false));
@@ -230,6 +245,45 @@ export function PlayerPage() {
       })
       .catch(guard)
       .finally(() => setEnqueueing(null));
+  };
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files?.length || uploading !== null) return;
+    try {
+      let last: string | null = null;
+      for (const f of Array.from(files)) {
+        setUploading(f.name);
+        const row = await api.uploadTrack(gid, f);
+        last = row.name;
+      }
+      if (last) {
+        feedback.show(`Uploaded: ${last}`);
+        void uploadsQuery.refetch();
+        // Jump to the Local source so the fresh file is right there.
+        setSource("local");
+        setQuery("");
+        setResults(null);
+        doSearch("", "local");
+      }
+    } catch (e) {
+      guard(e as Error);
+    } finally {
+      setUploading(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const queueUpload = (key: string, path: string, title: string) =>
+    enqueue(key, { query: path, source: "local", title });
+
+  const removeUpload = (path: string) => {
+    api
+      .deleteUpload(gid, path)
+      .then(() => {
+        void uploadsQuery.refetch();
+        feedback.show("Upload deleted");
+      })
+      .catch(guard);
   };
 
   const openPlaylistPage = (pid: number, page: number, q: string) => {
@@ -844,7 +898,7 @@ export function PlayerPage() {
                         aria-hidden={!hasQuery}
                         aria-label={hasQuery ? "Search" : undefined}
                         tabIndex={hasQuery ? 0 : -1}
-                        onClick={hasQuery ? doSearch : undefined}
+                        onClick={hasQuery ? () => doSearch() : undefined}
                         disabled={searching}
                         sx={{ color: hasQuery ? undefined : "text.secondary" }}
                       >
@@ -868,6 +922,29 @@ export function PlayerPage() {
                     Queue URL
                   </Button>
                 </Tooltip>
+                <Tooltip title="Upload your own audio file (mp3, ogg, flac, m4a, wav, opus)">
+                  <Button
+                    variant="tonal"
+                    sx={{ height: 40, flexShrink: 0, width: { xs: "100%", sm: "auto" } }}
+                    disabled={uploading !== null}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {uploading ? (
+                      <CircularProgress size={16} sx={{ mr: 0.75 }} />
+                    ) : (
+                      <UploadIcon fontSize="small" sx={{ mr: 0.75 }} />
+                    )}
+                    {uploading ? "Uploading…" : "Upload audio"}
+                  </Button>
+                </Tooltip>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={UPLOAD_ACCEPT}
+                  multiple
+                  hidden
+                  onChange={(e) => uploadFiles(e.target.files)}
+                />
               </Stack>
 
               <Box sx={{ mt: 2 }}>
@@ -1226,6 +1303,66 @@ export function PlayerPage() {
                     </Typography>
                   )}
                 </>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                My uploads
+              </Typography>
+              {uploads.length === 0 ? (
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                  No uploads yet. Use Upload audio to add your own files — they
+                  are searchable under Local.
+                </Typography>
+              ) : (
+                <List disablePadding>
+                  {uploads.map((u) => {
+                    const mine = u.uploader === me?.discord_id;
+                    return (
+                      <ListItem
+                        key={u.path}
+                        disableGutters
+                        secondaryAction={
+                          <Stack direction="row" spacing={0.25}>
+                            <Tooltip title="Queue">
+                              <IconButton
+                                edge="end"
+                                aria-label={`Queue ${u.name}`}
+                                disabled={enqueueing !== null}
+                                onClick={() => queueUpload(`up:${u.path}`, u.path, u.name)}
+                              >
+                                {enqueueing === `up:${u.path}` ? (
+                                  <CircularProgress size={18} />
+                                ) : (
+                                  <AddQueue fontSize="small" />
+                                )}
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title={mine ? "Delete upload" : "Delete (admin)"}>
+                              <span>
+                                <IconButton
+                                  aria-label={`Delete ${u.name}`}
+                                  disabled={!mine && !canModerateUploads}
+                                  onClick={() => removeUpload(u.path)}
+                                >
+                                  <DeleteOutlined fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Stack>
+                        }
+                      >
+                        <ListItemText
+                          primary={u.name}
+                          secondary={`${u.size_mb} MB · ${mine ? "you" : u.uploader}`}
+                          slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
+                        />
+                      </ListItem>
+                    );
+                  })}
+                </List>
               )}
             </CardContent>
           </Card>

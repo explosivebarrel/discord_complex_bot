@@ -48,6 +48,14 @@ export function useVoiceChannels(guildId: string) {
   });
 }
 
+export function useGuildUploads(guildId: string) {
+  return useQuery({
+    queryKey: ["uploads", guildId],
+    queryFn: () => api.guildUploads(guildId),
+    enabled: guildId !== "",
+  });
+}
+
 export function useFavorites() {
   return useQuery({ queryKey: ["favorites"], queryFn: api.favorites });
 }

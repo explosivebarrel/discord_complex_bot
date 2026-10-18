@@ -81,6 +81,18 @@ export interface TrackInfo {
   loading?: boolean;
   /** Set on the lazy playlist row: open the browser for this playlist. */
   playlist_id?: number;
+  /** Local library rows: the library-relative path and file facts. */
+  path?: string;
+  size_mb?: number;
+  uploader?: string;
+}
+
+/** A file uploaded to the guild's library folder. */
+export interface GuildUpload {
+  path: string;
+  name: string;
+  size_mb: number;
+  uploader: string;
 }
 
 export interface PlayerState {
@@ -218,12 +230,6 @@ export interface ComposerData {
   emojis: { name: string; id: string; animated: boolean }[];
 }
 
-export interface LibraryFile {
-  path: string;
-  name: string;
-  size_mb: number;
-}
-
 async function handle<T>(resp: Response): Promise<T> {
   if (resp.status === 401) {
     window.location.href = "/login";
@@ -270,6 +276,22 @@ export const api = {
     fetch(`/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}`).then((r) =>
       handle<TrackInfo[]>(r),
     ),
+
+  uploadTrack: (guildId: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return fetch(`/api/guilds/${guildId}/player/uploads`, { method: "POST", body }).then((r) =>
+      handle<GuildUpload>(r),
+    );
+  },
+
+  guildUploads: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/uploads`).then((r) => handle<GuildUpload[]>(r)),
+
+  deleteUpload: (guildId: string, path: string) =>
+    fetch(`/api/guilds/${guildId}/player/uploads/${path.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "DELETE",
+    }).then((r) => handle<{ deleted: string }>(r)),
 
   enqueue: (
     guildId: string,

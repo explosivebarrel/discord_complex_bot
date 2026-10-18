@@ -45,6 +45,7 @@ export const IconKeyboardArrowUp = ic("keyboard_arrow_up");
 export const IconLibraryMusic = ic("library_music");
 export const IconLink = ic("link");
 export const IconLogout = ic("logout");
+export const IconUpload = ic("upload", false);
 export const IconMenu = ic("menu");
 export const IconMood = ic("mood");
 export const IconMusicNote = ic("music_note");

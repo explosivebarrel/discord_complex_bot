@@ -3,17 +3,33 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import CurrentUser, get_bot, get_config, get_db, get_music, require_guild_member
+from app.api.deps import (
+    CurrentUser,
+    get_bot,
+    get_config,
+    get_db,
+    get_music,
+    get_oauth,
+    is_admin_tier,
+    require_guild_member,
+)
 from app.core.config import Config
 from app.core.db import Database
 from app.core.services.extern_search import ExternalSearchError, archive_search, radio_search
-from app.core.services.library import search_library
+from app.core.services.library import (
+    FileTooLargeError,
+    delete_upload_path,
+    list_guild_uploads,
+    save_upload,
+    search_local_for_guild,
+)
 from app.core.services.music import MusicService, MusicServiceError, QueueItem
 
 if TYPE_CHECKING:
+    from app.api.discord_oauth import DiscordOAuthClient
     from app.bot.client import ComplexBot
 
 router = APIRouter(prefix="/api/guilds/{guild_id}/player", tags=["player"])
@@ -150,7 +166,12 @@ async def search(
         except ExternalSearchError as exc:
             raise HTTPException(status_code=502, detail=f"Archive search failed: {exc}") from exc
     if source == "local":
-        return search_library(config, q)
+        # TrackInfo-compatible rows: the panel Queue button enqueues
+        # {query: uri, source: "local"} against MusicService.enqueue.
+        rows = search_local_for_guild(config, guild_id, q)
+        for row in rows:
+            row.update({"title": row["name"], "author": "local", "uri": row["path"], "source": "local"})
+        return rows
     if source == "all":
         # One broken source must not fail the whole search.
         found = await asyncio.gather(
@@ -179,6 +200,79 @@ async def search(
         return await music.search(q, source=source)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/uploads")
+async def create_upload(
+    guild_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    user: CurrentUser = Depends(require_guild_member),
+    config: Config = Depends(get_config),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Any member may upload audio for this guild (<= max_upload_mb each)."""
+    # Cheap rejection before the multipart body is even read.
+    content_length = request.headers.get("content-length")
+    limit_bytes = (config.max_upload_mb + 1) * 1024 * 1024
+    if content_length and content_length.isdigit() and int(content_length) > limit_bytes:
+        raise HTTPException(status_code=413, detail=f"The file is larger than {config.max_upload_mb} MB")
+    try:
+        row = save_upload(config, guild_id, user.discord_id, file.filename or "", file.file)
+    except FileTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await file.close()
+    await db.audit(
+        "library.upload",
+        guild_id=guild_id,
+        actor_id=user.discord_id,
+        actor_kind="web",
+        details={"path": row["path"], "size_mb": row["size_mb"]},
+    )
+    return row
+
+
+@router.get("/uploads")
+async def get_uploads(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    config: Config = Depends(get_config),
+) -> list[dict[str, Any]]:
+    """This guild's uploads, newest first; the uploader id marks own files."""
+    return list_guild_uploads(config, guild_id)
+
+
+@router.delete("/uploads/{rel_path:path}")
+async def remove_upload(
+    guild_id: int,
+    rel_path: str,
+    user: CurrentUser = Depends(require_guild_member),
+    config: Config = Depends(get_config),
+    bot: ComplexBot = Depends(get_bot),
+    db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+) -> dict[str, Any]:
+    """The uploader may remove the file; the server's admin tier — any of them."""
+    target = delete_upload_path(config, guild_id, rel_path)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    uploader = target.name.split("-", 1)[0]
+    # is_admin_tier is mock-aware: an unmocked super-admin passes it, a
+    # mocked one gets exactly the pretended tier.
+    if not (uploader == str(user.discord_id) or await is_admin_tier(guild_id, user, oauth, bot, db)):
+        raise HTTPException(status_code=403, detail="You can delete only your own uploads")
+    target.unlink()
+    await db.audit(
+        "library.delete",
+        guild_id=guild_id,
+        actor_id=user.discord_id,
+        actor_kind="web",
+        details={"path": rel_path},
+    )
+    return {"deleted": rel_path}
 
 
 @router.post("/enqueue")

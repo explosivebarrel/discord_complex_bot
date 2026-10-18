@@ -15,7 +15,7 @@ import wavelink
 
 from app.core.db import Database
 from app.core.services import vk_music
-from app.core.services.library import library_stream_url
+from app.core.services.library import display_name, library_stream_url
 from app.core.services.vk_music import VkMusicError
 
 if TYPE_CHECKING:
@@ -508,6 +508,8 @@ class MusicService:
             title = f"{playlist_title} - {len(items)} track(s)"
         elif source == "local":
             # Pending item; the signed stream URL is built at play time.
+            # Uploaded files carry a "<uploader>-<ts>-" prefix in the stored
+            # name; show the clean title.
             items = [
                 QueueItem(
                     track=None,
@@ -515,7 +517,7 @@ class MusicService:
                     requested_by_name=requester_name,
                     source=source,
                     pending_url=query,
-                    title=str(meta.get("title") or Path(query).name),
+                    title=str(meta.get("title") or display_name(Path(query).stem)),
                     author="local",
                     length=int(meta.get("length_ms") or 0),
                     artwork=None,
