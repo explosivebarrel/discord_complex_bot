@@ -20,6 +20,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
 import { PostsPage } from "./pages/PostsPage";
 import { ModerationPage } from "./pages/ModerationPage";
+import { SandboxPage } from "./pages/SandboxPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,6 +93,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/guild/:guildId/posts" element={<PostsPage />} />
             <Route path="/guild/:guildId/moderation" element={<ModerationPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/sandbox" element={<SandboxPage />} />
           </Routes>
         </BrowserRouter>
       </ThemedApp>

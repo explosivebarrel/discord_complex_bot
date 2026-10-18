@@ -89,6 +89,21 @@ export function SettingsPage() {
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>
+              Developer sandbox
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5 }}>
+              A free-form canvas for testing UI effects in isolation — glass
+              methods, backdrops, draggable test objects.
+            </Typography>
+            <Button variant="tonal" href="/sandbox">
+              Open sandbox
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
               Integrations
             </Typography>
             {info ? (
