@@ -95,6 +95,9 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
         <Swatch scheme={s} />
       </ListItemIcon>
       <ListItemText primary={s.label} slotProps={{ primary: { noWrap: true } }} />
+      {/* Trailing slot: the check and the settings button share the same
+          28x28 box (a small IconButton's footprint), so their glyphs land
+          on one line. */}
       {s.id === "glass" ? (
         <Tooltip title="Liquid Glass settings">
           <IconButton
@@ -111,7 +114,9 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
           </IconButton>
         </Tooltip>
       ) : s.id === scheme.id ? (
-        <IconCheck fontSize={18} sx={{ color: "primary.main" }} />
+        <Box sx={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <IconCheck fontSize={18} sx={{ color: "primary.main" }} />
+        </Box>
       ) : null}
     </MenuItem>
   );
