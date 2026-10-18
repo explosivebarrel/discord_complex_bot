@@ -62,6 +62,12 @@ export interface SurfaceTreatment {
   saturate: number;
   /** Hairline color of glass edges (falls back to outlineVariant). */
   neonBorder?: string;
+  /**
+   * "Islands" glass architecture: the app frame stays transparent (no
+   * backdrop-filter, so no nested backdrop root) and nav/sheet/dock are
+   * sibling glass panels each sampling the raw backdrop.
+   */
+  islands?: boolean;
 }
 
 export interface AuroraBlob {
@@ -435,14 +441,16 @@ const glass: AppThemeScheme = {
   label: "Liquid Glass",
   mode: "dark",
   surface: {
-    // Moderate blur: heavy blur turns any backdrop test pattern into mush
-    // before the dock lens gets to bend it (nested-glass limitation).
-    shellAlpha: 0.62,
-    cardAlpha: 0.6,
-    shellBlur: 12,
-    cardBlur: 12,
-    saturate: 1.35,
+    // Islands architecture (see SurfaceTreatment.islands): the frame is a
+    // transparent layout shell; each panel is its own glass. Liquid glass
+    // is NOT frosted: tiny blur, saturation + contrast carry the read.
+    shellAlpha: 0.5,
+    cardAlpha: 0.45,
+    shellBlur: 6,
+    cardBlur: 6,
+    saturate: 1.5,
     neonBorder: "rgba(205,186,255,0.38)",
+    islands: true,
   },
   tokens: {
     primary: "#CDBDFF",

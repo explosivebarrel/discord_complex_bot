@@ -4,7 +4,7 @@ import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
 import { IconGraphicEq } from "./icons";
 import { MsIcon } from "./MsIcon";
 import { ThemeSwitcher } from "./ThemeSwitcher";
-import { surfaceStyle } from "../themes/buildTheme";
+import { islandStyle, surfaceStyle } from "../themes/buildTheme";
 import type { GuildBrief, Me } from "../api";
 import { api, guildAllows } from "../api";
 import { useGuilds, useMe } from "../queries";
@@ -441,11 +441,17 @@ export function AppShell({
         </Drawer>
       )}
 
-      {/* The inset frame: nav | content | player sheet. */}
+      {/* The inset frame: nav | content | player sheet. Islands-glass
+          themes keep the frame a transparent layout shell: a backdrop
+          filter here would create a backdrop root, so every nested glass
+          panel would sample this frame's already-filtered paint instead
+          of the animated backdrop (double blur, dead lens). */}
       <Box
         sx={(t) => ({
           height: "100%",
-          ...surfaceStyle(t, t.palette.m3.surface, "shell"),
+          ...(t.surface.islands
+            ? { bgcolor: "transparent" }
+            : surfaceStyle(t, t.palette.m3.surface, "shell")),
           borderRadius: { xs: "16px", md: "24px" },
           overflow: "hidden",
           display: "flex",
@@ -453,7 +459,7 @@ export function AppShell({
       >
         {isWide && (
           <Box
-            sx={{
+            sx={(t) => ({
               // One column animating between the drawer and the rail; the
               // expanded content and the rail crossfade instead of
               // reflowing, like the player sheet on the right.
@@ -461,11 +467,16 @@ export function AppShell({
               flexShrink: 0,
               position: "relative",
               overflow: "hidden",
+              // Islands glass: the nav is its own floating glass panel
+              // sampling the raw backdrop; plain themes sit on the frame.
+              ...(t.surface.islands
+                ? islandStyle(t, t.palette.m3.surface)
+                : { bgcolor: "transparent" }),
               // Glass themes edge the frame with a neon hairline instead of
               // the plain outline.
-              borderRight: (t) => `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              borderRight: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
               transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
-            }}
+            })}
           >
             <Box
               sx={{
@@ -528,7 +539,19 @@ export function AppShell({
           </Box>
         )}
 
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <Box
+          sx={(t) => ({
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            // Islands glass: the content area is a translucent scrim with
+            // NO filter, so cards and the dock sample the raw backdrop
+            // through it (a background color does not create a backdrop
+            // root; a backdrop-filter would).
+            ...(t.surface.islands && { bgcolor: `rgba(14, 10, 26, 0.35)` }),
+          })}
+        >
           {/* Page header: typography on the frame surface, no bar panel.
               Shares the centered content width so the title lines up with
               the page column on wide screens. */}
@@ -584,18 +607,21 @@ export function AppShell({
 
         {right && isLarge && (
           <Box
-            sx={{
+            sx={(t) => ({
               // One column that animates its width between the sheet and
               // the rail; content crossfades, the toggle stays put.
               width: rightOpen ? { lg: 320, xl: 340 } : 56,
               flexShrink: 0,
               position: "relative",
-              borderLeft: (t) => `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              ...(t.surface.islands
+                ? islandStyle(t, t.palette.m3.surface)
+                : {}),
+              borderLeft: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
               transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
-            }}
+            })}
           >
             <Box
               sx={{

@@ -47,6 +47,7 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
         top: -9,
         left: 0,
         right: 0,
+        zIndex: 1,
         height: 20,
         cursor: "pointer",
         touchAction: "none",
@@ -158,27 +159,34 @@ export function PlayerDock({
       ref={attachDock}
       sx={(t) => ({
         position: "relative",
-        ...(refract
-          ? {
-              // True Liquid Glass: the SVG filter lens replaces the plain
-              // blur; a lighter tint keeps the refraction visible.
-              bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.45),
-              backdropFilter: "url(#liquid-glass-dock) saturate(1.4) brightness(1.06)",
-            }
-          : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1.5, md: 2 },
         pb: 1.5,
-        display: "flex",
-        alignItems: "center",
-        gap: 2,
-        flexWrap: { xs: "wrap", md: "nowrap" },
+        ...(refract ? {} : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
       })}
     >
-      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} bezel={48} />}
+      {refract && size && <LiquidGlassFilter id="liquid-glass-dock" width={size.w} height={size.h} bezel={20} pinch={0.3} />}
+      {/* Warp layer (liquid-glass-react structure): a plain blur/saturate
+          backdrop-filter plus the SVG lens as the element's own filter.
+          Never put url() inside backdrop-filter (Chromium paint bug) and
+          never transform this layer. Content stays above, unwarped. */}
+      {refract && (
+        <Box
+          aria-hidden
+          sx={(t) => ({
+            position: "absolute",
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: "none",
+            bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.4),
+            backdropFilter: "blur(2px) saturate(1.5)",
+            filter: "url(#liquid-glass-dock) contrast(1.15) brightness(1.05)",
+          })}
+        />
+      )}
       {/* Specular sheen sweeping across the glass; clipped here so it never
           paints outside the dock, and compositor-only (transform). */}
-      <Box sx={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <Box sx={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 1 }}>
         <Box
           sx={{
             position: "absolute",
@@ -197,13 +205,25 @@ export function PlayerDock({
         />
       </Box>
       {current && (isLoading ? (
-        <Box sx={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+        <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 }}>
           <LinearProgress sx={{ height: 4, borderRadius: 0 }} />
         </Box>
       ) : !isLive ? (
         <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} />
       ) : null)}
 
+      {/* Dock content rides above the warp layer, so text and controls
+          never take the lens distortion. */}
+      <Box
+        sx={{
+          position: "relative",
+          zIndex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          flexWrap: { xs: "wrap", md: "nowrap" },
+        }}
+      >
       {/* Left column takes the same flex width as the right one, so the
           transport cluster stays centered in the dock. On phones the
           description drops below the controls row. */}
@@ -360,6 +380,7 @@ export function PlayerDock({
           </Tooltip>
         </Box>
       </Stack>
+      </Box>
 
       <Popover
         open={volumeOpen}

@@ -44,6 +44,22 @@ export function surfaceStyle(theme: Theme, base: string, tier: "shell" | "card")
   };
 }
 
+/**
+ * A single floating glass panel of the "islands" architecture: light blur,
+ * saturation + contrast (liquid glass, not frosted), a top-edge specular,
+ * a gradient hairline and a soft shadow. Sibling panels only — never nest
+ * one glass element inside another (nested backdrop roots double-filter).
+ */
+export function islandStyle(theme: Theme, base: string) {
+  const s = theme.surface;
+  const dark = theme.palette.mode === "dark";
+  return {
+    bgcolor: alpha(base, s.shellAlpha),
+    backdropFilter: `blur(${s.shellBlur}px) saturate(${s.saturate}) contrast(1.12)${dark ? " brightness(1.08)" : ""}`,
+    boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", dark ? 0.22 : 0.4)}, 0 12px 40px rgba(0,0,0,.35)`,
+  };
+}
+
 const cache = new Map<string, Theme>();
 
 export function buildTheme(scheme: AppThemeScheme): Theme {
@@ -105,11 +121,11 @@ export function buildTheme(scheme: AppThemeScheme): Theme {
                 : "none",
             backgroundColor: s.cardAlpha >= 1 ? t.surfaceContainerLow : alpha(t.surfaceContainerLow, s.cardAlpha),
             ...(s.cardBlur > 0 && {
-              backdropFilter: `blur(${s.cardBlur}px) saturate(${s.saturate})${scheme.mode === "dark" ? " brightness(1.08)" : ""}`,
+              backdropFilter: `blur(${s.cardBlur}px) saturate(${s.saturate}) contrast(1.12)${scheme.mode === "dark" ? " brightness(1.08)" : ""}`,
               // "&&" out-specifies the Paper elevation shadow, which would
               // otherwise override the glass speculars.
               "&&": {
-                boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", scheme.mode === "dark" ? 0.12 : 0.45)}, 0 10px 30px rgba(0,0,0,.30)`,
+                boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", scheme.mode === "dark" ? 0.16 : 0.45)}, 0 10px 30px rgba(0,0,0,.30)`,
               },
             }),
             // Translucent cards need a hairline to keep their edges over

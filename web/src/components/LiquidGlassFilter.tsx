@@ -34,12 +34,14 @@ const mapCache = new Map<string, { url: string; scale: number }>();
 
 /**
  * Displacement map over a W×H element, rasterized at MAP_SIZE and encoded
- * for feDisplacementMap (R = X shift, G = Y shift, 128 = neutral). The rim
- * of constant thickness `bezel` px bends light inward (Snell, n = 1.5)
- * over an Apple-style squircle surface profile; the center stays clean.
+ * for feDisplacementMap (R = X shift, G = Y shift, 128 = neutral).
+ * Magnifier-style "pinch" (the recipe of shuding/liquid-glass and Atlas
+ * Pup): within a rim band of constant `bezel` px the sample point is
+ * pulled toward the element center, so the backdrop compresses and
+ * magnifies at the rim; the center stays identity.
  */
-function buildDisplacementMap(w: number, h: number, radius: number, bezel: number) {
-  const key = `${Math.round(w)}x${Math.round(h)}r${Math.round(radius)}b${Math.round(bezel)}`;
+function buildDisplacementMap(w: number, h: number, radius: number, bezel: number, pinch: number) {
+  const key = `${Math.round(w)}x${Math.round(h)}r${Math.round(radius)}b${Math.round(bezel)}p${pinch}`;
   const hit = mapCache.get(key);
   if (hit) return hit;
   const canvas = document.createElement("canvas");
@@ -50,77 +52,70 @@ function buildDisplacementMap(w: number, h: number, radius: number, bezel: numbe
   const img = ctx.createImageData(MAP_SIZE, MAP_SIZE);
   const data = img.data;
 
-  // Refraction offset by rim depth (0 at the outer edge, 1 at the inner
-  // bezel boundary), from a single air->glass refraction of a vertical ray.
-  const n = 1.5;
-  const offsetAt = (t: number) => {
-    // Squircle height profile of the lens wall.
-    const height = Math.pow(1 - Math.pow(1 - t, 4), 0.25);
-    const eps = 0.001;
-    const slope = (Math.pow(1 - Math.pow(1 - (t + eps), 4), 0.25) - height) / eps;
-    const sinIn = slope / Math.hypot(1, slope);
-    return (sinIn - sinIn / n) * bezel;
-  };
-
-  let maxDisp = 0;
-  const disp = new Float32Array(MAP_SIZE * MAP_SIZE);
-  const nx = new Float32Array(MAP_SIZE * MAP_SIZE);
-  const ny = new Float32Array(MAP_SIZE * MAP_SIZE);
+  let maxAbs = 0;
+  const dxs = new Float32Array(MAP_SIZE * MAP_SIZE);
+  const dys = new Float32Array(MAP_SIZE * MAP_SIZE);
   for (let j = 0; j < MAP_SIZE; j++) {
     for (let i = 0; i < MAP_SIZE; i++) {
       const idx = j * MAP_SIZE + i;
-      // Map coordinates stretch over the real element box, so the rim has
-      // a constant px thickness on every side regardless of aspect.
+      // Map coordinates stretch over the real element box, so the rim band
+      // keeps a constant px thickness on every side regardless of aspect.
       const x = ((i + 0.5) / MAP_SIZE) * w;
       const y = ((j + 0.5) / MAP_SIZE) * h;
       const d = -roundedRectSdf(x, y, w, h, radius); // px inside from the edge
       if (d <= 0 || d >= bezel) continue;
-      const e = 1;
-      const gx = roundedRectSdf(x + e, y, w, h, radius) - roundedRectSdf(x - e, y, w, h, radius);
-      const gy = roundedRectSdf(x, y + e, w, h, radius) - roundedRectSdf(x, y - e, w, h, radius);
-      const len = Math.hypot(gx, gy) || 1;
-      nx[idx] = gx / len; // outward normal
-      ny[idx] = gy / len;
-      const amount = offsetAt(Math.min(d / bezel, 1));
-      disp[idx] = amount;
-      if (amount > maxDisp) maxDisp = amount;
+      // 0 at the band's inner boundary, 1 at the very edge (smooth).
+      const u = 1 - d / bezel;
+      const e = u * u * (3 - 2 * u);
+      // Sample toward the center: content magnifies into the rim.
+      const dx = -(x - w / 2) * pinch * e;
+      const dy = -(y - h / 2) * pinch * e;
+      dxs[idx] = dx;
+      dys[idx] = dy;
+      const m = Math.max(Math.abs(dx), Math.abs(dy));
+      if (m > maxAbs) maxAbs = m;
     }
   }
-  if (maxDisp <= 0) maxDisp = 1;
-  for (let idx = 0; idx < disp.length; idx++) {
-    const k = (disp[idx] / maxDisp) * 127;
-    data[idx * 4] = Math.round(128 + nx[idx] * k);
-    data[idx * 4 + 1] = Math.round(128 + ny[idx] * k);
+  if (maxAbs <= 0) maxAbs = 1;
+  for (let idx = 0; idx < dxs.length; idx++) {
+    data[idx * 4] = Math.round(128 + (dxs[idx] / maxAbs) * 127);
+    data[idx * 4 + 1] = Math.round(128 + (dys[idx] / maxAbs) * 127);
     data[idx * 4 + 2] = 128;
     data[idx * 4 + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
-  const entry = { url: canvas.toDataURL(), scale: maxDisp };
+  const entry = { url: canvas.toDataURL(), scale: maxAbs };
   if (mapCache.size > 24) mapCache.clear();
   mapCache.set(key, entry);
   return entry;
 }
 
 /**
- * SVG filter defs for one glass element. Render it once near the element
- * and reference from CSS as `backdrop-filter: url(#${id}) ...`.
+ * SVG filter defs for one glass element: just the displacement. Reference
+ * it from a warp span as `filter: url(#id) contrast(1.15) brightness(1.05)`
+ * layered over a plain `backdrop-filter: blur(2px) saturate(1.5)` (the
+ * liquid-glass-react structure — keeps the url() out of backdrop-filter,
+ * dodging the Chromium backdrop+transform paint bug). The filter region is
+ * oversized so rim sampling does not clip.
  */
 export function LiquidGlassFilter({
   id,
   width,
   height,
   radius = 0,
-  bezel = 40,
+  bezel = 20,
+  pinch = 0.3,
 }: {
   id: string;
   width: number;
   height: number;
   radius?: number;
   bezel?: number;
+  pinch?: number;
 }) {
   const { url, scale } = useMemo(
-    () => buildDisplacementMap(width, height, radius, bezel),
-    [width, height, radius, bezel],
+    () => buildDisplacementMap(width, height, radius, bezel, pinch),
+    [width, height, radius, bezel, pinch],
   );
   if (!url) return null;
   return (
@@ -128,18 +123,15 @@ export function LiquidGlassFilter({
       <defs>
         <filter
           id={id}
-          x={-20}
-          y={-20}
-          width={Math.round(width) + 40}
-          height={Math.round(height) + 40}
+          x={-40}
+          y={-40}
+          width={Math.round(width) + 80}
+          height={Math.round(height) + 80}
           filterUnits="userSpaceOnUse"
           colorInterpolationFilters="sRGB"
         >
           <feImage href={url} x={0} y={0} width={Math.round(width)} height={Math.round(height)} preserveAspectRatio="none" result="map" />
-          {/* Displace the backdrop like a lens rim, then soften and enrich it. */}
-          <feDisplacementMap in="SourceGraphic" in2="map" scale={scale} xChannelSelector="R" yChannelSelector="G" result="refracted" />
-          <feGaussianBlur in="refracted" stdDeviation="2" />
-          <feColorMatrix type="saturate" values="1.5" />
+          <feDisplacementMap in="SourceGraphic" in2="map" scale={scale} xChannelSelector="R" yChannelSelector="G" />
         </filter>
       </defs>
     </svg>
