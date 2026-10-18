@@ -7,7 +7,6 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 import { islandStyle, surfaceStyle } from "../themes/buildTheme";
 import type { GuildBrief, Me } from "../api";
 import { api, guildAllows } from "../api";
-import { useAppTheme } from "../themes/AppThemeContext";
 import { useGuilds, useMe } from "../queries";
 import { useBotName } from "../useMeta";
 import { useLocalPref } from "../useLocalPref";
@@ -341,7 +340,6 @@ export function AppShell({
   children: ReactNode;
 }) {
   const theme = useTheme();
-  const { glassTuning } = useAppTheme();
   const isWide = useMediaQuery(theme.breakpoints.up("md"));
   // lg and up: the player sidebar is a pinned column of the frame; below lg
   // it is a modal drawer so it never squeezes the page content.

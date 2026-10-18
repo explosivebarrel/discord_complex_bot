@@ -5,7 +5,7 @@ import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayAr
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
-import { glassCanvasHolder } from "./GlassBackground";
+import { useGlassCanvas } from "./GlassBackground";
 import { WebGLGlass } from "./WebGLGlass";
 import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
 
@@ -147,7 +147,8 @@ export function PlayerDock({
   const { glassTuning, scheme } = useAppTheme();
   // True WebGL glass: available on islands themes whose backdrop canvas
   // (GlassBackground) is mounted — it is the texture the lens samples.
-  const webgl = !!scheme.surface.islands && !!glassCanvasHolder.canvas;
+  const bgCanvas = useGlassCanvas();
+  const webgl = !!scheme.surface.islands && !!bgCanvas;
 
   // Advance the progress line locally between 3-second polls.
   useEffect(() => {

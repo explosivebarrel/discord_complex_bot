@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Box } from "@mui/material";
 import { useAppTheme } from "../themes/AppThemeContext";
 
@@ -25,8 +25,31 @@ const METEOR_MIN_GAP = 8000;
 const METEOR_VAR = 8000;
 const STAR_DENSITY: Record<string, number> = { "stars-sparse": 1, "stars-medium": 2.4, "stars-dense": 5 };
 
-/** Live handle to the glass backdrop canvas — WebGL glass samples it. */
-export const glassCanvasHolder: { canvas: HTMLCanvasElement | null } = { canvas: null };
+/** Live handle to the glass backdrop canvas — WebGL glass samples it.
+    `scale` is the devicePixelRatio the canvas was rasterized with, so
+    consumers can map CSS pixels onto the texture. */
+const holder: { canvas: HTMLCanvasElement | null; scale: number } = { canvas: null, scale: 1 };
+export const glassCanvasHolder = holder;
+const holderListeners = new Set<() => void>();
+
+function setHolderCanvas(canvas: HTMLCanvasElement | null) {
+  if (holder.canvas === canvas) return;
+  holder.canvas = canvas;
+  holderListeners.forEach((l) => l());
+}
+
+/** Reactive read of the backdrop canvas: re-renders when the canvas mounts
+    (theme switch, backdrop change), so glass panels rendered before it
+    latch on instead of waiting for an unrelated re-render. */
+export function useGlassCanvas() {
+  return useSyncExternalStore(
+    (cb) => {
+      holderListeners.add(cb);
+      return () => holderListeners.delete(cb);
+    },
+    () => holder.canvas,
+  );
+}
 
 function drawStaticBackdrop(ctx: CanvasRenderingContext2D, kind: string, w: number, h: number) {
   if (kind === "stripes") {
@@ -62,7 +85,7 @@ export function GlassBackground() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    glassCanvasHolder.canvas = canvas;
+    setHolderCanvas(canvas);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -75,6 +98,7 @@ export function GlassBackground() {
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      holder.scale = dpr;
       canvas.width = Math.round(window.innerWidth * dpr);
       canvas.height = Math.round(window.innerHeight * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -182,7 +206,7 @@ export function GlassBackground() {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibility);
-      glassCanvasHolder.canvas = null;
+      setHolderCanvas(null);
     };
   }, [stars, glassBackdrop]);
 

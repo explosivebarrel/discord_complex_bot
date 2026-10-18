@@ -139,7 +139,7 @@ export function WebGLGlass({
       return;
     }
     const vs = compile(gl, gl.VERTEX_SHADER, VERT);
-    const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG.replace("{ALPHA}", alpha.toFixed(3)));
+    const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
     if (!vs || !fs) {
       failedRef.current = true;
       return;
@@ -205,7 +205,10 @@ export function WebGLGlass({
           gl.useProgram(prog);
           gl.uniform2f(gl.getUniformLocation(prog, "u_res"), w, h);
           gl.uniform2f(gl.getUniformLocation(prog, "u_offset"), rect.left, rect.top);
-          gl.uniform2f(gl.getUniformLocation(prog, "u_canvas"), src.width, src.height);
+          // The backdrop canvas is rasterized at devicePixelRatio; the lens
+          // works in CSS pixels, so divide the texture size back down.
+          const scale = glassCanvasHolder.scale || 1;
+          gl.uniform2f(gl.getUniformLocation(prog, "u_canvas"), src.width / scale, src.height / scale);
           gl.uniform1f(gl.getUniformLocation(prog, "u_radius"), radius);
           gl.uniform1f(gl.getUniformLocation(prog, "u_bezel"), bezel);
           gl.uniform1f(gl.getUniformLocation(prog, "u_refraction"), refraction);
