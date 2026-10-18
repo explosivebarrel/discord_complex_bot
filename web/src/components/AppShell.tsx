@@ -547,12 +547,11 @@ export function AppShell({
             minWidth: 0,
             display: "flex",
             flexDirection: "column",
-            // Islands glass: the content area is a translucent scrim with
-            // NO filter, so cards, buttons and the dock sample the raw
-            // backdrop through it (a background color does not create a
-            // backdrop root; a backdrop-filter would). Opacity is tunable
-            // live in the Liquid Glass settings.
-            ...(t.surface.islands && { bgcolor: `rgba(14, 10, 26, ${glassTuning.scrim})` }),
+            // Islands glass: the content column is a glass island styled
+            // exactly like the nav/sheet (blur + saturate + contrast +
+            // specular). A CSS blur here does not disturb the dock's WebGL
+            // lens — it samples the fixed backdrop canvas, not the DOM.
+            ...(t.surface.islands ? islandStyle(t, t.palette.m3.surface) : {}),
           })}
         >
           {/* Page header: typography on the frame surface, no bar panel.

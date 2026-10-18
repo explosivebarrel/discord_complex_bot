@@ -29,7 +29,7 @@ export interface GlassTuning {
   scrim: number;
 }
 
-export const DEFAULT_GLASS_TUNING: GlassTuning = { maxDisp: 14, bezel: 20, dockBlur: 2, scrim: 0.15 };
+export const DEFAULT_GLASS_TUNING: GlassTuning = { maxDisp: 20, bezel: 20, dockBlur: 5, scrim: 0.15 };
 
 export function getGlassTuning(raw: string | null): GlassTuning {
   try {
