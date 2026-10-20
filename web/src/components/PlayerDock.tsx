@@ -224,8 +224,10 @@ export function PlayerDock({
         />
       </Box>
       {current && (isLoading ? (
-        <Box sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 }}>
-          <LinearProgress sx={{ height: 4, borderRadius: 0 }} />
+        // Same inset and geometry as the seek line it replaces, so the
+        // switch from loading to playback does not jump.
+        <Box sx={{ position: "absolute", top: -1, left: 28, right: 28, zIndex: 1 }}>
+          <LinearProgress sx={{ height: 4, borderRadius: 999 }} />
         </Box>
       ) : !isLive ? (
         <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} />
