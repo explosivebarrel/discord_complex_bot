@@ -143,8 +143,11 @@ export function PlayerDock({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const refract = svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
   const { glassTuning, scheme } = useAppTheme();
+  // The SVG lens only makes sense on liquid-glass themes: elsewhere the
+  // button is an opaque disc with nothing to refract.
+  const refract =
+    !!scheme.surface.islands && svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
   // True WebGL glass: available on islands themes whose backdrop canvas
   // (GlassBackground) is mounted — it is the texture the lens samples.
   const bgCanvas = useGlassCanvas();
@@ -168,9 +171,11 @@ export function PlayerDock({
       sx={(t) => ({
         position: "relative",
         // Floating dock: narrower than the column, inset from the edges,
-        // rounded — glass panels read as objects, not sheet edges.
+        // rounded — glass panels read as objects, not sheet edges. The
+        // bottom margin clears the frame's overflow clip so the drop
+        // shadow fades out instead of ending in a hard line.
         mx: { xs: 1.5, md: 3 },
-        mb: 1.25,
+        mb: { xs: 2, md: 3 },
         borderRadius: "20px",
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1.5, md: 2 },
