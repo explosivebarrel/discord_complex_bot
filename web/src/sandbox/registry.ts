@@ -3,6 +3,7 @@ import { glassPinchDef } from "./experiments/GlassPinch";
 import { glassSnellDef } from "./experiments/GlassSnell";
 import { glassSvgShaderDef } from "./experiments/GlassSvgShader";
 import { glassWebGLDef } from "./experiments/GlassWebGL";
+import { stripRenderDef } from "./experiments/StripRender";
 
 /** A tunable number rendered as a slider in the sandbox inspector. */
 export interface ParamSpec {
@@ -51,4 +52,5 @@ export const EXPERIMENTS: ExperimentDef[] = [
   glassSnellDef,
   glassWebGLDef,
   glassSvgShaderDef,
+  stripRenderDef,
 ];
