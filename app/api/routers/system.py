@@ -211,8 +211,13 @@ async def availability_view(
     if range_name not in specs:
         raise HTTPException(status_code=400, detail="range must be hour, day or month")
     bucket_count, bucket_seconds, span = specs[range_name]
-    now = utcnow()
-    start = now - span
+    # Align the window to bucket boundaries: a sliding start would reshuffle
+    # samples into different buckets on every request, and the strips would
+    # repaint differently between reloads.
+    now_epoch = int(utcnow().replace(tzinfo=timezone.utc).timestamp())
+    start_epoch = (now_epoch - int(span.total_seconds())) // bucket_seconds * bucket_seconds
+    start = datetime.fromtimestamp(start_epoch, tz=timezone.utc).replace(tzinfo=None)
+    now = datetime.fromtimestamp(start_epoch + bucket_count * bucket_seconds, tz=timezone.utc).replace(tzinfo=None)
 
     def epoch(dt: datetime) -> int:
         return int(dt.replace(tzinfo=timezone.utc).timestamp())
@@ -220,7 +225,7 @@ async def availability_view(
     counts: dict[str, list[list[int]]] = {
         service: [[0, 0, 0, 0] for _ in range(bucket_count)] for service in SERVICES
     }
-    if range == "month":
+    if range_name == "month":
         for r in await db.availability_rollups_since(start):
             idx = int((r.hour_start - start).total_seconds() // bucket_seconds)
             if 0 <= idx < bucket_count:
