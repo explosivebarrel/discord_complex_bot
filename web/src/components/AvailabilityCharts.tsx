@@ -1,5 +1,6 @@
-import { Box, Stack, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Stack, Typography, useMediaQuery } from "@mui/material";
 import type { AvailabilityResponse, AvailabilitySeries } from "../api";
+import { useStatusPalette } from "./statusColors";
 
 export const SERVICE_LABELS: Record<string, string> = {
   discord_api: "Discord API",
@@ -16,17 +17,14 @@ const GAP_HATCH = "repeating-linear-gradient(45deg, rgba(148,143,153,.4) 0 3px, 
 // Before the first sample (and after the last one) there is nothing to
 // report: the monitor was simply not running yet. Much lighter than a gap.
 const YET_TRACK = "rgba(148,143,153,.14)";
-// The dark theme's error.main is a pale blush — fine for text, but tiny
-// down markers disappear among the green. Small marks need a saturated red.
-export const DOWN_DARK = "#E5484D";
 
-function segmentColor([up, degraded, down, na]: [number, number, number, number], dark: boolean): string | null {
+function segmentColor([up, degraded, down, na]: [number, number, number, number], p: { up: string; degraded: string; down: string }): string | null {
   // No real samples at all = a gap (hatched). Only n/a = not configured.
   if (up + degraded + down === 0) return na > 0 ? "action.disabledBackground" : null;
-  if (down > 0 && up === 0) return dark ? DOWN_DARK : "error.main";
+  if (down > 0 && up === 0) return p.down;
   // Mixed outcomes or any degraded sample: the service was struggling.
-  if (degraded > 0 || (down > 0 && up > 0)) return "warning.main";
-  return "success.main";
+  if (degraded > 0 || (down > 0 && up > 0)) return p.degraded;
+  return p.up;
 }
 
 function bucketTitle(range: string, values: [number, number, number, number, number]): string {
@@ -42,7 +40,7 @@ function bucketTitle(range: string, values: [number, number, number, number, num
   return `${when} — up ${up}, degraded ${degraded}, down ${down}`;
 }
 
-function Strip({ range, series, dark, wide }: { range: string; series: AvailabilitySeries; dark: boolean; wide: boolean }) {
+function Strip({ range, series, palette, wide }: { range: string; series: AvailabilitySeries; palette: { up: string; degraded: string; down: string }; wide: boolean }) {
   // Zero-sample buckets before the first and after the last real sample
   // mean "not monitored yet", only the ones in between are true gaps
   // (the whole app was down) — they get the dense hatch.
@@ -66,7 +64,7 @@ function Strip({ range, series, dark, wide }: { range: string; series: Availabil
       }}
     >
       {series.values.map((values, index) => {
-        const color = segmentColor([values[1], values[2], values[3], values[4]], dark);
+        const color = segmentColor([values[1], values[2], values[3], values[4]], palette);
         const yet = (index < first || index > last) && !color;
         return (
           <Box
@@ -172,12 +170,12 @@ function OverallSteps({ data }: { data: AvailabilityResponse }) {
 
 /** Per-service uptime strips, the overall step chart and percentages. */
 export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse; range: string }) {
-  const dark = useTheme().palette.mode === "dark";
+  const palette = useStatusPalette();
   const wide = useMediaQuery((t) => t.breakpoints.up("sm"));
   const legend: { label: string; style: Record<string, string> }[] = [
-    { label: "operational", style: { bgcolor: "success.main" } },
-    { label: "degraded / high load", style: { bgcolor: "warning.main" } },
-    { label: "down", style: { bgcolor: dark ? DOWN_DARK : "error.main" } },
+    { label: "operational", style: { bgcolor: palette.up } },
+    { label: "degraded / high load", style: { bgcolor: palette.degraded } },
+    { label: "down", style: { bgcolor: palette.down } },
     { label: "not configured", style: { bgcolor: "action.disabledBackground" } },
     { label: "offline gap", style: { background: GAP_HATCH } },
     { label: "not monitored yet", style: { bgcolor: YET_TRACK } },
@@ -191,7 +189,7 @@ export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse
       <Stack spacing={1} sx={{ mt: 2 }}>
         {Object.entries(data.series).map(([key, series]) => {
           const pct = `${data.per_service[key]?.up_pct ?? "—"}%`;
-          const strip = <Strip range={range} series={series} dark={dark} wide={wide} />;
+          const strip = <Strip range={range} series={series} palette={palette} wide={wide} />;
           // Desktop: one line, label | strip | percent. Phones: the strip
           // rides below the label row at full width.
           return wide ? (

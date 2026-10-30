@@ -46,6 +46,11 @@ interface AppThemeState {
   setGlassBackdrop: (b: GlassBackdrop) => void;
   glassTuning: GlassTuning;
   setGlassTuning: (t: GlassTuning) => void;
+  /** Color-blind friendly status markers (Okabe-Ito based): a toggle in
+      the theme menu, applied to the availability strips, the Right-now
+      rows and the shell status chip in every theme. */
+  cbPalette: boolean;
+  setCbPalette: (v: boolean) => void;
 }
 
 export const AppThemeContext = createContext<AppThemeState>({
@@ -55,6 +60,8 @@ export const AppThemeContext = createContext<AppThemeState>({
   setGlassBackdrop: () => {},
   glassTuning: DEFAULT_GLASS_TUNING,
   setGlassTuning: () => {},
+  cbPalette: false,
+  setCbPalette: () => {},
 });
 
 export function useAppTheme(): AppThemeState {

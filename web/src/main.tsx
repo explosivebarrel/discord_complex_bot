@@ -38,6 +38,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
   const [themeId, setThemeId] = useLocalPrefValue("ui.theme", "dark");
   const [glassBg, setGlassBg] = useLocalPrefValue("ui.glassBg", "stars-sparse");
   const [glassTuningRaw, setGlassTuningRaw] = useLocalPrefValue("ui.glassTuning", "");
+  const [cbRaw, setCbRaw] = useLocalPrefValue("ui.cbPalette", "");
   const glassTuning = getGlassTuning(glassTuningRaw);
   const scheme = getScheme(themeId);
   const theme = useMemo(() => buildTheme(scheme), [scheme]);
@@ -54,6 +55,8 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
         setGlassBackdrop: setGlassBg,
         glassTuning,
         setGlassTuning: (t) => setGlassTuningRaw(JSON.stringify(t)),
+        cbPalette: cbRaw === "1",
+        setCbPalette: (v) => setCbRaw(v ? "1" : "0"),
       }}
     >
       <ThemeProvider theme={theme}>

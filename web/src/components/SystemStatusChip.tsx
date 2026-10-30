@@ -1,6 +1,7 @@
 import { Box, ListItemButton, ListItemIcon, Tooltip } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import { useSystemStatus } from "../queries";
+import { useStatusPalette } from "./statusColors";
 
 const AVAILABILITY_LINK = "/about?tab=availability";
 
@@ -15,7 +16,8 @@ export function SystemStatusChip({ collapsed }: { collapsed: boolean }) {
   const statuses = data.statuses ?? {};
   const down = statuses.discord_gateway === 0 || statuses.lavalink === 0;
   const degraded = !down && Object.values(statuses).some((v) => v === 1 || v === 0);
-  const color = down ? "error.main" : degraded ? "warning.main" : "success.main";
+  const pal = useStatusPalette();
+  const color = down ? pal.down : degraded ? pal.degraded : pal.up;
   const label = down ? "Bot offline" : degraded ? "Degraded" : "All systems operational";
   const dot = (
     <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: color }} />

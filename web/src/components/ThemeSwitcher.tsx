@@ -138,7 +138,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
 }
 
 function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLElement | null; onClose: () => void; onOpenGlassSettings: () => void }) {
-  const { scheme, setThemeId } = useAppTheme();
+  const { scheme, setThemeId, cbPalette, setCbPalette } = useAppTheme();
   const item = (s: AppThemeScheme) => (
     <MenuItem
       key={s.id}
@@ -186,6 +186,21 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
         Advanced
       </Typography>
       {ADVANCED_SCHEMES.map(item)}
+      <Divider />
+      <MenuItem
+        onClick={() => setCbPalette(!cbPalette)}
+        // The check mark shows the state like on the theme items.
+        selected={cbPalette}
+      >
+        <ListItemIcon sx={{ minWidth: 40, justifyContent: "center" }}>
+          {cbPalette ? <IconCheck fontSize={18} sx={{ color: "primary.main" }} /> : null}
+        </ListItemIcon>
+        <ListItemText
+          primary="Color-blind palette"
+          slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
+          secondary="Sky-blue / yellow / vermillion status markers"
+        />
+      </MenuItem>
     </Menu>
   );
 }
