@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   Box,
   Card,
@@ -11,6 +11,7 @@ import {
   Tabs,
   Typography,
 } from "@mui/material";
+import { useSearchParams } from "react-router-dom";
 import { IconCheckCircle, IconCancel, IconHelp } from "../components/icons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -153,33 +154,60 @@ function TermsTab() {
 
 export function AboutPage() {
   const { me, loading } = useAuth();
-  const [tab, setTab] = useState(0);
+  // The status chip deep-links the Availability tab (?tab=availability).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => (searchParams.get("tab") === "availability" ? 1 : 0));
+  useEffect(() => {
+    if (searchParams.get("tab") === "availability") setTab(1);
+  }, [searchParams]);
+  const selectTab = (v: number) => {
+    setTab(v);
+    setSearchParams(v === 1 ? { tab: "availability" } : {}, { replace: true });
+  };
   // Left-aligned like the Settings page: the cards column hugs the
   // content column instead of floating centered.
   const shell = (children: ReactNode) => (
     <AppShell me={me} back title="About">
       <Stack spacing={2} sx={{ maxWidth: 760 }}>
         {/* The section switcher is a card of its own; the active tab's
-            content follows in the next one. */}
+            blocks follow next to it, not inside a wrapper card. */}
         <Card>
-          <Tabs value={tab} onChange={(_, v: number) => setTab(v)}>
+          <Tabs value={tab} onChange={(_, v: number) => selectTab(v)}>
             <Tab label="About" />
             <Tab label="Availability" />
             <Tab label="Terms" />
           </Tabs>
         </Card>
-        <Card>
-          <CardContent>{children}</CardContent>
-        </Card>
+        {children}
       </Stack>
     </AppShell>
   );
-  if (loading) return shell(<CardSkeleton height={220} />);
+  if (loading) {
+    return shell(
+      <Card>
+        <CardContent>
+          <CardSkeleton height={220} />
+        </CardContent>
+      </Card>,
+    );
+  }
   return shell(
     <>
-      {tab === 0 && <AboutTab />}
+      {tab === 0 && (
+        <Card>
+          <CardContent>
+            <AboutTab />
+          </CardContent>
+        </Card>
+      )}
       {tab === 1 && <AvailabilityTab />}
-      {tab === 2 && <TermsTab />}
+      {tab === 2 && (
+        <Card>
+          <CardContent>
+            <TermsTab />
+          </CardContent>
+        </Card>
+      )}
     </>,
   );
 }

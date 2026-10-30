@@ -59,7 +59,9 @@ function Strip({ range, series }: { range: string; series: AvailabilitySeries })
             title={bucketTitle(range, values)}
             sx={{
               flex: 1,
-              minWidth: 1,
+              // Numeric minWidth goes through theme spacing in sx; a bare
+              // number rendered as 100% and blew the strip out of the card.
+              minWidth: 0,
               height: "100%",
               borderRadius: 0.5,
               ...(color
