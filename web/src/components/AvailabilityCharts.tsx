@@ -177,27 +177,63 @@ export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse
         All services, %
       </Typography>
       <OverallSteps data={data} />
-      <Stack spacing={0.75} sx={{ mt: 2 }}>
-        {Object.entries(data.series).map(([key, series]) => (
-          <Stack key={key} direction="row" spacing={1} sx={{ alignItems: "center" }}>
-            <Typography
-              variant="body2"
-              noWrap
-              sx={{ width: { xs: 96, sm: 120 }, flexShrink: 0, color: "text.secondary" }}
+      <Stack spacing={1} sx={{ mt: 2 }}>
+        {Object.entries(data.series).map(([key, series]) => {
+          const pct = `${data.per_service[key]?.up_pct ?? "—"}%`;
+          return (
+            // Phones: the strip rides below the label row at full width;
+            // sm and up keep the label | strip | percent line.
+            <Stack
+              key={key}
+              spacing={0.5}
+              sx={{ flexDirection: { xs: "column", sm: "row" }, alignItems: { sm: "center" } }}
             >
-              {SERVICE_LABELS[key] ?? key}
-            </Typography>
-            <Strip range={range} series={series} dark={dark} />
-            <Typography
-              variant="body2"
-              sx={{ width: 52, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
-            >
-              {data.per_service[key]?.up_pct ?? "—"}%
-            </Typography>
-          </Stack>
-        ))}
+              <Typography
+                variant="body2"
+                noWrap
+                sx={{ color: "text.secondary", flex: { sm: "0 0 auto" }, width: { sm: 120 } }}
+              >
+                {SERVICE_LABELS[key] ?? key}
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  display: { xs: "inline", sm: "none" },
+                  ml: "auto",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {pct}
+              </Typography>
+              <Strip range={range} series={series} dark={dark} />
+              <Typography
+                variant="body2"
+                sx={{
+                  display: { xs: "none", sm: "inline" },
+                  width: 52,
+                  textAlign: "right",
+                  flexShrink: 0,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {pct}
+              </Typography>
+            </Stack>
+          );
+        })}
       </Stack>
-      <Stack direction="row" spacing={1.5} sx={{ mt: 1.5, flexWrap: "wrap", rowGap: 0.5 }}>
+      {/* Plain CSS gap instead of Stack spacing: Stack's negative margins
+          indent every wrapped legend line. */}
+      <Box
+        sx={{
+          display: "flex",
+          flexWrap: "wrap",
+          columnGap: 1.5,
+          rowGap: 0.5,
+          mt: 1.5,
+          alignItems: "center",
+        }}
+      >
         {legend.map((item) => (
           <Stack key={item.label} direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
             <Box sx={{ width: 10, height: 10, borderRadius: 0.5, ...item.style }} />
@@ -206,7 +242,7 @@ export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse
             </Typography>
           </Stack>
         ))}
-      </Stack>
+      </Box>
     </Box>
   );
 }
