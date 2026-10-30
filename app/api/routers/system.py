@@ -216,6 +216,9 @@ async def availability_view(
     # repaint differently between reloads.
     now_epoch = int(utcnow().replace(tzinfo=timezone.utc).timestamp())
     start_epoch = (now_epoch - int(span.total_seconds())) // bucket_seconds * bucket_seconds
+    # The aligned window can span one more bucket than the nominal count
+    # (e.g. the month view starts at UTC midnight and today is a 31st slot).
+    bucket_count = now_epoch // bucket_seconds - start_epoch // bucket_seconds + 1
     start = datetime.fromtimestamp(start_epoch, tz=timezone.utc).replace(tzinfo=None)
     now = datetime.fromtimestamp(start_epoch + bucket_count * bucket_seconds, tz=timezone.utc).replace(tzinfo=None)
 
@@ -276,7 +279,10 @@ async def availability_view(
             up, degraded, down, _na = counts[service][index]
             if up + degraded + down > 0:
                 applicable += 1
-                worked += up + degraded
+                # A bucket holds many samples per service: the overall line
+                # is the share of applicable services that worked at all.
+                if up + degraded > 0:
+                    worked += 1
         overall.append(
             [epoch(start) + index * bucket_seconds, round(worked * 100 / applicable, 1) if applicable else None]
         )
