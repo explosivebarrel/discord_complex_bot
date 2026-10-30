@@ -13,6 +13,9 @@ export const SERVICE_LABELS: Record<string, string> = {
 };
 
 const GAP_HATCH = "repeating-linear-gradient(45deg, rgba(148,143,153,.4) 0 3px, transparent 3px 6px)";
+// Before the first sample (and after the last one) there is nothing to
+// report: the monitor was simply not running yet. Much lighter than a gap.
+const YET_TRACK = "rgba(148,143,153,.14)";
 
 function segmentColor([up, degraded, down, na]: [number, number, number, number]): string | null {
   // No real samples at all = a gap (hatched). Only n/a = not configured.
@@ -37,10 +40,19 @@ function bucketTitle(range: string, values: [number, number, number, number, num
 }
 
 function Strip({ range, series }: { range: string; series: AvailabilitySeries }) {
+  // Zero-sample buckets before the first and after the last real sample
+  // mean "not monitored yet", only the ones in between are true gaps
+  // (the whole app was down) — they get the dense hatch.
+  const first = series.values.findIndex((v) => v[1] + v[2] + v[3] + v[4] > 0);
+  let last = -1;
+  series.values.forEach((v, i) => {
+    if (v[1] + v[2] + v[3] + v[4] > 0) last = i;
+  });
   return (
     <Box sx={{ display: "flex", flex: 1, gap: "1px", height: 16, minWidth: 0 }}>
-      {series.values.map((values) => {
+      {series.values.map((values, index) => {
         const color = segmentColor([values[1], values[2], values[3], values[4]]);
+        const yet = (index < first || index > last) && !color;
         return (
           <Box
             key={values[0]}
@@ -52,7 +64,9 @@ function Strip({ range, series }: { range: string; series: AvailabilitySeries })
               borderRadius: 0.5,
               ...(color
                 ? { bgcolor: color }
-                : { background: GAP_HATCH }),
+                : yet
+                  ? { bgcolor: YET_TRACK }
+                  : { background: GAP_HATCH }),
             }}
           />
         );
@@ -78,6 +92,14 @@ function OverallSteps({ data }: { data: AvailabilityResponse }) {
   let pts: Pt[] | null = null;
   let prevY = 0;
   let gapFrom: number | null = null;
+  let firstIdx = -1;
+  let lastIdx = -1;
+  values.forEach(([, pct], i) => {
+    if (pct != null) {
+      if (firstIdx < 0) firstIdx = i;
+      lastIdx = i;
+    }
+  });
   values.forEach(([, pct], i) => {
     const xi = x(i);
     if (pct == null) {
@@ -85,7 +107,9 @@ function OverallSteps({ data }: { data: AvailabilityResponse }) {
         segments.push(pts);
         pts = null;
       }
-      if (gapFrom == null) gapFrom = xi;
+      // Zero buckets before/after the monitored span are "not yet",
+      // only ones in between are true gaps.
+      if (gapFrom == null && i > firstIdx && i <= lastIdx) gapFrom = xi;
       return;
     }
     if (gapFrom != null) {
@@ -98,7 +122,7 @@ function OverallSteps({ data }: { data: AvailabilityResponse }) {
     prevY = yi;
   });
   if (pts) segments.push(pts);
-  if (gapFrom != null) gaps.push({ from: gapFrom, to: w });
+  if (gapFrom != null && lastIdx >= 0) gaps.push({ from: gapFrom, to: x(lastIdx) });
 
   return (
     <svg
@@ -136,7 +160,8 @@ const LEGEND: { label: string; style: Record<string, string> }[] = [
   { label: "degraded / high load", style: { bgcolor: "warning.main" } },
   { label: "down", style: { bgcolor: "error.main" } },
   { label: "not configured", style: { bgcolor: "action.disabledBackground" } },
-  { label: "offline (no data)", style: { background: GAP_HATCH } },
+  { label: "offline gap", style: { background: GAP_HATCH } },
+  { label: "not monitored yet", style: { bgcolor: YET_TRACK } },
 ];
 
 /** Per-service uptime strips, the overall step chart and percentages. */

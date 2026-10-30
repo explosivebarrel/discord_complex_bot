@@ -61,21 +61,16 @@ function AvailabilityTab() {
   const status = useSystemStatus();
   return (
     <Stack spacing={2}>
-      <Tabs value={range} onChange={(_, v: string) => setRange(v)}>
-        <Tab value="hour" label="Hour" />
-        <Tab value="day" label="Day" />
-        <Tab value="month" label="Month" />
-      </Tabs>
-      {availability.isPending ? (
-        <CardSkeleton height={220} />
-      ) : availability.isError ? (
-        <Typography variant="body2" sx={{ color: "error.main" }}>
-          Availability data is unavailable: {(availability.error as Error).message}
-        </Typography>
-      ) : (
-        <AvailabilityCharts data={availability.data} range={range} />
-      )}
-      <Card variant="outlined">
+      {/* The range switch lives in its own card, status and charts follow
+          as separate blocks — the Settings page card rhythm. */}
+      <Card>
+        <Tabs value={range} onChange={(_, v: string) => setRange(v)}>
+          <Tab value="hour" label="Hour" />
+          <Tab value="day" label="Day" />
+          <Tab value="month" label="Month" />
+        </Tabs>
+      </Card>
+      <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
             Right now
@@ -91,6 +86,19 @@ function AvailabilityTab() {
             <Typography variant="body2" sx={{ color: "text.secondary" }}>
               No probe data yet — the monitor samples every minute.
             </Typography>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent>
+          {availability.isPending ? (
+            <CardSkeleton height={220} />
+          ) : availability.isError ? (
+            <Typography variant="body2" sx={{ color: "error.main" }}>
+              Availability data is unavailable: {(availability.error as Error).message}
+            </Typography>
+          ) : (
+            <AvailabilityCharts data={availability.data} range={range} />
           )}
         </CardContent>
       </Card>
@@ -146,18 +154,22 @@ function TermsTab() {
 export function AboutPage() {
   const { me, loading } = useAuth();
   const [tab, setTab] = useState(0);
+  // Left-aligned like the Settings page: the cards column hugs the
+  // content column instead of floating centered.
   const shell = (children: ReactNode) => (
     <AppShell me={me} back title="About">
-      <Stack spacing={2} sx={{ maxWidth: 760, mx: "auto" }}>
+      <Stack spacing={2} sx={{ maxWidth: 760 }}>
+        {/* The section switcher is a card of its own; the active tab's
+            content follows in the next one. */}
         <Card>
-          <CardContent>
-            <Tabs value={tab} onChange={(_, v: number) => setTab(v)}>
-              <Tab label="About" />
-              <Tab label="Availability" />
-              <Tab label="Terms" />
-            </Tabs>
-            <Box sx={{ pt: 2 }}>{children}</Box>
-          </CardContent>
+          <Tabs value={tab} onChange={(_, v: number) => setTab(v)}>
+            <Tab label="About" />
+            <Tab label="Availability" />
+            <Tab label="Terms" />
+          </Tabs>
+        </Card>
+        <Card>
+          <CardContent>{children}</CardContent>
         </Card>
       </Stack>
     </AppShell>
