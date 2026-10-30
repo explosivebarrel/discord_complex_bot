@@ -10,6 +10,7 @@ import {
   Tab,
   Tabs,
   Typography,
+  useTheme,
 } from "@mui/material";
 import { useSearchParams } from "react-router-dom";
 import { IconCheckCircle, IconCancel, IconHelp } from "../components/icons";
@@ -18,14 +19,14 @@ import { AppShell } from "../components/AppShell";
 import { CardSkeleton } from "../components/Skeletons";
 import { useAvailability, useSystemStatus } from "../queries";
 import { useBotName } from "../useMeta";
-import { AvailabilityCharts, SERVICE_LABELS } from "../components/AvailabilityCharts";
+import { AvailabilityCharts, SERVICE_LABELS, DOWN_DARK } from "../components/AvailabilityCharts";
 
 type Status = number | null;
 
-function statusColor(value: Status): string {
+function statusColor(value: Status, dark: boolean): string {
   if (value === 2) return "success.main";
   if (value === 1) return "warning.main";
-  if (value === 0) return "error.main";
+  if (value === 0) return dark ? DOWN_DARK : "error.main";
   return "text.disabled";
 }
 
@@ -36,20 +37,20 @@ function statusWord(value: Status): string {
   return "not configured";
 }
 
-function StatusRow({ label, value }: { label: string; value: Status }) {
+function StatusRow({ label, value, dark }: { label: string; value: Status; dark: boolean }) {
   return (
     <ListItem disableGutters dense>
       <ListItemIcon sx={{ minWidth: 32 }}>
         {value === 2 ? (
-          <IconCheckCircle fontSize={18} sx={{ color: statusColor(value) }} />
+          <IconCheckCircle fontSize={18} sx={{ color: statusColor(value, dark) }} />
         ) : value === null ? (
-          <IconHelp fontSize={18} sx={{ color: statusColor(value) }} />
+          <IconHelp fontSize={18} sx={{ color: statusColor(value, dark) }} />
         ) : (
-          <IconCancel fontSize={18} sx={{ color: statusColor(value) }} />
+          <IconCancel fontSize={18} sx={{ color: statusColor(value, dark) }} />
         )}
       </ListItemIcon>
       <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
-      <Typography variant="body2" sx={{ color: statusColor(value) }}>
+      <Typography variant="body2" sx={{ color: statusColor(value, dark) }}>
         {statusWord(value)}
       </Typography>
     </ListItem>
@@ -60,6 +61,7 @@ function AvailabilityTab() {
   const [range, setRange] = useState("hour");
   const availability = useAvailability(range);
   const status = useSystemStatus();
+  const dark = useTheme().palette.mode === "dark";
   return (
     <Stack spacing={2}>
       {/* The range switch lives in its own card, status and charts follow
@@ -79,9 +81,9 @@ function AvailabilityTab() {
           {status.data ? (
             <Box>
               {Object.entries(status.data.statuses).map(([key, value]) => (
-                <StatusRow key={key} label={SERVICE_LABELS[key] ?? key} value={value} />
+                <StatusRow key={key} label={SERVICE_LABELS[key] ?? key} value={value} dark={dark} />
               ))}
-              <StatusRow label="Discord bot" value={status.data.bot_ready ? 2 : 0} />
+              <StatusRow label="Discord bot" value={status.data.bot_ready ? 2 : 0} dark={dark} />
             </Box>
           ) : (
             <Typography variant="body2" sx={{ color: "text.secondary" }}>

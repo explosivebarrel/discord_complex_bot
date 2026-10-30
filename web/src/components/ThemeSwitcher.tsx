@@ -200,16 +200,29 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
   );
   const glassDialog = <GlassSettingsDialog open={glassSettings} onClose={() => setGlassSettings(false)} />;
   if (collapsed) {
+    // Same 48px round ListItemButton as the other rail rows: a plain
+    // IconButton is 40px, so its hover/selected halo reads smaller.
     return (
       <>
         <Tooltip title={`Palette: ${scheme.label}`} placement="right" disableInteractive>
-          <IconButton
+          <ListItemButton
             aria-label="Switch theme"
             onClick={(e) => setAnchor(e.currentTarget)}
-            sx={{ mx: "auto", display: "flex", mb: 0.5 }}
+            sx={{
+              width: 48,
+              height: 48,
+              minHeight: 48,
+              px: 0,
+              mx: "auto",
+              mb: 0.5,
+              borderRadius: "50%",
+              justifyContent: "center",
+            }}
           >
-            <IconPalette fontSize={22} />
-          </IconButton>
+            <ListItemIcon sx={{ minWidth: 0, justifyContent: "center" }}>
+              <IconPalette fontSize={22} />
+            </ListItemIcon>
+          </ListItemButton>
         </Tooltip>
         {menu}
         {glassDialog}

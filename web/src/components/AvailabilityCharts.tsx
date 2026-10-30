@@ -18,7 +18,7 @@ const GAP_HATCH = "repeating-linear-gradient(45deg, rgba(148,143,153,.4) 0 3px, 
 const YET_TRACK = "rgba(148,143,153,.14)";
 // The dark theme's error.main is a pale blush — fine for text, but tiny
 // down markers disappear among the green. Small marks need a saturated red.
-const DOWN_DARK = "#E5484D";
+export const DOWN_DARK = "#E5484D";
 
 function segmentColor([up, degraded, down, na]: [number, number, number, number], dark: boolean): string | null {
   // No real samples at all = a gap (hatched). Only n/a = not configured.
