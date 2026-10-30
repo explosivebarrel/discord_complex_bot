@@ -226,9 +226,10 @@ async def _guild_access(
         member = guild.get_member(user.discord_id) if guild else None
         if guild is None or member is None:
             return False, False
-        is_discord_admin = guild.owner_id == user.discord_id or bool(
-            member.guild_permissions & discord.Permissions.manage_guild
-        )
+        # Permissions instances expose per-flag booleans; the class-level
+        # discord.Permissions.manage_guild is a flag_value descriptor and
+        # cannot take part in "&" (crashes inside the fallback).
+        is_discord_admin = guild.owner_id == user.discord_id or member.guild_permissions.manage_guild
         return True, is_discord_admin
 
 

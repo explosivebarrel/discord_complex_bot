@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -46,12 +47,23 @@ def create_app() -> FastAPI:
     music.bot = bot
 
     async def _run_bot() -> None:
-        try:
-            await bot.start(config.discord_bot_token)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("The Discord bot stopped with an error")
+        # A flaky network kills the first connect (gateway 5xx, TLS resets);
+        # retry with backoff instead of staying down until a manual restart.
+        delay = 5
+        while True:
+            started = time.monotonic()
+            try:
+                await bot.start(config.discord_bot_token)
+                return  # Clean close (logout).
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("The Discord bot stopped with an error")
+            # A connect that lived for a while means the network recovered
+            # at least once — start the backoff over.
+            delay = 5 if time.monotonic() - started > 60 else min(delay * 2, 120)
+            logger.warning("Restarting the Discord bot in %ss", delay)
+            await asyncio.sleep(delay)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
