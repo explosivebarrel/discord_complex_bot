@@ -55,7 +55,10 @@ function Strip({ range, series, dark, wide }: { range: string; series: Availabil
     <Box
       sx={{
         display: "flex",
-        gap: "1px",
+        // A 1px transparent gap is invisible on the dark card between two
+        // green capsules -- segments read as "stuck together". Two pixels
+        // plus a smaller corner radius keeps neighbours apart.
+        gap: "2px",
         height: 16,
         width: "100%",
         minWidth: 0,
@@ -76,7 +79,7 @@ function Strip({ range, series, dark, wide }: { range: string; series: Availabil
               flex: "1 1 0%",
               minWidth: 0,
               height: "100%",
-              borderRadius: 0.5,
+              borderRadius: 1,
               ...(color
                 ? { bgcolor: color }
                 : yet
