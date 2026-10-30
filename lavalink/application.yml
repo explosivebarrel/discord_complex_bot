@@ -4,10 +4,15 @@ server:
 
 lavalink:
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
-      snapshot: false
+    # The YouTube plugin is disabled: www.youtube.com is TLS-blocked from
+    # this server, and the plugin crashes Lavalink at startup on its init
+    # request (2026-10-30). Re-enable it together with the plugins.youtube
+    # section below once YouTube is reachable again (proxy or off-server
+    # Lavalink).
+    # - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+    #   snapshot: false
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
-      repository: "https://maven.lavalink.dev/releases" 
+      repository: "https://maven.lavalink.dev/releases"
   server:
     password: "${LAVALINK_PASSWORD}"
     sources:
