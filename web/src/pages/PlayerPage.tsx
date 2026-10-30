@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import {
   Box,
@@ -125,6 +125,15 @@ export function PlayerPage() {
   const favorites = favoritesQuery.data ?? [];
   const myPlsQuery = useMyPlaylists();
   const myPls = myPlsQuery.data ?? [];
+  // Search-source availability from the backend's own probe; a false entry
+  // disables its tab until a later poll says it is back.
+  const sourcesQuery = useQuery({
+    queryKey: ["system-sources"],
+    queryFn: api.sources,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const sourceAvailable = (id: string) => sourcesQuery.data ? sourcesQuery.data[id] !== false : true;
 
   const [selectedChannel, setSelectedChannel] = useState<string>("");
   const [query, setQuery] = useState("");
@@ -156,6 +165,15 @@ export function PlayerPage() {
     const brief = briefsQuery.data?.find((g) => g.id === gid);
     return !!brief && (brief.is_admin || !!brief.is_owner);
   })();
+
+  // A source that went unavailable cannot stay selected: fall back to All.
+  useEffect(() => {
+    const d = sourcesQuery.data;
+    if (d && source !== "all" && d[source] === false) {
+      setSource("all");
+      setResults(null);
+    }
+  }, [sourcesQuery.data, source]);
 
   const invalidatePlayer = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["player", gid] });
@@ -794,21 +812,31 @@ export function PlayerPage() {
                   pb: { xs: 0.5, sm: 0 },
                 }}
               >
-                {SOURCES.map((s) => (
-                  <Chip
-                    key={s.id}
-                    icon={s.icon}
-                    label={s.label}
-                    clickable
-                    color={source === s.id ? "primary" : "default"}
-                    variant={source === s.id ? "filled" : "outlined"}
-                    onClick={() => {
-                      setSource(s.id);
-                      setResults(null);
-                    }}
-                    sx={{ flexShrink: 0 }}
-                  />
-                ))}
+                {SOURCES.map((s) => {
+                  const available = sourceAvailable(s.id);
+                  const chip = (
+                    <Chip
+                      icon={s.icon}
+                      label={s.label}
+                      clickable
+                      disabled={!available}
+                      color={source === s.id ? "primary" : "default"}
+                      variant={source === s.id ? "filled" : "outlined"}
+                      onClick={() => {
+                        setSource(s.id);
+                        setResults(null);
+                      }}
+                      sx={{ flexShrink: 0 }}
+                    />
+                  );
+                  // A Box wrapper keeps hover events alive on the disabled
+                  // chip (disabled elements swallow pointer events).
+                  return available ? chip : (
+                    <Tooltip key={s.id} title="Source is unreachable from the server right now">
+                      <Box sx={{ display: "inline-flex", flexShrink: 0 }}>{chip}</Box>
+                    </Tooltip>
+                  );
+                })}
               </Stack>
               {source === "radio" && (
                 <Stack

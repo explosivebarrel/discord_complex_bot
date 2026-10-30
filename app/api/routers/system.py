@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/system", tags=["system"])
+# Panel-wide status for every logged-in user: the player page disables
+# search tabs from it. The admin router above stays super-admin only.
+public_router = APIRouter(prefix="/api/system", tags=["system"])
 
 YT_TOKEN_KEY = "youtube_oauth"
 YM_TOKEN_KEY = "yandex_music"
@@ -130,6 +133,42 @@ async def integrations(
         "yandexmusic": yandex,
         "vkmusic": vkmusic,
         "superadmin_hint": "IDs in SUPERADMIN_IDS (.env) get this page",
+    }
+
+
+@public_router.get("/sources")
+async def sources(
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
+) -> dict[str, Any]:
+    """Which search sources can do their job right now (panel tab gating).
+
+    Keys match the panel's source ids. yt is the network+plugin gate from
+    source_gate; ym/vk additionally need a token; the rest run on
+    Lavalink built-ins and are always up.
+    """
+    import os
+
+    from app.core.services.source_gate import state as gate_state
+
+    ym_stored = await db.get_system_setting(YM_TOKEN_KEY)
+    ym_configured = bool((ym_stored and ym_stored.get("access_token")) or config.yandex_music_token)
+    # LavaSrc only mounts the yandex source when the flag is on (.env).
+    ym_enabled = os.getenv("YANDEX_MUSIC_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+    vk_stored = await db.get_system_setting(VK_TOKEN_KEY)
+    vk_configured = bool((vk_stored and vk_stored.get("access_token")) or config.vk_music_token)
+
+    return {
+        "all": True,
+        "yt": bool(gate_state["youtube"]),
+        "sc": True,
+        "ym": ym_configured and ym_enabled,
+        "vk": vk_configured,
+        "radio": True,
+        "archive": True,
+        "local": True,
+        "checked_at": gate_state["checked_at"],
     }
 
 

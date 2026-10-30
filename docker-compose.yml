@@ -3,6 +3,9 @@ services:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: dcbot-lavalink
     restart: unless-stopped
+    # The supervisor gates the youtube plugin on a reachability probe and
+    # restarts Lavalink only when the verdict flips (see supervise.sh).
+    entrypoint: ["/bin/sh", "/opt/Lavalink/supervise.sh"]
     environment:
       _JAVA_OPTIONS: "-Xmx256M"
       LAVALINK_PASSWORD: ${LAVALINK_PASSWORD:?set LAVALINK_PASSWORD in .env}
@@ -11,7 +14,10 @@ services:
       YANDEX_MUSIC_TOKEN: ${YANDEX_MUSIC_TOKEN:-}
       YANDEX_MUSIC_ENABLED: ${YANDEX_MUSIC_ENABLED:-false}
     volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      # The supervisor renders application.yml from this template with the
+      # youtube-plugin verdict baked in (see lavalink/supervise.sh).
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml.template:ro
+      - ./lavalink/supervise.sh:/opt/Lavalink/supervise.sh:ro
     ports:
       - "2333:2333"
 

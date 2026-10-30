@@ -186,6 +186,21 @@ export interface Integrations {
   };
 }
 
+/** Which search sources can do their job right now. Keys are the panel's
+    source ids; a false entry disables the tab until the next poll. */
+export interface SourceAvailability {
+  [key: string]: boolean | string | null;
+  all: boolean;
+  yt: boolean;
+  sc: boolean;
+  ym: boolean;
+  vk: boolean;
+  radio: boolean;
+  archive: boolean;
+  local: boolean;
+  checked_at: string | null;
+}
+
 export interface GuildSettings {
   guild: { id: string; name: string; member_count?: number };
   default_voice_channel_id: string | null;
@@ -550,6 +565,9 @@ export const api = {
   allBotGuilds: () => fetch("/api/admin/guilds").then((r) => handle<GuildBrief[]>(r)),
 
   integrations: () => fetch("/api/admin/system/integrations").then((r) => handle<Integrations>(r)),
+
+  /** Panel-wide source availability, refreshed by the backend every 5 min. */
+  sources: () => fetch("/api/system/sources").then((r) => handle<SourceAvailability>(r)),
 
   updateYoutubeConfig: (body: { refresh_token?: string; po_token?: string; visitor_data?: string }) =>
     fetch("/api/admin/system/youtube", {

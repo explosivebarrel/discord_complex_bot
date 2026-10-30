@@ -27,6 +27,7 @@ from app.api.routers import (
 from app.bot.client import ComplexBot
 from app.core.config import load_config, setup_logging, validate_config
 from app.core.db import Database
+from app.core.services import source_gate
 from app.core.services.music import MusicService
 
 logger = logging.getLogger(__name__)
@@ -64,11 +65,13 @@ def create_app() -> FastAPI:
         persist_task = asyncio.create_task(music.periodic_persist(), name="music-persist")
         bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
         cleanup_task = asyncio.create_task(_session_cleanup_loop(db), name="session-cleanup")
+        source_gate_task = asyncio.create_task(source_gate.loop(config), name="source-probe")
         try:
             yield
         finally:
             persist_task.cancel()
             cleanup_task.cancel()
+            source_gate_task.cancel()
             await bot.close()
             bot_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -87,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(player.router)
     app.include_router(admin.router)
     app.include_router(system.router)
+    app.include_router(system.public_router)
     app.include_router(favorites.router)
     app.include_router(library.router)
     app.include_router(posts.router)

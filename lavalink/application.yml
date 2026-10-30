@@ -4,7 +4,10 @@ server:
 
 lavalink:
   plugins:
-    # EXPERIMENT: plugin loaded but disabled — does it skip the init request?
+    # The youtube plugin is gated by lavalink/supervise.sh: youtube.com is
+    # TLS-blocked from this server, and an enabled plugin crashes the whole
+    # Lavalink at boot on its init request. The probe flips this flag and
+    # restarts Lavalink when reachability changes.
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       snapshot: false
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
@@ -44,7 +47,10 @@ lavalink:
 
 plugins:
   youtube:
-    enabled: false
+    # The supervisor renders this file from application.yml (this file is
+    # mounted as the template) and replaces the marker with the probe
+    # verdict before every start — see lavalink/supervise.sh.
+    enabled: @@YOUTUBE_ENABLED@@
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
