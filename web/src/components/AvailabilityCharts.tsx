@@ -52,7 +52,18 @@ function Strip({ range, series, dark }: { range: string; series: AvailabilitySer
     if (v[1] + v[2] + v[3] + v[4] > 0) last = i;
   });
   return (
-    <Box sx={{ display: "flex", flex: 1, gap: "1px", height: 16, minWidth: 0 }}>
+    <Box
+      sx={{
+        display: "flex",
+        gap: "1px",
+        height: 16,
+        minWidth: 0,
+        // In the phone column layout a bare flex:1 makes the vertical main
+        // axis start at basis 0 and the strip collapses; only the desktop
+        // row parent should grow it horizontally.
+        flex: { xs: "0 0 auto", sm: "1 1 0%" },
+      }}
+    >
       {series.values.map((values, index) => {
         const color = segmentColor([values[1], values[2], values[3], values[4]], dark);
         const yet = (index < first || index > last) && !color;
@@ -61,9 +72,7 @@ function Strip({ range, series, dark }: { range: string; series: AvailabilitySer
             key={values[0]}
             title={bucketTitle(range, values)}
             sx={{
-              flex: 1,
-              // Numeric minWidth goes through theme spacing in sx; a bare
-              // number rendered as 100% and blew the strip out of the card.
+              flex: "1 1 0%",
               minWidth: 0,
               height: "100%",
               borderRadius: 0.5,
@@ -186,25 +195,22 @@ export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse
             <Stack
               key={key}
               spacing={0.5}
-              sx={{ flexDirection: { xs: "column", sm: "row" }, alignItems: { sm: "center" } }}
+              direction={{ xs: "column", sm: "row" }}
+              sx={{ alignItems: { sm: "center" } }}
             >
-              <Typography
-                variant="body2"
-                noWrap
-                sx={{ color: "text.secondary", flex: { sm: "0 0 auto" }, width: { sm: 120 } }}
-              >
-                {SERVICE_LABELS[key] ?? key}
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  display: { xs: "inline", sm: "none" },
-                  ml: "auto",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {pct}
-              </Typography>
+              {/* Phones: label left, percent right on one line, the strip
+                  rides below at full width. */}
+              <Stack direction="row" sx={{ alignItems: "baseline", width: "100%" }}>
+                <Typography variant="body2" noWrap sx={{ color: "text.secondary", flex: 1, width: { sm: 120, xs: "auto" } }}>
+                  {SERVICE_LABELS[key] ?? key}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ display: { xs: "inline", sm: "none" }, fontVariantNumeric: "tabular-nums" }}
+                >
+                  {pct}
+                </Typography>
+              </Stack>
               <Strip range={range} series={series} dark={dark} />
               <Typography
                 variant="body2"
