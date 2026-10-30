@@ -1,4 +1,4 @@
-import { Box, Stack, Typography, useTheme } from "@mui/material";
+import { Box, Stack, Typography, useMediaQuery, useTheme } from "@mui/material";
 import type { AvailabilityResponse, AvailabilitySeries } from "../api";
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -42,7 +42,7 @@ function bucketTitle(range: string, values: [number, number, number, number, num
   return `${when} — up ${up}, degraded ${degraded}, down ${down}`;
 }
 
-function Strip({ range, series, dark }: { range: string; series: AvailabilitySeries; dark: boolean }) {
+function Strip({ range, series, dark, wide }: { range: string; series: AvailabilitySeries; dark: boolean; wide: boolean }) {
   // Zero-sample buckets before the first and after the last real sample
   // mean "not monitored yet", only the ones in between are true gaps
   // (the whole app was down) — they get the dense hatch.
@@ -57,11 +57,12 @@ function Strip({ range, series, dark }: { range: string; series: AvailabilitySer
         display: "flex",
         gap: "1px",
         height: 16,
+        width: "100%",
         minWidth: 0,
-        // In the phone column layout a bare flex:1 makes the vertical main
-        // axis start at basis 0 and the strip collapses; only the desktop
-        // row parent should grow it horizontally.
-        flex: { xs: "0 0 auto", sm: "1 1 0%" },
+        // Grow only in the desktop row parent: inside the phone column a
+        // bare flex:1 starts the vertical main axis at basis 0 and the
+        // strip collapses to zero height.
+        flex: wide ? "1 1 0%" : "0 0 auto",
       }}
     >
       {series.values.map((values, index) => {
@@ -172,6 +173,7 @@ function OverallSteps({ data }: { data: AvailabilityResponse }) {
 /** Per-service uptime strips, the overall step chart and percentages. */
 export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse; range: string }) {
   const dark = useTheme().palette.mode === "dark";
+  const wide = useMediaQuery((t) => t.breakpoints.up("sm"));
   const legend: { label: string; style: Record<string, string> }[] = [
     { label: "operational", style: { bgcolor: "success.main" } },
     { label: "degraded / high load", style: { bgcolor: "warning.main" } },
@@ -189,41 +191,37 @@ export function AvailabilityCharts({ data, range }: { data: AvailabilityResponse
       <Stack spacing={1} sx={{ mt: 2 }}>
         {Object.entries(data.series).map(([key, series]) => {
           const pct = `${data.per_service[key]?.up_pct ?? "—"}%`;
-          return (
-            // Phones: the strip rides below the label row at full width;
-            // sm and up keep the label | strip | percent line.
-            <Stack
-              key={key}
-              spacing={0.5}
-              direction={{ xs: "column", sm: "row" }}
-              sx={{ alignItems: { sm: "center" } }}
-            >
-              {/* Phones: label left, percent right on one line, the strip
-                  rides below at full width. */}
-              <Stack direction="row" sx={{ alignItems: "baseline", width: "100%" }}>
-                <Typography variant="body2" noWrap sx={{ color: "text.secondary", flex: 1, width: { sm: 120, xs: "auto" } }}>
-                  {SERVICE_LABELS[key] ?? key}
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{ display: { xs: "inline", sm: "none" }, fontVariantNumeric: "tabular-nums" }}
-                >
-                  {pct}
-                </Typography>
-              </Stack>
-              <Strip range={range} series={series} dark={dark} />
+          const strip = <Strip range={range} series={series} dark={dark} wide={wide} />;
+          // Desktop: one line, label | strip | percent. Phones: the strip
+          // rides below the label row at full width.
+          return wide ? (
+            <Stack key={key} direction="row" sx={{ alignItems: "center" }}>
               <Typography
                 variant="body2"
-                sx={{
-                  display: { xs: "none", sm: "inline" },
-                  width: 52,
-                  textAlign: "right",
-                  flexShrink: 0,
-                  fontVariantNumeric: "tabular-nums",
-                }}
+                noWrap
+                sx={{ width: 120, flexShrink: 0, color: "text.secondary" }}
+              >
+                {SERVICE_LABELS[key] ?? key}
+              </Typography>
+              {strip}
+              <Typography
+                variant="body2"
+                sx={{ width: 52, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}
               >
                 {pct}
               </Typography>
+            </Stack>
+          ) : (
+            <Stack key={key} spacing={0.5}>
+              <Stack direction="row" sx={{ alignItems: "baseline" }}>
+                <Typography variant="body2" noWrap sx={{ flex: 1, color: "text.secondary" }}>
+                  {SERVICE_LABELS[key] ?? key}
+                </Typography>
+                <Typography variant="body2" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                  {pct}
+                </Typography>
+              </Stack>
+              {strip}
             </Stack>
           );
         })}
