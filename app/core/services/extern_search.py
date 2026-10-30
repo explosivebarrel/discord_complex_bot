@@ -9,6 +9,15 @@ import httpx
 logger = logging.getLogger(__name__)
 
 RADIO_BROWSER_HOST = "de1.api.radio-browser.info"
+# The mirror list per radio-browser's own advice: mirrors go down or get
+# flaky independently, so search walks the list instead of hardcoding one.
+RADIO_BROWSER_HOSTS = [
+    "de1.api.radio-browser.info",
+    "de2.api.radio-browser.info",
+    "fi1.api.radio-browser.info",
+    "nl1.api.radio-browser.info",
+    "at1.api.radio-browser.info",
+]
 # Radio Browser requires an app-identifying User-Agent.
 _HEADERS = {"User-Agent": "discord_complex_bot/0.1 (web panel search)"}
 
@@ -25,6 +34,17 @@ async def _get_json(url: str, params: dict[str, Any] | None = None) -> Any:
     return resp.json()
 
 
+async def _radio_get_json(path: str, params: dict[str, Any]) -> Any:
+    """GET a radio-browser path trying every mirror in order."""
+    errors: list[str] = []
+    for host in RADIO_BROWSER_HOSTS:
+        try:
+            return await _get_json(f"https://{host}{path}", params)
+        except (ExternalSearchError, httpx.HTTPError) as exc:
+            errors.append(f"{host}: {exc}")
+    raise ExternalSearchError("radio-browser is unreachable from this network (" + "; ".join(errors) + ")")
+
+
 def _is_direct_stream(url: str) -> bool:
     low = url.lower()
     # HLS and playlist containers do not play through the plain http source.
@@ -33,8 +53,8 @@ def _is_direct_stream(url: str) -> bool:
 
 async def radio_search(query: str, limit: int = 15) -> list[dict[str, Any]]:
     """Search radio stations on radio-browser.info. Returns direct stream URLs."""
-    data = await _get_json(
-        f"https://{RADIO_BROWSER_HOST}/json/stations/search",
+    data = await _radio_get_json(
+        "/json/stations/search",
         params={
             "name": query,
             "limit": limit * 2,
