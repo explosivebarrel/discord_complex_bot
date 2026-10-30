@@ -16,6 +16,26 @@ export function useGuilds() {
   return useQuery({ queryKey: ["guilds"], queryFn: api.myGuilds, staleTime: 60_000 });
 }
 
+/** Latest availability pass — the shell status chip and the About page. */
+export function useSystemStatus() {
+  return useQuery({
+    queryKey: ["system-status"],
+    queryFn: api.systemStatus,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+export function useAvailability(range: string) {
+  return useQuery({
+    queryKey: ["availability", range],
+    queryFn: () => api.availability(range),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
 /** Super-admin testing override: pretend a tier in one guild. Refreshes the
     guild list and me so the home cards and the sidebar follow at once. */
 export function useSetAccessMock() {

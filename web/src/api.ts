@@ -201,6 +201,35 @@ export interface SourceAvailability {
   checked_at: string | null;
 }
 
+/** Latest probe pass of the availability monitor. Statuses per service:
+    2 = up, 1 = degraded (slow or recently failing), 0 = down, null = n/a. */
+export interface SystemStatus {
+  ts: string | null;
+  bot_ready: boolean;
+  statuses: Record<string, number | null>;
+}
+
+/** Uptime buckets for one range (hour | day | month). Each value is
+    [epoch_seconds, up, degraded, down, na]; a bucket with 0 real samples
+    is a gap (the whole app was unreachable). */
+export interface AvailabilitySeries {
+  bucket_seconds: number;
+  values: [number, number, number, number, number][];
+}
+
+export interface AvailabilityResponse {
+  range: string;
+  from: number;
+  to: number;
+  series: Record<string, AvailabilitySeries>;
+  overall: { bucket_seconds: number; values: [number, number | null][] };
+  per_service: Record<string, {
+    up_pct: number | null;
+    degraded_pct: number | null;
+    down_pct: number | null;
+  }>;
+}
+
 export interface GuildSettings {
   guild: { id: string; name: string; member_count?: number };
   default_voice_channel_id: string | null;
@@ -568,6 +597,13 @@ export const api = {
 
   /** Panel-wide source availability, refreshed by the backend every 5 min. */
   sources: () => fetch("/api/system/sources").then((r) => handle<SourceAvailability>(r)),
+
+  /** Latest availability probe pass (shell status chip). */
+  systemStatus: () => fetch("/api/system/status").then((r) => handle<SystemStatus>(r)),
+
+  /** Uptime buckets for the About page. range: hour | day | month. */
+  availability: (range: string) =>
+    fetch(`/api/system/availability?range=${encodeURIComponent(range)}`).then((r) => handle<AvailabilityResponse>(r)),
 
   updateYoutubeConfig: (body: { refresh_token?: string; po_token?: string; visitor_data?: string }) =>
     fetch("/api/admin/system/youtube", {

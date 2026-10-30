@@ -40,7 +40,10 @@ export const IconFormatUnderlined = ic("format_underlined");
 export const IconForum = ic("forum");
 export const IconGavel = ic("gavel");
 export const IconGraphicEq = ic("graphic_eq");
+/** Outlined: "not configured" state in status lists. */
+export const IconHelp = ic("help", false);
 export const IconHistory = ic("history");
+export const IconInfo = ic("info", false);
 export const IconKeyboardArrowDown = ic("keyboard_arrow_down");
 export const IconKeyboardArrowUp = ic("keyboard_arrow_up");
 export const IconLibraryMusic = ic("library_music");

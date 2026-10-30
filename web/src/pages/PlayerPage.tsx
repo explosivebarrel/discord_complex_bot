@@ -386,6 +386,10 @@ export function PlayerPage() {
     );
   }
 
+  // A failed status poll would otherwise render as a fake "disconnected"
+  // state — the user must be able to tell "no connection" from "API down".
+  const stateError = stateQuery.isError ? (stateQuery.error as Error).message : null;
+
   // Right sidebar: voice connection on top, the queue fills the rest and
   // scrolls internally.
   const rightPanel = (
@@ -791,6 +795,11 @@ export function PlayerPage() {
       rightBadge={state?.queue.length ?? 0}
       dock={dock}
     >
+      {stateError && (
+        <Typography variant="body2" sx={{ color: "error.main", mb: 1 }}>
+          Player status is unavailable: {stateError}
+        </Typography>
+      )}
       {/* Wide screens: search/add on the left, playlists on the right. */}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "3fr 2fr" }, gap: 2, alignItems: "start" }}>
         <Stack spacing={2} sx={{ minWidth: 0 }}>

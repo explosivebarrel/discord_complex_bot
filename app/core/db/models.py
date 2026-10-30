@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -163,3 +163,44 @@ class MusicSnapshot(Base):
     played: Mapped[str] = mapped_column(Text, default="[]")
     repeat: Mapped[str] = mapped_column(String(8), default="off")
     saved_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
+class AvailabilitySample(Base):
+    """One probe pass of the availability monitor (every minute).
+
+    Service columns hold 2=up, 1=degraded (slow answer or a recent track
+    failure), 0=down; NULL means "not applicable" (e.g. a source without
+    a configured token — it is excluded from uptime percentages instead
+    of counting as an outage). `details` keeps per-probe latencies.
+    """
+
+    __tablename__ = "availability_samples"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, index=True)
+    discord_api: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    discord_gateway: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    lavalink: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    youtube: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    yandex: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    vk: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    radio: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    archive: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    details: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+
+
+class AvailabilityRollup(Base):
+    """Hourly per-service counts, closed out by the sampler as hours end.
+
+    Serves the month-range view without scanning raw samples; raw samples
+    are pruned after two days.
+    """
+
+    __tablename__ = "availability_rollups"
+
+    hour_start: Mapped[datetime] = mapped_column(DateTime(), primary_key=True)
+    service: Mapped[str] = mapped_column(String(24), primary_key=True)
+    up: Mapped[int] = mapped_column(Integer, default=0)
+    degraded: Mapped[int] = mapped_column(Integer, default=0)
+    down: Mapped[int] = mapped_column(Integer, default=0)
+    na: Mapped[int] = mapped_column(Integer, default=0)

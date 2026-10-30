@@ -15,6 +15,7 @@ import "@fontsource/roboto/700.css";
 import { LoginPage } from "./pages/LoginPage";
 import { GuildsPage } from "./pages/GuildsPage";
 import { PlayerPage } from "./pages/PlayerPage";
+import { AboutPage } from "./pages/AboutPage";
 import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StatsPage } from "./pages/StatsPage";
@@ -69,7 +70,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
               fontStyle: "normal",
               fontWeight: "100 700",
               fontDisplay: "block",
-              src: 'url("/fonts/material-symbols-rounded-subset.woff2") format("woff2")',
+              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=2") format("woff2")',
             },
           }}
         />
@@ -87,6 +88,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Routes>
             <Route path="/" element={<GuildsPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/guild/:guildId" element={<PlayerPage />} />
             <Route path="/guild/:guildId/admin" element={<AdminPage />} />
             <Route path="/guild/:guildId/stats" element={<StatsPage />} />

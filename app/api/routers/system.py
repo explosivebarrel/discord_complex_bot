@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, get_bot, get_config, get_current_user, get_db, get_music
@@ -144,13 +145,13 @@ async def sources(
 ) -> dict[str, Any]:
     """Which search sources can do their job right now (panel tab gating).
 
-    Keys match the panel's source ids. yt is the network+plugin gate from
-    source_gate; ym/vk additionally need a token; the rest run on
-    Lavalink built-ins and are always up.
+    Keys match the panel's source ids. yt is the network+plugin verdict
+    from the availability monitor; ym/vk additionally need a token; the
+    rest run on Lavalink built-ins and are always up.
     """
     import os
 
-    from app.core.services.source_gate import state as gate_state
+    from app.core.services.availability import UP, state
 
     ym_stored = await db.get_system_setting(YM_TOKEN_KEY)
     ym_configured = bool((ym_stored and ym_stored.get("access_token")) or config.yandex_music_token)
@@ -161,14 +162,127 @@ async def sources(
 
     return {
         "all": True,
-        "yt": bool(gate_state["youtube"]),
+        "yt": state["statuses"].get("youtube") == UP,
         "sc": True,
         "ym": ym_configured and ym_enabled,
         "vk": vk_configured,
         "radio": True,
         "archive": True,
         "local": True,
-        "checked_at": gate_state["checked_at"],
+        "checked_at": state["ts"],
+    }
+
+
+@public_router.get("/status")
+async def system_status(
+    user: CurrentUser = Depends(get_current_user),
+    bot: ComplexBot = Depends(get_bot),
+) -> dict[str, Any]:
+    """Latest availability pass — the shell status chip reads this."""
+    from app.core.services.availability import state
+
+    return {
+        "ts": state["ts"],
+        "bot_ready": bot.is_ready(),
+        "statuses": state["statuses"],
+    }
+
+
+@public_router.get("/availability")
+async def availability_view(
+    # "range" would shadow the builtin inside this function.
+    range_name: str = Query(default="hour", alias="range"),
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Uptime buckets for the About page: hour = raw samples per minute,
+    day = raw per 15 min, month = hourly rollups per day. An all-zero
+    bucket is a gap (the whole app was down) — the panel hatches it."""
+    from datetime import timedelta
+
+    from app.core.db.models import utcnow
+    from app.core.services.availability import SERVICES
+
+    specs = {
+        "hour": (60, 60, timedelta(minutes=60)),
+        "day": (96, 900, timedelta(hours=24)),
+        "month": (30, 86400, timedelta(days=30)),
+    }
+    if range_name not in specs:
+        raise HTTPException(status_code=400, detail="range must be hour, day or month")
+    bucket_count, bucket_seconds, span = specs[range_name]
+    now = utcnow()
+    start = now - span
+
+    def epoch(dt: datetime) -> int:
+        return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+    counts: dict[str, list[list[int]]] = {
+        service: [[0, 0, 0, 0] for _ in range(bucket_count)] for service in SERVICES
+    }
+    if range == "month":
+        for r in await db.availability_rollups_since(start):
+            idx = int((r.hour_start - start).total_seconds() // bucket_seconds)
+            if 0 <= idx < bucket_count:
+                cell = counts[r.service][idx]
+                cell[0] += r.up
+                cell[1] += r.degraded
+                cell[2] += r.down
+                cell[3] += r.na
+    else:
+        for row in await db.availability_samples_between(start, now):
+            idx = int((row.ts - start).total_seconds() // bucket_seconds)
+            if 0 <= idx < bucket_count:
+                for service in SERVICES:
+                    value = getattr(row, service)
+                    if value is None:
+                        counts[service][idx][3] += 1
+                    elif value == 2:
+                        counts[service][idx][0] += 1
+                    elif value == 1:
+                        counts[service][idx][1] += 1
+                    else:
+                        counts[service][idx][2] += 1
+
+    series: dict[str, Any] = {}
+    per_service: dict[str, Any] = {}
+    for service in SERVICES:
+        values = []
+        sums = [0, 0, 0]
+        for index, (up, degraded, down, na) in enumerate(counts[service]):
+            values.append([epoch(start) + index * bucket_seconds, up, degraded, down, na])
+            if up + degraded + down > 0:
+                sums[0] += up
+                sums[1] += degraded
+                sums[2] += down
+        series[service] = {"bucket_seconds": bucket_seconds, "values": values}
+        total = sum(sums)
+        per_service[service] = {
+            "up_pct": round(sums[0] * 100 / total, 1) if total else None,
+            "degraded_pct": round(sums[1] * 100 / total, 1) if total else None,
+            "down_pct": round(sums[2] * 100 / total, 1) if total else None,
+        }
+
+    overall = []
+    for index in range(bucket_count):
+        applicable = 0
+        worked = 0
+        for service in SERVICES:
+            up, degraded, down, _na = counts[service][index]
+            if up + degraded + down > 0:
+                applicable += 1
+                worked += up + degraded
+        overall.append(
+            [epoch(start) + index * bucket_seconds, round(worked * 100 / applicable, 1) if applicable else None]
+        )
+
+    return {
+        "range": range_name,
+        "from": epoch(start),
+        "to": epoch(now),
+        "series": series,
+        "overall": {"bucket_seconds": bucket_seconds, "values": overall},
+        "per_service": per_service,
     }
 
 

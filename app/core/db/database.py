@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from app.core.config import Config
 from app.core.db.models import (
     AuditLog,
+    AvailabilityRollup,
+    AvailabilitySample,
     Base,
     FavoriteTrack,
     GuildAdmin,
@@ -597,6 +599,64 @@ class Database:
             if row is not None:
                 await session.delete(row)
                 await session.commit()
+
+    # --- availability monitor ---
+
+    async def add_availability_sample(self, statuses: dict[str, int | None], details: dict[str, Any]) -> None:
+        """One probe pass: per-service 2=up / 1=degraded / 0=down / NULL=n/a."""
+        from app.core.db.models import utcnow
+
+        async with self.session_factory() as session:
+            session.add(
+                AvailabilitySample(ts=utcnow(), details=json.dumps(details), **statuses)
+            )
+            await session.commit()
+
+    async def availability_samples_between(
+        self, start: datetime, end: datetime
+    ) -> list[AvailabilitySample]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(AvailabilitySample)
+                .where(AvailabilitySample.ts >= start, AvailabilitySample.ts < end)
+                .order_by(AvailabilitySample.ts)
+            )
+            return list(rows.scalars())
+
+    async def availability_last_rollup_hour(self) -> datetime | None:
+        async with self.session_factory() as session:
+            row = await session.execute(select(func.max(AvailabilityRollup.hour_start)))
+            return row.scalar_one_or_none()
+
+    async def upsert_availability_rollup(
+        self, hour_start: datetime, service: str, counts: dict[str, int]
+    ) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(AvailabilityRollup, (hour_start, service))
+            if row is None:
+                row = AvailabilityRollup(hour_start=hour_start, service=service, **counts)
+                session.add(row)
+            else:
+                for key, value in counts.items():
+                    setattr(row, key, value)
+            await session.commit()
+
+    async def availability_rollups_since(self, since: datetime) -> list[AvailabilityRollup]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(AvailabilityRollup)
+                .where(AvailabilityRollup.hour_start >= since)
+                .order_by(AvailabilityRollup.hour_start)
+            )
+            return list(rows.scalars())
+
+    async def prune_availability(self, raw_before: datetime, rollup_before: datetime) -> None:
+        async with self.session_factory() as session:
+            await session.execute(delete(AvailabilitySample).where(AvailabilitySample.ts < raw_before))
+            await session.execute(
+                delete(AvailabilityRollup).where(AvailabilityRollup.hour_start < rollup_before)
+            )
+            await session.commit()
 
     async def load_music_snapshots(self) -> dict[int, dict[str, Any]]:
         import json as _json

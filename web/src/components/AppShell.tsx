@@ -1,9 +1,10 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { Avatar, Badge, Box, Collapse, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme, type Theme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
-import { IconGraphicEq } from "./icons";
+import { IconGraphicEq, IconInfo } from "./icons";
 import { MsIcon } from "./MsIcon";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { SystemStatusChip } from "./SystemStatusChip";
 import { islandStyle, surfaceStyle } from "../themes/buildTheme";
 import type { GuildBrief, Me } from "../api";
 import { api, guildAllows } from "../api";
@@ -89,6 +90,7 @@ const Ic = {
   logout: <MsIcon name="logout" />,
   menu: <MsIcon name="menu" />,
   back: <MsIcon name="arrow_back" />,
+  about: <IconInfo />,
   leftClose: <MsIcon name="left_panel_close" fill={false} />,
   leftOpen: <MsIcon name="left_panel_open" fill={false} />,
   rightClose: <MsIcon name="right_panel_close" fill={false} />,
@@ -277,7 +279,9 @@ function DrawerContent({
       </List>
       <Divider />
       <List component="nav" disablePadding sx={{ py: 1 }}>
+        <SystemStatusChip collapsed={collapsed} />
         <ThemeSwitcher collapsed={collapsed} />
+        <GuildTab to="/about" icon={Ic.about} label="About" collapsed={collapsed} onClick={onNavigate} />
         {me?.is_superadmin && (
           <GuildTab to="/settings" icon={Ic.settings} label="Settings" collapsed={collapsed} onClick={onNavigate} />
         )}
