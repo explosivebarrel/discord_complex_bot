@@ -95,11 +95,11 @@ async def test_no_repeat_drains_queue(music: MusicService) -> None:
     assert GUILD_ID not in music.current_items
 
 
-def test_set_repeat_validation(music: MusicService) -> None:
+async def test_set_repeat_validation(music: MusicService) -> None:
     with pytest.raises(MusicServiceError):
         music.set_repeat(GUILD_ID, "sometimes")
     assert music.set_repeat(GUILD_ID, "all") == "all"
-    assert music.get_state(GUILD_ID)["repeat"] == "all"
+    assert (await music.get_state(GUILD_ID))["repeat"] == "all"
 
 
 async def test_play_next_without_player_is_noop(music: MusicService) -> None:
@@ -228,7 +228,7 @@ async def test_state_reports_loading_during_transition(music: MusicService) -> N
         title="lazy",
         length=5_000,
     )
-    state = music.get_state(GUILD_ID)
+    state = await music.get_state(GUILD_ID)
     assert state["current"]["loading"] is True
     assert state["current"]["title"] == "lazy"
     assert state["playing"] is False
@@ -300,7 +300,7 @@ async def test_play_next_moves_finished_track_to_played(music: MusicService) -> 
 
     assert [i.track.title for i in music.played[GUILD_ID]] == ["current"]
     # The state list is newest first.
-    assert music.get_state(GUILD_ID)["played"][0]["title"] == "current"
+    assert (await music.get_state(GUILD_ID))["played"][0]["title"] == "current"
 
 
 async def test_previous_replays_last_and_requeues_current(music: MusicService) -> None:
@@ -959,3 +959,24 @@ async def test_add_user_playlist_tracks_skips_duplicates(db: Database) -> None:
         1, pid, [{"title": "a copy", "uri": "https://ex.com/1"}],
     )
     assert (added, skipped) == (0, 1)
+
+
+async def test_track_artwork_cache_roundtrip(db: Database) -> None:
+    """Covers are stored by title|author and backfilled into track dicts."""
+    key = db.artwork_key("Song", "Artist")
+    await db.upsert_track_artworks([(key, "https://img/cover.jpg")])
+
+    covers = await db.get_track_artworks([key, db.artwork_key("Other", "x")])
+    assert covers == {key: "https://img/cover.jpg"}
+
+    rows = [
+        {"title": "Song", "author": "Artist", "artwork": None},
+        {"title": "Song", "author": "Artist", "artwork": "https://own/img.jpg"},
+        {"title": "Unknown", "author": "x", "artwork": None},
+    ]
+    await db.fill_track_artworks(rows)
+    assert rows[0]["artwork"] == "https://img/cover.jpg"
+    # An existing cover is never overwritten by the cache.
+    assert rows[1]["artwork"] == "https://own/img.jpg"
+    # No cached cover: stays empty.
+    assert not rows[2]["artwork"]

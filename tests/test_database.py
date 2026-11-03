@@ -149,7 +149,7 @@ async def test_user_playlists_crud_and_ownership(db: Database) -> None:
             {"title": "b", "author": "x", "uri": "https://example.com/2", "source": "yt", "length_ms": 2000},
         ],
     )
-    assert added == 2
+    assert added == (2, 0)
 
     playlist = await db.get_user_playlist(1, playlist_id)
     assert playlist is not None and playlist["name"] == "My mix"
@@ -157,7 +157,7 @@ async def test_user_playlists_crud_and_ownership(db: Database) -> None:
 
     # Another user cannot see or touch the playlist.
     assert await db.get_user_playlist(2, playlist_id) is None
-    assert await db.add_user_playlist_tracks(2, playlist_id, [{"uri": "https://x"}]) == 0
+    assert await db.add_user_playlist_tracks(2, playlist_id, [{"uri": "https://x"}]) == (0, 0)
     assert await db.remove_user_playlist_track(2, playlist_id, playlist["tracks"][0]["id"]) is False
     assert await db.delete_user_playlist(2, playlist_id) is False
 

@@ -13,6 +13,7 @@ from app.core.db.models import (
     AvailabilityRollup,
     AvailabilitySample,
     Base,
+    TrackArtwork,
     FavoriteTrack,
     GuildAdmin,
     GuildSettings,
@@ -385,7 +386,7 @@ class Database:
                 .order_by(FavoriteTrack.added_at.desc())
                 .limit(limit)
             )
-            return [
+            favorites = [
                 {
                     "id": row.id,
                     "title": row.title,
@@ -398,6 +399,8 @@ class Database:
                 }
                 for row in result.scalars()
             ]
+            await self.fill_track_artworks(favorites)
+            return favorites
 
     async def add_favorite(
         self,
@@ -508,7 +511,7 @@ class Database:
                 .where(UserPlaylistTrack.playlist_id == playlist_id)
                 .order_by(UserPlaylistTrack.position, UserPlaylistTrack.id)
             )
-            return {
+            result = {
                 "id": row.id,
                 "name": row.name,
                 "tracks": [
@@ -525,6 +528,8 @@ class Database:
                     for t in tracks.scalars().all()
                 ],
             }
+            await self.fill_track_artworks(result["tracks"])
+            return result
 
     async def delete_user_playlist(self, user_id: int, playlist_id: int) -> bool:
         async with self.session_factory() as session:
@@ -597,7 +602,7 @@ class Database:
                 .where(UserPlaylistTrack.playlist_id == playlist_id)
                 .order_by(UserPlaylistTrack.position, UserPlaylistTrack.id)
             )
-            return {
+            result = {
                 "id": row.id,
                 "name": row.name,
                 "tracks": [
@@ -613,6 +618,8 @@ class Database:
                     for t in tracks.scalars().all()
                 ],
             }
+            await self.fill_track_artworks(result["tracks"])
+            return result
 
     async def remove_user_playlist_track(self, user_id: int, playlist_id: int, track_id: int) -> bool:
         async with self.session_factory() as session:
@@ -651,6 +658,51 @@ class Database:
             if row is not None:
                 await session.delete(row)
                 await session.commit()
+
+    # --- track artwork cache ---
+
+    @staticmethod
+    def artwork_key(title: str, author: str) -> str:
+        """Cache key of a track cover: lowercase "title|author"."""
+        return f"{(title or '').strip().lower()}|{(author or '').strip().lower()}"[:320]
+
+    async def upsert_track_artworks(self, pairs: list[tuple[str, str]]) -> None:
+        """Store cover urls for artwork keys; skips empty artwork."""
+        pairs = [(k, a) for k, a in pairs if k and a]
+        if not pairs:
+            return
+        async with self.session_factory() as session:
+            for key, artwork in pairs:
+                row = await session.get(TrackArtwork, key)
+                if row is None:
+                    session.add(TrackArtwork(key=key, artwork=artwork))
+                elif row.artwork != artwork:
+                    row.artwork = artwork
+            await session.commit()
+
+    async def get_track_artworks(self, keys: list[str]) -> dict[str, str]:
+        """Cover urls for the given keys; missing keys are absent."""
+        keys = [k for k in keys if k]
+        if not keys:
+            return {}
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(TrackArtwork.key, TrackArtwork.artwork).where(TrackArtwork.key.in_(keys))
+            )
+            return dict(rows.all())
+
+    async def fill_track_artworks(self, rows: list[dict[str, Any]]) -> None:
+        """Backfill missing artwork on track dicts (title/author/uri/...)."""
+        missing = [self.artwork_key(r.get("title"), r.get("author")) for r in rows if not r.get("artwork")]
+        if not missing:
+            return
+        try:
+            covers = await self.get_track_artworks(missing)
+        except Exception:  # noqa: BLE001 - covers are decorative
+            return
+        for row in rows:
+            if not row.get("artwork"):
+                row["artwork"] = covers.get(self.artwork_key(row.get("title"), row.get("author")))
 
     # --- availability monitor ---
 

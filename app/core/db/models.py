@@ -168,6 +168,21 @@ class MusicSnapshot(Base):
     saved_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
 
+class TrackArtwork(Base):
+    """Cached cover art for tracks, keyed by lowercase "title|author".
+
+    Written whenever a track starts playing; read back everywhere a track
+    shows without its own artwork (queue, history, playlists, favorites),
+    so covers survive pending items and streaming-url churn.
+    """
+
+    __tablename__ = "track_artwork"
+
+    key: Mapped[str] = mapped_column(String(320), primary_key=True)
+    artwork: Mapped[str] = mapped_column(String(512), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
+
+
 class AvailabilitySample(Base):
     """One probe pass of the availability monitor (every minute).
 

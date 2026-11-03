@@ -102,7 +102,7 @@ async def player_state(
     music: MusicService = Depends(get_music),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
-    state = music.get_state(guild_id)
+    state = await music.get_state(guild_id)
     # The panel preselects this channel while the bot is not in voice.
     settings = await db.get_guild_settings(guild_id)
     state["default_voice_channel_id"] = (

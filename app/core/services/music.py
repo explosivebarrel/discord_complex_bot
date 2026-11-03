@@ -971,6 +971,15 @@ class MusicService:
             )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to record play history for guild %s", guild_id)
+        # Cache the cover so tracks show artwork everywhere, even when a
+        # later queue/history row has none.
+        try:
+            if item.track.artwork:
+                await self.db.upsert_track_artworks(
+                    [(self.db.artwork_key(item.track.title, item.track.author), item.track.artwork)]
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to cache track artwork")
 
     def set_repeat(self, guild_id: int, mode: str) -> str:
         if mode not in ("off", "one", "all"):
@@ -1454,7 +1463,7 @@ class MusicService:
 
     # --- state for web UI ---
 
-    def get_state(self, guild_id: int) -> dict[str, Any]:
+    async def get_state(self, guild_id: int) -> dict[str, Any]:
         player = self.get_player(guild_id)
         queue = self._queue(guild_id)
         guild = self.get_guild(guild_id)
@@ -1473,7 +1482,7 @@ class MusicService:
             current["position"] = 0
             current["paused"] = False
             current["loading"] = True
-        return {
+        state_dict = {
             "guild_id": str(guild_id),
             "guild_name": guild.name if guild else None,
             "connected": player is not None,
@@ -1487,6 +1496,18 @@ class MusicService:
             # Newest first, for the Recent view of the queue panel.
             "played": [item.to_dict() for item in reversed(self._played(guild_id))],
         }
+        # Fill in cached covers for tracks that lost theirs (pending items,
+        # history rows, playlist entries). Decorative: never fatal.
+        rows = ([state_dict["current"]] if state_dict["current"] else []) + state_dict["queue"] + state_dict["played"]
+        missing = [self.db.artwork_key(r.get("title"), r.get("author")) for r in rows if not r.get("artwork")]
+        try:
+            covers = await self.db.get_track_artworks(missing)
+            for row in rows:
+                if not row.get("artwork"):
+                    row["artwork"] = covers.get(self.db.artwork_key(row.get("title"), row.get("author")))
+        except Exception:  # noqa: BLE001 - covers are decorative
+            pass
+        return state_dict
 
     # --- state persistence across restarts ---
 

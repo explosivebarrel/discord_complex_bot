@@ -648,7 +648,11 @@ export function PlayerPage() {
                     }
                   >
                     <ListItemAvatar sx={{ minWidth: 36 }}>
-                      <History fontSize="small" sx={{ color: "text.secondary" }} />
+                      {t.artwork ? (
+                        <Box component="img" src={t.artwork} sx={{ width: 36, height: 36, borderRadius: "8px", objectFit: "cover" }} />
+                      ) : (
+                        <History fontSize="small" sx={{ color: "text.secondary" }} />
+                      )}
                     </ListItemAvatar>
                     <ListItemText
                       primary={t.title}

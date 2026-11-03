@@ -91,7 +91,7 @@ class MusicCog(commands.Cog):
     @app_commands.command(name="queue", description="Show the current queue")
     @app_commands.guild_only()
     async def queue(self, interaction: discord.Interaction) -> None:
-        state = self.bot.music.get_state(interaction.guild_id or 0)
+        state = await self.bot.music.get_state(interaction.guild_id or 0)
         lines = []
         current = state["current"]
         if current:
@@ -106,7 +106,7 @@ class MusicCog(commands.Cog):
     @app_commands.command(name="nowplaying", description="Show the currently playing track")
     @app_commands.guild_only()
     async def nowplaying(self, interaction: discord.Interaction) -> None:
-        state = self.bot.music.get_state(interaction.guild_id or 0)
+        state = await self.bot.music.get_state(interaction.guild_id or 0)
         current = state["current"]
         if not current:
             await interaction.response.send_message("Nothing is playing.")
