@@ -15,9 +15,10 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as SearchIcon, IconMusicNote as MusicNote, IconPlayArrow as PlayArrow } from "../icons";
+import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as SearchIcon, IconPlayArrow as PlayArrow } from "../icons";
 import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
+import { CoverImg } from "./CoverImg";
 import { fmt, SOURCE_LABELS } from "./labels";
 import type { SearchTabProps } from "./playerProps";
 
@@ -248,18 +249,7 @@ export function MediaCard({
   return (
     <Box onClick={onClick} sx={{ width: 148, flexShrink: 0, cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}>
       <Box sx={{ position: "relative" }}>
-        {artwork ? (
-          <Box component="img" src={artwork} sx={{ width: 148, height: 148, borderRadius: "12px", objectFit: "cover" }} />
-        ) : (
-          <Box
-            sx={(t) => ({
-              width: 148, height: 148, borderRadius: "12px",
-              bgcolor: t.palette.m3.surfaceContainerHigh, display: "grid", placeItems: "center",
-            })}
-          >
-            <MusicNote sx={{ color: "text.secondary", fontSize: 40 }} />
-          </Box>
-        )}
+        <CoverImg src={artwork} size={148} radius="12px" />
         <Box
           className="card-play"
           sx={(t) => ({
@@ -369,18 +359,7 @@ export function SearchResults({
           }
         >
           <ListItemAvatar>
-            {t.artwork ? (
-              <Box component="img" src={t.artwork} sx={{ width: 48, height: 48, borderRadius: "8px", objectFit: "cover" }} />
-            ) : (
-              <Box
-                sx={(t) => ({
-                  width: 48, height: 48, borderRadius: "8px",
-                  bgcolor: t.palette.m3.surfaceContainerHigh, display: "grid", placeItems: "center",
-                })}
-              >
-                <MusicNote sx={{ color: "text.secondary" }} />
-              </Box>
-            )}
+            <CoverImg src={t.artwork} size={48} />
           </ListItemAvatar>
           <ListItemText
             primary={t.title}

@@ -26,7 +26,6 @@ import {
   IconDelete as DeleteOutlined,
   IconFolder as Folder,
   IconGraphicEq as GraphicEq,
-  IconHistory as History,
   IconKeyboardArrowDown as KeyboardArrowDown,
   IconKeyboardArrowUp as KeyboardArrowUp,
   IconLibraryMusic as LibraryMusic,
@@ -52,6 +51,7 @@ import { MsIcon } from "../components/MsIcon";
 import { PlaylistAddMenu } from "../components/PlaylistAddMenu";
 import { useFeedback } from "../components/Feedback";
 import { fmt, SOURCE_LABELS } from "../components/player/labels";
+import { CoverImg } from "../components/player/CoverImg";
 import { PLAYER_TABS, PlayerNav, type PlayerTab } from "../components/player/PlayerNav";
 import { HomeRail, MediaCard, SearchBar, SearchResults } from "../components/player/SearchTab";
 import { CollectionTab } from "../components/player/CollectionTab";
@@ -648,11 +648,7 @@ export function PlayerPage() {
                     }
                   >
                     <ListItemAvatar sx={{ minWidth: 36 }}>
-                      {t.artwork ? (
-                        <Box component="img" src={t.artwork} sx={{ width: 36, height: 36, borderRadius: "8px", objectFit: "cover" }} />
-                      ) : (
-                        <History fontSize="small" sx={{ color: "text.secondary" }} />
-                      )}
+                      <CoverImg src={t.artwork} size={36} />
                     </ListItemAvatar>
                     <ListItemText
                       primary={t.title}
@@ -791,6 +787,7 @@ export function PlayerPage() {
                             key={`r${i}`}
                             title={t.title}
                             subtitle={[SOURCE_LABELS[t.source ?? ""] ?? "", t.requested_by].filter(Boolean).join(" · ")}
+                            artwork={t.artwork}
                             onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
                           />
                         ))}

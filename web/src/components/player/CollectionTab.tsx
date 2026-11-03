@@ -5,11 +5,11 @@ import {
   IconDelete as DeleteOutlined,
   IconShuffle as Shuffle,
   IconFavorite as Favorite,
-  IconMusicNote as MusicNote,
   IconPlayArrow as PlayArrow,
 } from "../icons";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { PlaylistBrowser } from "../PlaylistBrowser";
+import { CoverImg } from "./CoverImg";
 import { fmt, SOURCE_LABELS } from "./labels";
 
 export interface CollectionTabProps {
@@ -236,13 +236,7 @@ export function CollectionTab(props: CollectionTabProps) {
                   }
                 >
                   <ListItemAvatar sx={{ minWidth: 40 }}>
-                    {f.artwork ? (
-                      <Box component="img" src={f.artwork} sx={{ width: 40, height: 40, borderRadius: "8px", objectFit: "cover" }} />
-                    ) : (
-                      <Box sx={(t) => ({ width: 40, height: 40, borderRadius: "8px", bgcolor: t.palette.m3.surfaceContainerHigh, display: "grid", placeItems: "center" })}>
-                        <MusicNote sx={{ color: "text.secondary" }} />
-                      </Box>
-                    )}
+                    <CoverImg src={f.artwork} size={40} />
                   </ListItemAvatar>
                   <ListItemText
                     primary={f.title}

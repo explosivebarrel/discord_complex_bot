@@ -1,5 +1,6 @@
 import { Box, IconButton, List, ListItem, ListItemAvatar, ListItemText, Tooltip, Typography } from "@mui/material";
-import { IconHistory as History, IconPlaylistAdd as PlaylistAdd, IconPlayArrow as PlayArrow } from "../icons";
+import { IconPlaylistAdd as PlaylistAdd, IconPlayArrow as PlayArrow } from "../icons";
+import { CoverImg } from "./CoverImg";
 import { SOURCE_LABELS } from "./labels";
 
 export interface HistoryTabProps {
@@ -28,6 +29,8 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
               sx={{
                 cursor: "pointer",
                 borderRadius: 1,
+                px: 1.5,
+                gap: 1.5,
                 "&:hover": { bgcolor: "action.hover" },
               }}
               onMouseEnter={() => setHoveredRow(`r${i}`)}
@@ -74,11 +77,7 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
               }
             >
               <ListItemAvatar sx={{ minWidth: 36 }}>
-                {t.artwork ? (
-                  <Box component="img" src={t.artwork} sx={{ width: 36, height: 36, borderRadius: "8px", objectFit: "cover" }} />
-                ) : (
-                  <History fontSize="small" sx={{ color: "text.secondary" }} />
-                )}
+                <CoverImg src={t.artwork} size={36} />
               </ListItemAvatar>
               <ListItemText
                 primary={t.title}
