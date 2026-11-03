@@ -1,5 +1,7 @@
 import { useState } from "react";
 import {
+  Box,
+  Collapse,
   Divider,
   ListItemIcon,
   ListItemText,
@@ -35,7 +37,8 @@ export interface TrackMenuSpec {
 type OpenFn = (e: React.MouseEvent, spec: TrackMenuSpec) => void;
 
 /** Right-click menu for a track row/card: play, queue, favorite, add to
-    playlist (submenu) plus the caller's context-specific items. */
+    playlist plus the caller's context-specific items. The playlist picker
+    expands inline (a nested Menu modal swallows clicks, so no submenu). */
 export function useTrackMenu(): { open: OpenFn; node: React.ReactNode } {
   const [spec, setSpec] = useState<(TrackMenuSpec & { pos: { x: number; y: number } }) | null>(null);
   const open: OpenFn = (e, s) => {
@@ -49,7 +52,7 @@ export function useTrackMenu(): { open: OpenFn; node: React.ReactNode } {
 
 function TrackMenu({ spec, onClose }: { spec: TrackMenuSpec & { pos: { x: number; y: number } }; onClose: () => void }) {
   const { track, onPlay, onQueue, favorite, onToggleFavorite, extra, pos } = spec;
-  const [subAnchor, setSubAnchor] = useState<HTMLElement | null>(null);
+  const [plOpen, setPlOpen] = useState(false);
 
   const run = (fn: () => void) => () => {
     onClose();
@@ -62,6 +65,7 @@ function TrackMenu({ spec, onClose }: { spec: TrackMenuSpec & { pos: { x: number
       onClose={onClose}
       anchorReference="anchorPosition"
       anchorPosition={{ top: pos.y, left: pos.x }}
+      slotProps={{ paper: { sx: { minWidth: 240, maxHeight: 480 } } }}
       sx={{ zIndex: (t) => t.zIndex.modal + 1 }}
     >
       {onPlay && (
@@ -83,21 +87,24 @@ function TrackMenu({ spec, onClose }: { spec: TrackMenuSpec & { pos: { x: number
         </MenuItem>
       )}
       <Divider sx={{ my: 0.5 }} />
-      <MenuItem onClick={(e) => setSubAnchor(e.currentTarget)}>
+      <MenuItem onClick={() => setPlOpen((v) => !v)}>
         <ListItemIcon><MsIcon name="playlist_add" fontSize={20} /></ListItemIcon>
         <ListItemText>Add to playlist</ListItemText>
-        <MsIcon name="chevron_right" fontSize={20} sx={{ color: "text.secondary" }} />
+        <MsIcon
+          name="keyboard_arrow_down"
+          fontSize={20}
+          sx={{
+            color: "text.secondary",
+            transform: plOpen ? "rotate(180deg)" : "none",
+            transition: (t) => t.transitions.create("transform", { duration: t.transitions.duration.short }),
+          }}
+        />
       </MenuItem>
-      <Menu
-        open={!!subAnchor}
-        anchorEl={subAnchor}
-        onClose={() => setSubAnchor(null)}
-        anchorOrigin={{ vertical: "top", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "left" }}
-        slotProps={{ paper: { sx: { maxHeight: 380 } } }}
-      >
-        <PlaylistMenuContent track={track} onDone={() => { setSubAnchor(null); onClose(); }} />
-      </Menu>
+      <Collapse in={plOpen} timeout="auto" unmountOnExit>
+        <Box sx={{ py: 0.5, maxHeight: 300, overflowY: "auto" }}>
+          <PlaylistMenuContent track={track} onDone={onClose} />
+        </Box>
+      </Collapse>
       {(extra?.length ?? 0) > 0 && <Divider sx={{ my: 0.5 }} />}
       {extra?.map((item) => (
         <MenuItem key={item.key} onClick={run(item.onClick)} sx={item.danger ? { color: "error.main" } : undefined}>

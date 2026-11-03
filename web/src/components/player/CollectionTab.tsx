@@ -33,7 +33,6 @@ export interface CollectionTabProps {
   myPls: { id: number; name: string; tracks: number; artwork?: string | null }[];
   likedOpen: boolean;
   onOpenLiked: () => void;
-  onBack: () => void;
   openPl: { id: number; name: string; tracks: { id: number; title: string; author: string; source: string; length_ms: number; artwork?: string | null; uri?: string }[] } | null;
   plOpening: boolean;
   createPlaylist: (name: string) => void;
@@ -115,7 +114,7 @@ function TrackRow({
     previous view. */
 export function CollectionTab(props: CollectionTabProps) {
   const {
-    me, favorites, onPlayFavorite, onQueueFavorite, onRemoveFavorite, onMenu, myPls, likedOpen, onOpenLiked, onBack,
+    me, favorites, onQueueFavorite, onRemoveFavorite, onMenu, myPls, likedOpen, onOpenLiked,
     openPl, plOpening, createPlaylist, plBusy, onShufflePlay, onPlayPlaylist, onOpenPlaylist, onDetailDelete,
     onQueueAll, onPlayPlaylistTrack, onQueuePlaylistTrack, onRemovePlaylistTrack, onQueueFavorites,
     uploads, canModerateUploads, queueUpload, removeUpload, enqueueing, playlist, playlistBusy, onCloseBrowser,
@@ -133,10 +132,7 @@ export function CollectionTab(props: CollectionTabProps) {
       source={f.source}
       lengthMs={f.length_ms}
       artwork={f.artwork}
-      onPlay={() => onPlayFavorite({
-        uri: f.uri, source: f.source || "yt", title: f.title,
-        author: f.author, length_ms: f.length_ms, artwork: f.artwork,
-      })}
+      onPlay={() => onQueueFavorite(f)}
       onMenu={(e) =>
         onMenu(e, {
           track: {
@@ -219,9 +215,6 @@ export function CollectionTab(props: CollectionTabProps) {
               >
                 Play
               </Button>
-              <Button size="small" variant="text" onClick={onBack} sx={{ alignSelf: "center" }}>
-                Back
-              </Button>
             </Stack>
           </Box>
         </Stack>
@@ -281,9 +274,6 @@ export function CollectionTab(props: CollectionTabProps) {
                   <PlaylistAdd />
                 </IconButton>
               </Tooltip>
-              <Button size="small" variant="text" onClick={onBack} sx={{ alignSelf: "center" }}>
-                Back
-              </Button>
               <Tooltip title="Delete playlist">
                 <IconButton size="small" disabled={plBusy} onClick={onDetailDelete}>
                   <DeleteOutlined fontSize="small" />
@@ -311,7 +301,7 @@ export function CollectionTab(props: CollectionTabProps) {
                 source={t.source}
                 lengthMs={t.length_ms}
                 artwork={t.artwork ?? null}
-                onPlay={() => onPlayPlaylistTrack(index, t.title)}
+                onPlay={() => onQueuePlaylistTrack(index, t.title)}
                 onMenu={(e) =>
                   onMenu(e, {
                     track: {
@@ -431,9 +421,16 @@ export function CollectionTab(props: CollectionTabProps) {
             Nothing here yet. Tap the heart on any search result.
           </Typography>
         ) : (
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, columnGap: 3 }}>
-            <List disablePadding>{leftCol.map(favRow)}</List>
-            <List disablePadding>{rightCol.map(favRow)}</List>
+          // Flex-wrap instead of a fixed grid: each column keeps its share
+          // when there is room and the second wraps below when the content
+          // column is squeezed (sidebars open), so no horizontal scroll.
+          <Box sx={{ display: "flex", flexWrap: "wrap", columnGap: 3, minWidth: 0 }}>
+            <List disablePadding sx={{ flex: "1 1 360px", minWidth: 0 }}>
+              {leftCol.map(favRow)}
+            </List>
+            <List disablePadding sx={{ flex: "1 1 360px", minWidth: 0 }}>
+              {rightCol.map(favRow)}
+            </List>
           </Box>
         )}
       </Box>
@@ -546,6 +543,7 @@ export function CollectionTab(props: CollectionTabProps) {
                 <ListItem
                   key={u.path}
                   disableGutters
+                  onClick={() => queueUpload(`up:${u.path}`, u.path, u.name)}
                   onContextMenu={(e) =>
                     onMenu(e, {
                       track: { title: u.name, uri: u.path, source: "local", artwork: null, length_ms: 0 },
@@ -561,7 +559,12 @@ export function CollectionTab(props: CollectionTabProps) {
                       ],
                     })
                   }
-                  sx={{ ...rowActionsRowSx }}
+                  sx={{
+                    cursor: "pointer",
+                    borderRadius: 1,
+                    "&:hover": { bgcolor: "action.hover" },
+                    ...rowActionsRowSx,
+                  }}
                   secondaryAction={
                     <RowActions>
                       <Tooltip title="Queue">

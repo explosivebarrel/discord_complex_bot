@@ -303,6 +303,21 @@ async def test_play_next_moves_finished_track_to_played(music: MusicService) -> 
     assert (await music.get_state(GUILD_ID))["played"][0]["title"] == "current"
 
 
+async def test_replayed_track_moves_to_front_instead_of_duplicating(music: MusicService) -> None:
+    """Re-playing a track bumps its Recent entry to the newest position; the
+    session history never holds the same track twice."""
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    first = QueueItem(make_track("a"), 1, "u")
+    second = QueueItem(make_track("b"), 1, "u")
+    music._push_played(GUILD_ID, first)
+    music._push_played(GUILD_ID, second)
+
+    music._push_played(GUILD_ID, QueueItem(make_track("a"), 1, "u"))
+
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["b", "a"]
+
+
 async def test_previous_replays_last_and_requeues_current(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]

@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { Avatar, Badge, Box, Collapse, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme, type Theme } from "@mui/material";
-import { Link as RouterLink, matchPath, useLocation } from "react-router-dom";
+import { Link as RouterLink, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { IconGraphicEq, IconInfo } from "./icons";
 import { MsIcon } from "./MsIcon";
 import { ThemeSwitcher } from "./ThemeSwitcher";
@@ -20,7 +20,9 @@ function guildIconUrl(guild: GuildBrief) {
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64`;
 }
 
-/** Section tab of the current guild: exact route match decides selection. */
+/** Section tab of the current guild: exact route match decides selection.
+    `alsoActive` patterns keep the tab highlighted on nested sub-views
+    (the player's collection/history pages are still the Player). */
 function GuildTab({
   to,
   icon,
@@ -29,6 +31,7 @@ function GuildTab({
   disabled,
   botBlocked,
   onClick,
+  alsoActive,
 }: {
   to: string;
   icon: ReactNode;
@@ -38,8 +41,10 @@ function GuildTab({
   /** Disabled because the BOT lacks permissions, not the user. */
   botBlocked?: boolean;
   onClick?: () => void;
+  alsoActive?: string[];
 }) {
   const { pathname } = useLocation();
+  const active = pathname === to || !!(alsoActive && alsoActive.some((p) => matchPath(p, pathname)));
   return (
     <Tooltip
       title={
@@ -59,7 +64,7 @@ function GuildTab({
       <ListItemButton
         component={RouterLink}
         to={to}
-        selected={pathname === to}
+        selected={active}
         disabled={disabled}
         onClick={onClick}
         sx={{
@@ -157,6 +162,11 @@ function DrawerContent({
               disabled={!guildAllows(active, "player")}
               botBlocked={active.bot_access?.player === false}
               onClick={onNavigate}
+              alsoActive={[
+                `/guild/${active.id}/collection`,
+                `/guild/${active.id}/collection/*`,
+                `/guild/${active.id}/history`,
+              ]}
             />
             <GuildTab
               to={`/guild/${active.id}/stats`}
@@ -348,6 +358,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const theme = useTheme();
+  const navigate = useNavigate();
   const isWide = useMediaQuery(theme.breakpoints.up("md"));
   // lg and up: the player sidebar is a pinned column of the frame; below lg
   // it is a modal drawer so it never squeezes the page content.
@@ -585,8 +596,17 @@ export function AppShell({
               </IconButton>
             )}
             {back && (
-              <Tooltip title="Back to servers">
-                <IconButton component={RouterLink} to="/">
+              <Tooltip title="Back">
+                <IconButton
+                  onClick={() => {
+                    // Previous page when the history has one (nested player
+                    // views, other sections); deep links fall back home.
+                    const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : 0;
+                    if (idx > 0) navigate(-1);
+                    else navigate("/");
+                  }}
+                  aria-label="Back"
+                >
                   {Ic.back}
                 </IconButton>
               </Tooltip>

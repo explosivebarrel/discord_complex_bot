@@ -180,6 +180,18 @@ class MusicService:
             self.played[guild_id] = played
         return played
 
+    def _push_played(self, guild_id: int, item: QueueItem) -> None:
+        """Record a played track in the session history. Re-playing a track
+        moves its entry to the front instead of duplicating it, so Recent
+        never shows the same track twice."""
+        key = item.track.uri or item.display_title
+        played = deque(
+            (p for p in self._played(guild_id) if (p.track.uri or p.display_title) != key),
+            maxlen=PLAYED_LIMIT,
+        )
+        played.append(item)
+        self.played[guild_id] = played
+
     @staticmethod
     def _for_replay(item: QueueItem) -> QueueItem:
         """Prepare a history entry for another play.
@@ -810,7 +822,7 @@ class MusicService:
             # The outgoing track enters the session history for Previous/Recent.
             # A dead pending item (track is None, recursion) and the autoplay
             # radio must not enter it.
-            self._played(guild_id).append(current)
+            self._push_played(guild_id, current)
         item = queue.popleft()
         if item.more_from_playlist is not None:
             window, next_index = self._expand_marker(item)
@@ -1258,7 +1270,7 @@ class MusicService:
         self._require_player(guild_id)
         current = self.current_items.get(guild_id)
         if current is not None and current.track is not None and not current.is_autoplay:
-            self._played(guild_id).append(current)
+            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit("music.play_pending", guild_id=guild_id, actor_id=requester_id, details=details)
@@ -1293,7 +1305,7 @@ class MusicService:
         item = self._entry_to_item(session.entries[index], session, requester_id, requester_name)
         current = self.current_items.get(guild_id)
         if current is not None and current.track is not None and not current.is_autoplay:
-            self._played(guild_id).append(current)
+            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(
@@ -1342,7 +1354,7 @@ class MusicService:
         del played[len(played) - 1 - position]
         current = self.current_items.get(guild_id)
         if current is not None and current.track is not None and not current.is_autoplay:
-            self._played(guild_id).append(current)
+            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(
@@ -1379,7 +1391,7 @@ class MusicService:
         del queue[index]
         current = self.current_items.get(guild_id)
         if current is not None and current.track is not None and not current.is_autoplay:
-            self._played(guild_id).append(current)
+            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(

@@ -28,7 +28,9 @@ export function HistoryTab({ played, favorites, toggleFavorite, onReplay, onRequ
               key={`r${i}`}
               disableGutters
               dense
-              onClick={() => onReplay(i, t.title)}
+              // Row click adds to the queue (safe in a shared voice chat);
+              // "Play now" lives in the hover pill and the context menu.
+              onClick={() => onRequeue(i, t.title)}
               onContextMenu={(e) =>
                 onMenu(e, {
                   track: {

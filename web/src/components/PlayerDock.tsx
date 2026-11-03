@@ -109,6 +109,7 @@ export function PlayerDock({
   favorite,
   onToggleFavorite,
   playlistMenu,
+  onOpenNowPlaying,
 }: {
   state: PlayerState | null;
   volume: number;
@@ -123,6 +124,8 @@ export function PlayerDock({
   favorite: boolean;
   onToggleFavorite?: () => void;
   playlistMenu?: React.ReactNode;
+  /** Opens the full-screen now-playing view (click on artwork or title). */
+  onOpenNowPlaying?: () => void;
 }) {
   const current = state?.current;
   const paused = !!current?.paused;
@@ -270,7 +273,13 @@ export function PlayerDock({
         spacing={2}
         sx={{ flex: singleRow ? "1 1 0%" : "1 1 100%", minWidth: 0, alignItems: "center", order: singleRow ? 0 : 1 }}
       >
-      <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
+      <Box
+        onClick={onOpenNowPlaying}
+        sx={{
+          position: "relative", flexShrink: 0, width: 48, height: 48,
+          cursor: onOpenNowPlaying ? "pointer" : undefined,
+        }}
+      >
         {current?.artwork ? (
           <Box
             component="img"
@@ -294,7 +303,10 @@ export function PlayerDock({
         {isLoading && <CircularProgress size={26} sx={{ position: "absolute", inset: "11px" }} />}
       </Box>
 
-      <Box sx={{ flex: 1, minWidth: 0 }}>
+      <Box
+        onClick={onOpenNowPlaying}
+        sx={{ flex: 1, minWidth: 0, cursor: onOpenNowPlaying ? "pointer" : undefined }}
+      >
         <Typography variant="subtitle2" noWrap>
           {current?.title ?? "Nothing playing"}
         </Typography>

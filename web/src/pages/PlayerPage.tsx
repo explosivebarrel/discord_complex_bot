@@ -57,6 +57,7 @@ import { CoverImg } from "../components/player/CoverImg";
 import { PLAYER_TABS, PlayerNav, type PlayerTab } from "../components/player/PlayerNav";
 import { RowActions, rowActionsRowSx } from "../components/player/RowActions";
 import { HomeRail, MediaCard, SearchBar, SearchResults } from "../components/player/SearchTab";
+import { NowPlayingScreen } from "../components/player/NowPlayingScreen";
 import { CollectionTab } from "../components/player/CollectionTab";
 import { HistoryTab } from "../components/player/HistoryTab";
 import { useLocalPref } from "../useLocalPref";
@@ -131,6 +132,7 @@ export function PlayerPage() {
   const [openPl, setOpenPl] = useState<UserPlaylistFull | null>(null);
   const [plBusy, setPlBusy] = useState(false);
   const [volume, setVolume] = useState<number | null>(null);
+  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadsQuery = useGuildUploads(gid);
@@ -155,13 +157,6 @@ export function PlayerPage() {
       : "search";
   const setPlayerTab = (t: PlayerTab) =>
     navigate(t === "search" ? basePath : t === "collection" ? collectionPath : `${basePath}/history`);
-  // Back to the previous view when the history has one, else to the
-  // collection root (deep links have nothing to go back to).
-  const goBack = () => {
-    const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : 0;
-    if (idx > 0) navigate(-1);
-    else navigate(collectionPath);
-  };
   const openPlaylistRoute = (pid: number) => navigate(`${collectionPath}/playlist/${pid}`);
   const [playerNavCollapsed, setPlayerNavCollapsed] = useLocalPref("ui.playerNavCollapsed", false);
 
@@ -435,6 +430,7 @@ export function PlayerPage() {
       onStop={() => act(() => api.simpleAction(gid, "stop"))}
       onSeek={(p) => act(() => api.seek(gid, p))}
       onRepeatCycle={cycleRepeat}
+      onOpenNowPlaying={state?.current ? () => setNowPlayingOpen(true) : undefined}
       favorite={!!state?.current && favorites.some((f) => f.uri === state.current?.uri)}
       onToggleFavorite={state?.current ? () => toggleFavorite(state.current as TrackInfo) : undefined}
       playlistMenu={
@@ -719,12 +715,12 @@ export function PlayerPage() {
             ) : state && state.played.length > 0 ? (
               <List disablePadding>
                 {state.played.map((t, i) => (
-                  <ListItem
-                    key={`r${i}`}
-                    disableGutters
-                    dense
-                    onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
-                    onContextMenu={(e) =>
+                <ListItem
+                  key={`r${i}`}
+                  disableGutters
+                  dense
+                  onClick={() => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`)}
+                  onContextMenu={(e) =>
                       trackMenu.open(
                         e,
                         trackMenuSpec(t, {
@@ -943,7 +939,9 @@ export function PlayerPage() {
                             title={t.title}
                             subtitle={[SOURCE_LABELS[t.source ?? ""] ?? "", t.requested_by].filter(Boolean).join(" · ")}
                             artwork={t.artwork}
-                            onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
+                            // Click adds to the queue; play stays on the hover
+                            // badges and the context menu.
+                            onClick={() => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`)}
                             onQueue={() => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`)}
                             onMenu={(e) =>
                               trackMenu.open(
@@ -983,7 +981,6 @@ export function PlayerPage() {
               myPls={myPls}
               likedOpen={likedOpen}
               onOpenLiked={() => navigate(`${collectionPath}/liked`)}
-              onBack={goBack}
               openPl={openPl}
               plOpening={plId !== null && openPl === null}
               createPlaylist={createPlaylist}
@@ -1049,6 +1046,29 @@ export function PlayerPage() {
 
       {feedback.node}
       {trackMenu.node}
+      {nowPlayingOpen && state?.current && (
+        <NowPlayingScreen
+          state={state}
+          favorite={favorites.some((f) => f.uri === state.current?.uri)}
+          onToggleFavorite={() => state.current && toggleFavorite(state.current as TrackInfo)}
+          onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}
+          onPrevious={() => act(() => api.simpleAction(gid, "previous"))}
+          onSkip={() => act(() => api.simpleAction(gid, "skip"))}
+          onSeek={(p) => act(() => api.seek(gid, p))}
+          onRepeatCycle={cycleRepeat}
+          onShuffleQueue={() => act(() => api.shuffleQueue(gid), "Queue shuffled")}
+          onMenu={(e) =>
+            state.current &&
+            trackMenu.open(
+              e,
+              trackMenuSpec(state.current, {
+                onPlay: () => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause")),
+              }),
+            )
+          }
+          onClose={() => setNowPlayingOpen(false)}
+        />
+      )}
     </AppShell>
   );
 }
