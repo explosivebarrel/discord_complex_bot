@@ -290,7 +290,9 @@ def test_section_allows_matrix() -> None:
     assert section_allows("off", False) is False
 
 
-async def test_play_next_moves_finished_track_to_played(music: MusicService) -> None:
+async def test_play_next_records_new_track_at_start(music: MusicService) -> None:
+    """Recent is written when a track STARTS: the playing song is already
+    "recently played" the moment it begins."""
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
     music.current_items[GUILD_ID] = QueueItem(make_track("current"), 1, "u")
@@ -298,9 +300,9 @@ async def test_play_next_moves_finished_track_to_played(music: MusicService) -> 
 
     await music.play_next(GUILD_ID, "finished")
 
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["current"]
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["next"]
     # The state list is newest first.
-    assert (await music.get_state(GUILD_ID))["played"][0]["title"] == "current"
+    assert (await music.get_state(GUILD_ID))["played"][0]["title"] == "next"
 
 
 async def test_replayed_track_moves_to_front_instead_of_duplicating(music: MusicService) -> None:
@@ -321,16 +323,20 @@ async def test_replayed_track_moves_to_front_instead_of_duplicating(music: Music
 async def test_previous_replays_last_and_requeues_current(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
-    music.current_items[GUILD_ID] = QueueItem(make_track("current"), 1, "u")
-    fill_queue(music, ["next"])
+    fill_queue(music, ["first", "second"])
+    await music.play_next(GUILD_ID, "finished")
     await music.play_next(GUILD_ID, "finished")
 
-    assert await music.previous(GUILD_ID, 1) == "current"
+    assert await music.previous(GUILD_ID, 1, "zheny") == "first"
 
-    assert player.played == ["next", "current"]
+    assert player.played == ["first", "second", "first"]
     # What was playing returns to the front of the queue.
-    assert [i.track.title for i in music.queues[GUILD_ID]] == ["next"]
-    assert music.played[GUILD_ID] == deque()
+    assert [i.track.title for i in music.queues[GUILD_ID]] == ["second"]
+    # The playing track's own entry was consumed by going back; the replayed
+    # one was re-recorded at its start.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["first"]
+    # The acting user becomes the requester of the replayed track.
+    assert music.current_items[GUILD_ID].requested_by_name == "zheny"
 
 
 async def test_previous_without_history_fails(music: MusicService) -> None:
@@ -350,7 +356,7 @@ async def test_jump_to_keeps_the_queue_order(music: MusicService) -> None:
     assert player.played == ["b"]
     # The chosen track leaves the queue, everything else keeps its order.
     assert [i.track.title for i in music.queues[GUILD_ID]] == ["a", "c"]
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["playing"]
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["b"]
     with pytest.raises(MusicServiceError):
         await music.jump_to(GUILD_ID, 9, 1)
 
@@ -377,8 +383,9 @@ async def test_marker_expansion_keeps_later_queue_tracks_in_place(music: MusicSe
 
     titles = [i.display_title for i in music.queues[GUILD_ID]]
     assert titles == [f"track {i}" for i in range(101, 150)]
-    # The queue tail was not lost and not reordered.
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["current", "last"]
+    # The queue tail was not lost and not reordered; history holds the
+    # tracks that actually started.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["last", "track 100"]
     assert player.played == ["last", "track 100"]
 
 
@@ -475,7 +482,8 @@ async def test_enqueue_interrupts_autoplay_radio(music: MusicService) -> None:
     assert result["now_playing"] is True
     assert player.played == ["real song"]
     assert music.current_items[GUILD_ID].display_title == "real song"
-    assert not music.played.get(GUILD_ID)
+    # The radio stays out of Recent; the real song entered it at start.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["real song"]
 
 
 async def test_autoplay_radio_stays_out_of_played(music: MusicService) -> None:
@@ -489,21 +497,24 @@ async def test_autoplay_radio_stays_out_of_played(music: MusicService) -> None:
     await music.play_next(GUILD_ID, "stopped")
 
     assert player.played == ["song"]
-    assert GUILD_ID not in music.played
+    # The radio stays out of Recent; the real song entered it at start.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["song"]
 
 
 async def test_replay_played_by_position(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
-    music.current_items[GUILD_ID] = QueueItem(make_track("live"), 1, "u")
-    fill_queue(music, ["a"])
+    fill_queue(music, ["old", "live"])
+    await music.play_next(GUILD_ID, "finished")
     await music.play_next(GUILD_ID, "finished")
 
-    assert await music.replay_played(GUILD_ID, 0, 1) == "live"
+    # Panel position 0 is the newest row: the currently playing track.
+    assert await music.replay_played(GUILD_ID, 0, 1, "zheny") == "live"
 
-    assert player.played == ["a", "live"]
-    # The interrupted track "a" took its place in the history.
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["a"]
+    assert player.played == ["old", "live", "live"]
+    # A restart keeps its entry (re-recorded at start).
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["old", "live"]
+    assert music.current_items[GUILD_ID].requested_by_name == "zheny"
     with pytest.raises(MusicServiceError):
         await music.replay_played(GUILD_ID, 5, 1)
 
@@ -518,16 +529,18 @@ def test_shuffle_queue_keeps_all_tracks(music: MusicService) -> None:
 async def test_requeue_played_appends_without_touching_history(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
-    music.current_items[GUILD_ID] = QueueItem(make_track("current"), 1, "u")
     fill_queue(music, ["old"])
-    await music.play_next(GUILD_ID, "finished")  # "old" plays, "current" -> history
+    await music.play_next(GUILD_ID, "finished")  # "old" plays, enters history
 
-    assert await music.requeue_played(GUILD_ID, 0, 1) == "current"
+    assert await music.requeue_played(GUILD_ID, 0, 2, "zheny") == "old"
 
     # The queue gets a copy; the history entry stays put (repeatable action).
-    assert [i.track.title for i in music.queues[GUILD_ID]] == ["current"]
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["current"]
+    assert [i.track.title for i in music.queues[GUILD_ID]] == ["old"]
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["old"]
     assert player.played == ["old"]  # playback was not interrupted
+    # The acting user replaces the original requester on the queued copy.
+    assert music.queues[GUILD_ID][0].requested_by_name == "zheny"
+    assert music.played[GUILD_ID][0].requested_by_name == "tester"
     with pytest.raises(MusicServiceError):
         await music.requeue_played(GUILD_ID, 5, 1)
 
@@ -650,7 +663,7 @@ async def test_add_playlist_tracks_validates_and_dedupes(music: MusicService) ->
         await music.add_playlist_tracks(GUILD_ID, session.id, [500], 1, "u")
 
 
-async def test_play_playlist_track_moves_current_to_played(music: MusicService) -> None:
+async def test_play_playlist_track_records_at_start(music: MusicService) -> None:
     player = FakePlayer()
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
     session = _make_session(music, 3)
@@ -664,7 +677,7 @@ async def test_play_playlist_track_moves_current_to_played(music: MusicService) 
 
     assert title == "track 1"
     assert player.played == ["track 1"]
-    assert [i.track.title for i in music.played[GUILD_ID]] == ["playing now"]
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["track 1"]
     with pytest.raises(MusicServiceError):
         await music.play_playlist_track(GUILD_ID, session.id, 99, 1, "u")
 

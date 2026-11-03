@@ -456,7 +456,7 @@ async def previous(
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        title = await music.previous(guild_id, user.discord_id)
+        title = await music.previous(guild_id, user.discord_id, user.global_name)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"previous": title}
@@ -785,7 +785,7 @@ async def replay_played(
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        title = await music.replay_played(guild_id, body.position, user.discord_id)
+        title = await music.replay_played(guild_id, body.position, user.discord_id, user.global_name)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"playing": title}
@@ -800,7 +800,7 @@ async def requeue_played(
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        title = await music.requeue_played(guild_id, body.position, user.discord_id)
+        title = await music.requeue_played(guild_id, body.position, user.discord_id, user.global_name)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"queued": title}

@@ -820,6 +820,10 @@ class MusicService:
         track = await self._resolve_item(item)
         item.track = track
         await player.play(track)
+        # Recent is written when the track STARTS: a song that is playing
+        # right now has been played recently. The autoplay radio stays out.
+        if not item.is_autoplay:
+            self._push_played(guild_id, item)
         await self._record_history(guild_id, item)
 
     def record_error(self, message: str, context: dict[str, Any] | None = None) -> None:
@@ -862,11 +866,6 @@ class MusicService:
             ):
                 return None
             queue.append(station)
-        if current is not None and current.track is not None and not current.is_autoplay:
-            # The outgoing track enters the session history for Previous/Recent.
-            # A dead pending item (track is None, recursion) and the autoplay
-            # radio must not enter it.
-            self._push_played(guild_id, current)
         item = queue.popleft()
         if item.more_from_playlist is not None:
             window, next_index = self._expand_marker(item)
@@ -899,6 +898,8 @@ class MusicService:
             return await self.play_next(guild_id, reason)
         item.track = track
         await player.play(track)
+        if not item.is_autoplay:
+            self._push_played(guild_id, item)
         await self._record_history(guild_id, item)
         return track
 
@@ -1306,15 +1307,10 @@ class MusicService:
     async def play_pending_now(
         self, guild_id: int, item: QueueItem, requester_id: int, details: dict[str, Any] | None = None
     ) -> str:
-        """Start one deferred item right now with the usual history rules.
-
-        The interrupted track enters the session history; an autoplay radio
-        is replaced without a trace.
-        """
+        """Start one deferred item right now. The session history entry is
+        recorded when the track starts (see _play_item); an autoplay radio
+        is replaced without a trace."""
         self._require_player(guild_id)
-        current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None and not current.is_autoplay:
-            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit("music.play_pending", guild_id=guild_id, actor_id=requester_id, details=details)
@@ -1347,9 +1343,6 @@ class MusicService:
         if index < 0 or index >= len(session.entries):
             raise MusicServiceError("That playlist position does not exist.")
         item = self._entry_to_item(session.entries[index], session, requester_id, requester_name)
-        current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None and not current.is_autoplay:
-            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(
@@ -1369,14 +1362,24 @@ class MusicService:
         await self.db.audit("music.skip", guild_id=guild_id, actor_id=requester_id)
         return True
 
-    async def previous(self, guild_id: int, requester_id: int) -> str:
-        """Replay the last history entry; the current track returns to the queue front."""
+    async def previous(self, guild_id: int, requester_id: int, requester_name: str = "") -> str:
+        """Replay the track that played before the current one; the current
+        track returns to the queue front.
+
+        History entries are recorded at track start, so the newest entry is
+        the playing track itself: skip it before taking the real target.
+        """
         self._require_player(guild_id)
         played = self._played(guild_id)
+        current = self.current_items.get(guild_id)
+        current_key = self._played_key(current) if current is not None else None
+        while played and current_key is not None and self._played_key(played[-1]) == current_key:
+            played.pop()
         if not played:
             raise MusicServiceError("Nothing was played yet.")
         item = self._for_replay(played.pop())
-        current = self.current_items.get(guild_id)
+        item.requested_by_id = requester_id
+        item.requested_by_name = requester_name or item.requested_by_name
         if current is not None and current.track is not None and not current.is_autoplay:
             self._queue(guild_id).appendleft(current)
         self.current_items[guild_id] = item
@@ -1386,19 +1389,26 @@ class MusicService:
         await self.db.audit("music.previous", guild_id=guild_id, actor_id=requester_id)
         return item.display_title
 
-    async def replay_played(self, guild_id: int, position: int, requester_id: int) -> str:
-        """Play a session history entry. Position 0 is the most recent track."""
+    async def replay_played(self, guild_id: int, position: int, requester_id: int, requester_name: str = "") -> str:
+        """Play a session history entry as the panel shows it: position 0 is
+        the newest row — the currently playing track (recorded at start),
+        so replaying it just restarts. Other entries leave the list and
+        move to the front by starting."""
         self._require_player(guild_id)
         played = self._played(guild_id)
-        if position < 0 or position >= len(played):
+        index = len(played) - 1 - position
+        if position < 0 or index < 0 or index >= len(played):
             raise MusicServiceError("That history entry does not exist.")
-        # Take the target out first: the interrupted current track joins the
-        # history afterwards and must not shift the position.
-        item = self._for_replay(played[len(played) - 1 - position])
-        del played[len(played) - 1 - position]
+        entry = played[index]
         current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None and not current.is_autoplay:
-            self._push_played(guild_id, current)
+        is_current = current is not None and self._played_key(entry) == self._played_key(current)
+        # A restart keeps its entry (re-recorded on start); anything else
+        # leaves the list and returns by starting.
+        item = self._for_replay(entry if is_current else replace(entry))
+        if not is_current:
+            del played[index]
+        item.requested_by_id = requester_id
+        item.requested_by_name = requester_name or item.requested_by_name
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(
@@ -1406,15 +1416,18 @@ class MusicService:
         )
         return item.display_title
 
-    async def requeue_played(self, guild_id: int, position: int, requester_id: int) -> str:
+    async def requeue_played(self, guild_id: int, position: int, requester_id: int, requester_name: str = "") -> str:
         """Append a session history entry back to the queue; playback keeps
-        going and the entry stays in the history (re-add works repeatedly)."""
+        going and the entry stays in the history (re-add works repeatedly).
+        The acting user becomes the requester of the queued copy."""
         self._require_player(guild_id)
         played = self._played(guild_id)
         if position < 0 or position >= len(played):
             raise MusicServiceError("That history entry does not exist.")
         # Work on a copy: the history entry itself must keep its resolved track.
         item = self._for_replay(replace(played[len(played) - 1 - position]))
+        item.requested_by_id = requester_id
+        item.requested_by_name = requester_name or item.requested_by_name
         self._queue(guild_id).append(item)
         await self.db.audit(
             "music.requeue", guild_id=guild_id, actor_id=requester_id, details={"position": position}
@@ -1423,8 +1436,7 @@ class MusicService:
 
     async def jump_to(self, guild_id: int, index: int, requester_id: int) -> str:
         """Start a queued track now. The chosen track leaves the queue, the
-        rest of the queue keeps its order; only the interrupted current track
-        enters the session history."""
+        rest of the queue keeps its order."""
         self._require_player(guild_id)
         queue = self._queue(guild_id)
         if index < 0 or index >= len(queue):
@@ -1433,9 +1445,6 @@ class MusicService:
         if item.more_from_playlist is not None:
             raise MusicServiceError("Open the playlist browser to pick a track from it.")
         del queue[index]
-        current = self.current_items.get(guild_id)
-        if current is not None and current.track is not None and not current.is_autoplay:
-            self._push_played(guild_id, current)
         self.current_items[guild_id] = item
         await self._play_item(guild_id, item)
         await self.db.audit(
