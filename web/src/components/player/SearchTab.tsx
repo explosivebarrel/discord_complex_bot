@@ -43,32 +43,32 @@ export function SearchBar({
     scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => scroller.removeEventListener("scroll", onScroll);
   }, []);
-  // Backdrop fade: fully frosted in the middle, dissolving to nothing at
-  // the block edges so there is no hard rim.
-  // The fade band spans the block padding: fully frosted in the middle,
-  // dissolving to nothing half a padding before the edge, per the design.
+  // Backdrop fade: the whole padding band dissolves toward every edge
+  // (fully frosted past the padding, zero right at the rim), so there is
+  // no hard rim on any of the four sides.
   const pad = 24;
-  const fade = pad / 2;
-  const edgeMask = `linear-gradient(to right, black 0px, black calc(100% - ${fade}px), transparent 100%), linear-gradient(to bottom, black 0px, black calc(100% - ${fade}px), transparent 100%)`;
+  const edgeMask = `linear-gradient(to right, transparent 0px, black ${pad}px, black calc(100% - ${pad}px), transparent 100%), linear-gradient(to bottom, transparent 0px, black ${pad}px, black calc(100% - ${pad}px), transparent 100%)`;
   return (
     <Box ref={rootRef} sx={{ position: "sticky", top: 0, zIndex: 5, p: { xs: 1.5, md: 3 } }}>
-      {scrolled && (
-        <Box
-          aria-hidden
-          sx={(t) => ({
-            position: "absolute",
-            inset: 0,
-            borderRadius: "16px",
-            overflow: "hidden",
-            backdropFilter: "blur(16px) saturate(1.5)",
-            bgcolor: t.palette.mode === "dark" ? "rgba(14,10,26,.35)" : "rgba(255,255,255,.35)",
-            maskImage: edgeMask,
-            WebkitMaskImage: edgeMask,
-            maskComposite: "intersect",
-            WebkitMaskComposite: "source-in",
-          })}
-        />
-      )}
+      <Box
+        aria-hidden
+        sx={(t) => ({
+          position: "absolute",
+          inset: 0,
+          borderRadius: "16px",
+          overflow: "hidden",
+          backdropFilter: "blur(16px) saturate(1.5)",
+          bgcolor: t.palette.mode === "dark" ? "rgba(14,10,26,.35)" : "rgba(255,255,255,.35)",
+          maskImage: edgeMask,
+          WebkitMaskImage: edgeMask,
+          maskComposite: "intersect",
+          WebkitMaskComposite: "source-in",
+          // Fade the whole layer in/out instead of popping it.
+          opacity: scrolled ? 1 : 0,
+          transition: (tt) => tt.transitions.create("opacity", { duration: tt.transitions.duration.standard, easing: "ease" }),
+          pointerEvents: "none",
+        })}
+      />
       <Box sx={{ position: "relative" }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { xs: "stretch", sm: "center" } }}>
         <Box sx={{ position: "relative", flex: 1, minWidth: 0 }}>
