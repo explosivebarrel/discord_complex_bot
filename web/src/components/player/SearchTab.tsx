@@ -14,6 +14,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useTheme,
 } from "@mui/material";
 import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as SearchIcon, IconPlayArrow as PlayArrow } from "../icons";
 import { MsIcon } from "../MsIcon";
@@ -246,6 +247,8 @@ export function MediaCard({
   artwork?: string | null;
   onClick?: () => void;
 }) {
+  const theme = useTheme();
+  const glyphColor = theme.palette.mode === "dark" ? "#362268" : theme.palette.m3.onPrimary;
   return (
     <Box onClick={onClick} sx={{ width: 148, flexShrink: 0, cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}>
       <Box sx={{ position: "relative" }}>
@@ -261,7 +264,10 @@ export function MediaCard({
             boxShadow: "0 4px 12px rgba(0,0,0,.4)",
           })}
         >
-          <PlayArrow fontSize="small" />
+          {/* Dark glyph on the light lavender disc in dark themes (the Join
+              button does the same): some glass schemes ship a light
+              onPrimary, so the token alone is not enough contrast. */}
+          <PlayArrow fontSize="small" sx={{ color: glyphColor }} />
         </Box>
       </Box>
       <Typography variant="body2" noWrap sx={{ mt: 0.75 }}>{title}</Typography>
