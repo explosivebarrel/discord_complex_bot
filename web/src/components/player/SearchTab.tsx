@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -19,7 +20,6 @@ import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { fmt, SOURCE_LABELS } from "./labels";
 import type { SearchTabProps } from "./playerProps";
-import { surfaceStyle } from "../../themes/buildTheme";
 
 /** The sticky search header of the player home: field + Queue URL + source
     chips (+ radio presets / upload). It stays put while the page scrolls
@@ -31,21 +31,45 @@ export function SearchBar({
   SOURCES, PLACEHOLDERS, RADIO_PRESETS, UPLOAD_ACCEPT,
 }: Omit<SearchTabProps, "results" | "favorites" | "played" | "myPls" | "toggleFavorite" | "onOpenCollection" | "onOpenHistory">) {
   void gid; void guard;
+  // The frosted backdrop only exists while the page is scrolled: at rest
+  // the bar is fully transparent and covers nothing.
+  const [scrolled, setScrolled] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const scroller = rootRef.current?.closest("main");
+    if (!scroller) return;
+    const onScroll = () => setScrolled((scroller as HTMLElement).scrollTop > 4);
+    onScroll();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
+  // Backdrop fade: fully frosted in the middle, dissolving to nothing at
+  // the block edges so there is no hard rim.
+  // The fade band spans the block padding: fully frosted in the middle,
+  // dissolving to nothing half a padding before the edge, per the design.
+  const pad = 24;
+  const fade = pad / 2;
+  const edgeMask = `linear-gradient(to right, black 0px, black calc(100% - ${fade}px), transparent 100%), linear-gradient(to bottom, black 0px, black calc(100% - ${fade}px), transparent 100%)`;
   return (
-    <Box
-      sx={(t) => ({
-        position: "sticky",
-        top: 0,
-        zIndex: 5,
-        px: { xs: 1.5, md: 3 },
-        pt: { xs: 1, md: 2 },
-        pb: 1.5,
-        // Card-style backdrop (what the search block used to be): the same
-        // translucent filled surface as every card, plus a hairline bottom.
-        ...surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card"),
-        borderBottom: `1px solid ${t.palette.m3.outlineVariant}`,
-      })}
-    >
+    <Box ref={rootRef} sx={{ position: "sticky", top: 0, zIndex: 5, p: { xs: 1.5, md: 3 } }}>
+      {scrolled && (
+        <Box
+          aria-hidden
+          sx={(t) => ({
+            position: "absolute",
+            inset: 0,
+            borderRadius: "16px",
+            overflow: "hidden",
+            backdropFilter: "blur(16px) saturate(1.5)",
+            bgcolor: t.palette.mode === "dark" ? "rgba(14,10,26,.35)" : "rgba(255,255,255,.35)",
+            maskImage: edgeMask,
+            WebkitMaskImage: edgeMask,
+            maskComposite: "intersect",
+            WebkitMaskComposite: "source-in",
+          })}
+        />
+      )}
+      <Box sx={{ position: "relative" }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { xs: "stretch", sm: "center" } }}>
         <Box sx={{ position: "relative", flex: 1, minWidth: 0 }}>
           <TextField
@@ -205,6 +229,7 @@ export function SearchBar({
           ))}
         </Stack>
       )}
+      </Box>
     </Box>
   );
 }
