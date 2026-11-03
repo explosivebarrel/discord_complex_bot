@@ -13,6 +13,7 @@ import {
 } from "../icons";
 import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
+import { MosaicCover } from "../MosaicCover";
 import type { TrackMenuSpec } from "../TrackMenu";
 import { PlaylistBrowser } from "../PlaylistBrowser";
 import { CoverImg } from "./CoverImg";
@@ -30,7 +31,7 @@ export interface CollectionTabProps {
   onQueueFavorite: (f: { id: number; uri: string; source: string; title: string; author: string; length_ms: number; artwork: string | null }) => void;
   onRemoveFavorite: (id: number) => void;
   onMenu: (e: React.MouseEvent, spec: TrackMenuSpec) => void;
-  myPls: { id: number; name: string; tracks: number; artwork?: string | null }[];
+  myPls: { id: number; name: string; tracks: number; artwork?: string | null; artworks?: string[] }[];
   likedOpen: boolean;
   onOpenLiked: () => void;
   openPl: { id: number; name: string; tracks: { id: number; title: string; author: string; source: string; length_ms: number; artwork?: string | null; uri?: string }[] } | null;
@@ -227,7 +228,8 @@ export function CollectionTab(props: CollectionTabProps) {
 
   // ---- Full playlist page (its own route) ----
   if (openPl) {
-    const cover = openPl.tracks.find((t) => t.artwork)?.artwork ?? null;
+    // Hero mosaic: first 4 track covers, duplicates skipped.
+    const heroCovers = [...new Set(openPl.tracks.map((t) => t.artwork).filter((x): x is string => !!x))].slice(0, 4);
     const visible = openPl.tracks.filter((t) =>
       !plFilter.trim() || t.title.toLowerCase().includes(plFilter.trim().toLowerCase()));
     return (
@@ -248,7 +250,7 @@ export function CollectionTab(props: CollectionTabProps) {
           </Card>
         )}
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2, alignItems: { sm: "center" } }}>
-          <CoverImg src={cover} size={120} radius="12px" />
+          <MosaicCover images={heroCovers} size={120} />
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="overline" sx={{ color: "text.secondary" }}>Playlist</Typography>
             <Typography variant="h4" noWrap>{openPl.name}</Typography>
@@ -477,7 +479,7 @@ export function CollectionTab(props: CollectionTabProps) {
                 onClick={() => onOpenPlaylist(p.id)}
                 sx={{ position: "relative", cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}
               >
-                <CoverImg src={p.artwork} size={148} radius="12px" />
+                <MosaicCover images={p.artworks ?? (p.artwork ? [p.artwork] : [])} size={148} />
                 <Stack direction="row" spacing={0.5} sx={{ position: "absolute", right: 6, bottom: 6 }}>
                   <Tooltip title="Play from the start">
                     <IconButton

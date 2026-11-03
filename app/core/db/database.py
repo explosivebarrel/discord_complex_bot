@@ -493,27 +493,30 @@ class Database:
                 .group_by(UserPlaylistTrack.playlist_id)
             )
             track_counts = dict(counts.all())
-            # Cover of the first track with one: playlist card artwork.
+            # Covers of the first tracks with artwork, in track order: the
+            # playlist card mosaic (1-4 tiles). Duplicate artwork urls are
+            # skipped, so the same cover never fills two tiles.
             covers = await session.execute(
-                select(
-                    UserPlaylistTrack.playlist_id,
-                    func.min(UserPlaylistTrack.position),
-                    UserPlaylistTrack.artwork,
-                )
+                select(UserPlaylistTrack.playlist_id, UserPlaylistTrack.position, UserPlaylistTrack.artwork)
                 .where(
                     UserPlaylistTrack.playlist_id.in_([p.id for p in playlists]),
                     UserPlaylistTrack.artwork.is_not(None),
                     UserPlaylistTrack.artwork != "",
                 )
-                .group_by(UserPlaylistTrack.playlist_id)
+                .order_by(UserPlaylistTrack.playlist_id, UserPlaylistTrack.position)
             )
-            first_cover = {pid: art for pid, _pos, art in covers.all() if art}
+            mosaic: dict[int, list[str]] = {}
+            for pid, _pos, art in covers.all():
+                bucket = mosaic.setdefault(pid, [])
+                if art not in bucket:
+                    bucket.append(art)
             return [
                 {
                     "id": p.id,
                     "name": p.name,
                     "tracks": track_counts.get(p.id, 0),
-                    "artwork": first_cover.get(p.id),
+                    "artworks": mosaic.get(p.id, [])[:4],
+                    "artwork": (mosaic.get(p.id) or [None])[0],
                     "created_at": p.created_at.isoformat(),
                 }
                 for p in playlists

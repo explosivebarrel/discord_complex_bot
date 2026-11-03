@@ -22,6 +22,7 @@ import {
 import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as SearchIcon, IconPlayArrow as PlayArrow } from "../icons";
 import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
+import { MosaicCover } from "../MosaicCover";
 import { CoverImg } from "./CoverImg";
 import { fmt, SOURCE_LABELS } from "./labels";
 import type { SearchTabProps } from "./playerProps";
@@ -244,11 +245,13 @@ export function SearchBar({
     clicks. An optional queue badge (the smaller disc on the left) adds the
     "enqueue without playing" action. */
 export function MediaCard({
-  title, subtitle, artwork, onClick, onQueue, onMenu,
+  title, subtitle, artwork, artworks, onClick, onQueue, onMenu,
 }: {
   title: string;
   subtitle?: string;
   artwork?: string | null;
+  /** Playlist-style mosaic of up to 4 covers (overrides artwork). */
+  artworks?: string[];
   onClick?: () => void;
   onQueue?: () => void;
   onMenu?: (e: React.MouseEvent) => void;
@@ -258,7 +261,11 @@ export function MediaCard({
   return (
     <Box onClick={onClick} onContextMenu={onMenu} sx={{ width: 148, flexShrink: 0, cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}>
       <Box sx={{ position: "relative" }}>
-        <CoverImg src={artwork} size={148} radius="12px" />
+        {artworks && artworks.length > 0 ? (
+          <MosaicCover images={artworks} size={148} />
+        ) : (
+          <CoverImg src={artwork} size={148} radius="12px" />
+        )}
         {onQueue && (
           <Box
             className="card-play"

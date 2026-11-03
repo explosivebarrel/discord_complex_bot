@@ -145,6 +145,8 @@ export interface UserPlaylistBrief {
   name: string;
   tracks: number;
   artwork?: string | null;
+  /** Up to 4 first track artworks: the card mosaic. */
+  artworks?: string[];
   created_at: string;
 }
 

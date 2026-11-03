@@ -954,6 +954,7 @@ export function PlayerPage() {
                           key={p.id}
                           title={p.name}
                           subtitle={`${p.tracks} track(s)`}
+                          artworks={p.artworks}
                           onClick={() => openPlaylistRoute(p.id)}
                         />
                       ))}
