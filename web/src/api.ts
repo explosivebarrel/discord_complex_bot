@@ -64,6 +64,14 @@ export interface ModerationAction {
   created_at: string;
 }
 
+/** Search endpoint reply with the stale-while-revalidate verdict: "fresh"
+    results came from a ≤30-min cache (instant), "stale" from an older
+    cached query (a forced re-search follows), "miss" from a live search. */
+export interface SearchResponse {
+  results: TrackInfo[];
+  cache: "fresh" | "stale" | "miss";
+}
+
 export interface TrackInfo {
   title: string;
   author: string | null;
@@ -318,10 +326,10 @@ export const api = {
   leave: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/leave`, { method: "POST" }).then((r) => handle<unknown>(r)),
 
-  search: (guildId: string, q: string, source: string = "yt") =>
-    fetch(`/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}`).then((r) =>
-      handle<TrackInfo[]>(r),
-    ),
+  search: (guildId: string, q: string, source: string = "yt", fresh = false) =>
+    fetch(
+      `/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}${fresh ? "&fresh=true" : ""}`,
+    ).then((r) => handle<SearchResponse>(r)),
 
   uploadTrack: (guildId: string, file: File) => {
     const body = new FormData();

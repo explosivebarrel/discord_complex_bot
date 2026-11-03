@@ -167,3 +167,31 @@ async def test_user_playlists_crud_and_ownership(db: Database) -> None:
 
     assert await db.delete_user_playlist(1, playlist_id) is True
     assert await db.get_user_playlist(1, playlist_id) is None
+
+
+async def test_search_cache_upsert_get_prune(db: Database) -> None:
+    from datetime import timedelta
+
+    from app.core.db.models import utcnow
+
+    assert await db.get_search_cache("k") is None
+
+    await db.upsert_search_cache("k", [{"title": "a", "source": "yt"}])
+    row = await db.get_search_cache("k")
+    assert row is not None
+    assert row["payload"] == [{"title": "a", "source": "yt"}]
+
+    # Upsert refreshes both payload and created_at.
+    await db.upsert_search_cache("k", [{"title": "b", "source": "yt"}])
+    row = await db.get_search_cache("k")
+    assert row is not None and row["payload"][0]["title"] == "b"
+
+    # Prune only removes rows older than the cutoff.
+    await db.upsert_search_cache("old", [{"title": "old"}])
+    await db.prune_search_cache(utcnow() - timedelta(hours=24))
+    assert await db.get_search_cache("k") is not None
+    assert await db.get_search_cache("old") is not None
+    # A cutoff in the future removes everything.
+    await db.prune_search_cache(utcnow() + timedelta(hours=1))
+    assert await db.get_search_cache("k") is None
+    assert await db.get_search_cache("old") is None

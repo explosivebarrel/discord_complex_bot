@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
 import random
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -19,6 +22,7 @@ from app.api.deps import (
 )
 from app.core.config import Config
 from app.core.db import Database
+from app.core.db.models import utcnow
 from app.core.services.extern_search import ExternalSearchError, archive_search, radio_search
 from app.core.services.library import (
     FileTooLargeError,
@@ -147,15 +151,10 @@ async def leave(
     return {"connected": False}
 
 
-@router.get("/search")
-async def search(
-    guild_id: int,
-    q: str,
-    source: str = "yt",
-    user: CurrentUser = Depends(require_guild_member),
-    music: MusicService = Depends(get_music),
-    config: Config = Depends(get_config),
+async def _run_search(
+    q: str, source: str, guild_id: int, music: MusicService, config: Config
 ) -> list[dict[str, Any]]:
+    """The uncached search dispatch shared by the panel endpoint."""
     if source == "radio":
         try:
             return await radio_search(q)
@@ -201,6 +200,49 @@ async def search(
         return await music.search(q, source=source)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _search_cache_key(source: str, guild_id: int, q: str) -> str:
+    norm = " ".join(q.split()).casefold()
+    return hashlib.sha1(f"{source}|{guild_id}|{norm}".encode()).hexdigest()
+
+
+SEARCH_FRESH_TTL = timedelta(minutes=30)
+SEARCH_STALE_TTL = timedelta(hours=24)
+
+logger = logging.getLogger(__name__)
+
+
+@router.get("/search")
+async def search(
+    guild_id: int,
+    q: str,
+    source: str = "yt",
+    fresh: bool = False,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    config: Config = Depends(get_config),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Search with a stale-while-revalidate cache: results up to 30 minutes
+    old come back instantly, older ones (up to a day) come back at once
+    with cache="stale" while the client re-requests with fresh=true."""
+    key = _search_cache_key(source, guild_id, q)
+    if not fresh:
+        cached = await db.get_search_cache(key)
+        if cached is not None:
+            age = utcnow() - cached["created_at"]
+            if age <= SEARCH_FRESH_TTL:
+                return {"results": cached["payload"], "cache": "fresh"}
+            if age <= SEARCH_STALE_TTL:
+                return {"results": cached["payload"], "cache": "stale"}
+    results = await _run_search(q, source, guild_id, music, config)
+    try:
+        await db.upsert_search_cache(key, results)
+        await db.prune_search_cache(utcnow() - SEARCH_STALE_TTL)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to store search cache for guild %s", guild_id)
+    return {"results": results, "cache": "miss"}
 
 
 @router.post("/uploads")

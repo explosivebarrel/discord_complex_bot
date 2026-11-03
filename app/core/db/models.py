@@ -183,6 +183,22 @@ class TrackArtwork(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
 
 
+class SearchCache(Base):
+    """Cached search results, keyed by source+guild+normalized query.
+
+    Serves stale-while-revalidate: results up to 30 minutes old come back
+    instantly without a banner, results up to a day old come back at once
+    while a fresh search reruns, older rows are pruned. Payload is the
+    JSON array of track dicts exactly as the search endpoint returns it.
+    """
+
+    __tablename__ = "search_cache"
+
+    key: Mapped[str] = mapped_column(String(320), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), index=True, default=utcnow)
+
+
 class AvailabilitySample(Base):
     """One probe pass of the availability monitor (every minute).
 

@@ -124,6 +124,8 @@ export function PlayerPage() {
   const [source, setSource] = useState("yt");
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
+  // Sequence guard for search responses: only the newest request may paint.
+  const searchSeq = useRef(0);
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
   const [queueView, setQueueView] = useState<"next" | "recent">("next");
   const [playlist, setPlaylist] = useState<PlaylistPageInfo | null>(null);
@@ -251,12 +253,37 @@ export function PlayerPage() {
 
   const doSearch = (q: string = query, src: string = source) => {
     if (!q.trim()) return;
+    // A slow response must never overwrite a newer search's results.
+    const seq = ++searchSeq.current;
     setSearching(true);
     api
       .search(gid, q, src)
-      .then((r) => setResults(r))
-      .catch(guard)
-      .finally(() => setSearching(false));
+      .then((r) => {
+        if (searchSeq.current !== seq) return;
+        setResults(r.results);
+        if (r.cache !== "stale") {
+          setSearching(false);
+          return;
+        }
+        // Stale cache is already on screen: refresh it in the background
+        // (the banner explains the swap) and replace when done. On failure
+        // the cached results simply stay.
+        api
+          .search(gid, q, src, true)
+          .then((r2) => {
+            if (searchSeq.current === seq) setResults(r2.results);
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (searchSeq.current === seq) setSearching(false);
+          });
+      })
+      .catch((e) => {
+        if (searchSeq.current === seq) {
+          guard(e);
+          setSearching(false);
+        }
+      });
   };
 
   const enqueue = (key: string, body: Parameters<typeof api.enqueue>[1]) => {

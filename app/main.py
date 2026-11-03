@@ -5,6 +5,7 @@ import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -28,6 +29,7 @@ from app.api.routers import (
 from app.bot.client import ComplexBot
 from app.core.config import load_config, setup_logging, validate_config
 from app.core.db import Database
+from app.core.db.models import utcnow
 from app.core.services import availability
 from app.core.services.music import MusicService
 
@@ -77,6 +79,7 @@ def create_app() -> FastAPI:
         persist_task = asyncio.create_task(music.periodic_persist(), name="music-persist")
         bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
         cleanup_task = asyncio.create_task(_session_cleanup_loop(db), name="session-cleanup")
+        search_cache_task = asyncio.create_task(_search_cache_cleanup_loop(db), name="search-cache-prune")
         availability_task = asyncio.create_task(
             availability.loop(config, db, bot, music), name="availability"
         )
@@ -85,6 +88,7 @@ def create_app() -> FastAPI:
         finally:
             persist_task.cancel()
             cleanup_task.cancel()
+            search_cache_task.cancel()
             availability_task.cancel()
             await bot.close()
             bot_task.cancel()
@@ -152,6 +156,16 @@ async def _session_cleanup_loop(db: Database) -> None:
             await cleanup_expired_sessions(db)
         except Exception:  # noqa: BLE001 - an error here must not stop the loop
             logger.exception("Session cleanup failed")
+
+
+async def _search_cache_cleanup_loop(db: Database) -> None:
+    # Search results live at most a day (stale-while-revalidate window).
+    while True:
+        await asyncio.sleep(600)
+        try:
+            await db.prune_search_cache(utcnow() - timedelta(hours=24))
+        except Exception:  # noqa: BLE001 - an error here must not stop the loop
+            logger.exception("Search cache cleanup failed")
 
 
 def main() -> None:

@@ -14,12 +14,14 @@ from app.core.db.models import (
     AvailabilitySample,
     Base,
     TrackArtwork,
+    utcnow,
     FavoriteTrack,
     GuildAdmin,
     GuildSettings,
     ModWarning,
     MusicSnapshot,
     PlayHistory,
+    SearchCache,
     SystemSetting,
     UserPlaylist,
     UserPlaylistTrack,
@@ -776,6 +778,29 @@ class Database:
             await session.execute(
                 delete(AvailabilityRollup).where(AvailabilityRollup.hour_start < rollup_before)
             )
+            await session.commit()
+
+    async def get_search_cache(self, key: str) -> dict[str, Any] | None:
+        async with self.session_factory() as session:
+            row = await session.get(SearchCache, key)
+            if row is None:
+                return None
+            return {"payload": json.loads(row.payload), "created_at": row.created_at}
+
+    async def upsert_search_cache(self, key: str, payload: list[dict[str, Any]]) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(SearchCache, key)
+            if row is None:
+                row = SearchCache(key=key, payload=json.dumps(payload))
+                session.add(row)
+            else:
+                row.payload = json.dumps(payload)
+                row.created_at = utcnow()
+            await session.commit()
+
+    async def prune_search_cache(self, before: datetime) -> None:
+        async with self.session_factory() as session:
+            await session.execute(delete(SearchCache).where(SearchCache.created_at < before))
             await session.commit()
 
     async def load_music_snapshots(self) -> dict[int, dict[str, Any]]:

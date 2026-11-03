@@ -314,38 +314,105 @@ export function HomeRail({ title, children }: { title: string; children: React.R
   );
 }
 
+/** Banner shown while cached results are already on screen and a forced
+    re-search runs: an animated sweep (a segment runs left to right,
+    lengthening mid-travel and shrinking at the ends) plus a note that the
+    list below is the recent cached query. */
+function SearchingBanner() {
+  return (
+    <Box
+      sx={(t) => ({
+        display: "flex",
+        alignItems: "center",
+        gap: 2,
+        px: 2.5,
+        py: 1.25,
+        mb: 1.5,
+        borderRadius: 999,
+        bgcolor: t.palette.m3.surfaceContainer,
+        boxShadow: `inset 0 0 0 1px ${t.palette.m3.outlineVariant}`,
+      })}
+    >
+      <Box
+        aria-hidden
+        sx={{
+          position: "relative",
+          width: 120,
+          height: 4,
+          borderRadius: 999,
+          overflow: "hidden",
+          flexShrink: 0,
+          bgcolor: "action.hover",
+          "& .sweep": {
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            borderRadius: 999,
+            bgcolor: "primary.main",
+            animation: "search-sweep 1.6s ease-in-out infinite",
+          },
+          "@keyframes search-sweep": {
+            "0%": { left: "-35%", width: "35%" },
+            "50%": { left: "37%", width: "55%" },
+            "100%": { left: "100%", width: "35%" },
+          },
+          "@media (prefers-reduced-motion: reduce)": {
+            "& .sweep": { animation: "none", left: "30%", width: "40%" },
+          },
+        }}
+      >
+        <Box className="sweep" />
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.3 }}>
+          Searching for audio…
+        </Typography>
+        <Typography variant="caption" sx={{ color: "text.secondary", display: "block", lineHeight: 1.3 }}>
+          Fresh results are loading — the list below is your recent search
+          from the cache.
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
 /** Search results list under the sticky bar (renders only with a query). */
 export function SearchResults({
   results, searching, favorites, toggleFavorite, enqueue, enqueueing, onMenu,
 }: Pick<SearchTabProps, "results" | "searching" | "favorites" | "toggleFavorite" | "enqueue" | "enqueueing"> & {
   onMenu: (e: React.MouseEvent, spec: import("../TrackMenu").TrackMenuSpec) => void;
 }) {
-  if (!results) return null;
-  if (searching) {
-    return (
-      <Box sx={{ mt: 1 }}>
-        {[0, 1, 2].map((i) => (
-          <Box key={i} sx={{ display: "flex", gap: 2, py: 1 }}>
-            <Skeleton variant="rounded" width={48} height={48} />
-            <Box sx={{ flex: 1 }}>
-              <Skeleton width="70%" />
-              <Skeleton width="40%" />
+  if (!results) {
+    // First-ever search for this query: nothing cached to show, skeletons only.
+    if (searching) {
+      return (
+        <Box sx={{ mt: 1 }}>
+          {[0, 1, 2].map((i) => (
+            <Box key={i} sx={{ display: "flex", gap: 2, py: 1 }}>
+              <Skeleton variant="rounded" width={48} height={48} />
+              <Box sx={{ flex: 1 }}>
+                <Skeleton width="70%" />
+                <Skeleton width="40%" />
+              </Box>
             </Box>
-          </Box>
-        ))}
-      </Box>
-    );
-  }
-  if (results.length === 0) {
-    return (
-      <Typography variant="body2" sx={{ color: "text.secondary", py: 3, textAlign: "center" }}>
-        Nothing found.
-      </Typography>
-    );
+          ))}
+        </Box>
+      );
+    }
+    return null;
   }
   return (
-    // Flex column + gap: the result cards breathe apart instead of touching.
-    <List disablePadding sx={{ mt: 1, display: "flex", flexDirection: "column", gap: 1.25 }}>
+    <Box>
+      {/* Stale-while-revalidate: cached rows stay on screen under the banner
+          while the forced re-search runs. */}
+      {searching && <SearchingBanner />}
+      {results.length === 0 ? (
+        <Typography variant="body2" sx={{ color: "text.secondary", py: 3, textAlign: "center" }}>
+          Nothing found.
+        </Typography>
+      ) : (
+        /* Flex column + gap: the result cards breathe apart instead of touching. */
+        <List disablePadding sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
       {results.map((t, i) => (
         <ListItem
           key={i}
@@ -453,6 +520,8 @@ export function SearchResults({
           />
         </ListItem>
       ))}
-    </List>
+        </List>
+      )}
+    </Box>
   );
 }
