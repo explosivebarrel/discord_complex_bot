@@ -238,14 +238,16 @@ export function SearchBar({
 
 /** A cover-art card of the horizontal home rails (favorites, playlists,
     recently played). The hover play badge is decorative: the whole card
-    clicks. */
+    clicks. An optional queue badge (the smaller disc on the left) adds the
+    "enqueue without playing" action. */
 export function MediaCard({
-  title, subtitle, artwork, onClick,
+  title, subtitle, artwork, onClick, onQueue,
 }: {
   title: string;
   subtitle?: string;
   artwork?: string | null;
   onClick?: () => void;
+  onQueue?: () => void;
 }) {
   const theme = useTheme();
   const glyphColor = theme.palette.mode === "dark" ? "#362268" : theme.palette.m3.onPrimary;
@@ -253,6 +255,25 @@ export function MediaCard({
     <Box onClick={onClick} sx={{ width: 148, flexShrink: 0, cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}>
       <Box sx={{ position: "relative" }}>
         <CoverImg src={artwork} size={148} radius="12px" />
+        {onQueue && (
+          <Box
+            className="card-play"
+            onClick={(e) => {
+              e.stopPropagation();
+              onQueue();
+            }}
+            sx={{
+              position: "absolute", right: 52, bottom: 8,
+              width: 36, height: 36, borderRadius: "50%",
+              bgcolor: "rgba(20,16,32,.72)", display: "grid", placeItems: "center",
+              opacity: 0,
+              transition: (tt) => tt.transitions.create("opacity", { duration: tt.transitions.duration.short }),
+              boxShadow: "0 4px 12px rgba(0,0,0,.4)",
+            }}
+          >
+            <AddQueue fontSize="small" sx={{ color: "#fff" }} />
+          </Box>
+        )}
         <Box
           className="card-play"
           sx={(t) => ({

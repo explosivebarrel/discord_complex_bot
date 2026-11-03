@@ -92,7 +92,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/" element={<GuildsPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/about" element={<AboutPage />} />
+            {/* The player's nested views get their own URLs, so the browser
+                back button and the page's Back controls behave normally. */}
             <Route path="/guild/:guildId" element={<PlayerPage />} />
+            <Route path="/guild/:guildId/collection" element={<PlayerPage />} />
+            <Route path="/guild/:guildId/collection/liked" element={<PlayerPage />} />
+            <Route path="/guild/:guildId/collection/playlist/:plId" element={<PlayerPage />} />
+            <Route path="/guild/:guildId/history" element={<PlayerPage />} />
             <Route path="/guild/:guildId/admin" element={<AdminPage />} />
             <Route path="/guild/:guildId/stats" element={<StatsPage />} />
             <Route path="/guild/:guildId/posts" element={<PostsPage />} />

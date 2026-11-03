@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Box,
   Button,
@@ -24,6 +24,7 @@ import {
   IconAllInclusive as AllInclusive,
   IconCloud as CloudQueue,
   IconDelete as DeleteOutlined,
+  IconFavorite as Favorite,
   IconFolder as Folder,
   IconGraphicEq as GraphicEq,
   IconKeyboardArrowDown as KeyboardArrowDown,
@@ -53,11 +54,11 @@ import { useFeedback } from "../components/Feedback";
 import { fmt, SOURCE_LABELS } from "../components/player/labels";
 import { CoverImg } from "../components/player/CoverImg";
 import { PLAYER_TABS, PlayerNav, type PlayerTab } from "../components/player/PlayerNav";
+import { RowActions, rowActionsRowSx } from "../components/player/RowActions";
 import { HomeRail, MediaCard, SearchBar, SearchResults } from "../components/player/SearchTab";
 import { CollectionTab } from "../components/player/CollectionTab";
 import { HistoryTab } from "../components/player/HistoryTab";
 import { useLocalPref } from "../useLocalPref";
-import { useLocalPrefValue } from "../useLocalPrefValue";
 
 const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
   { id: "all", label: "All", icon: <AllInclusive fontSize="small" /> },
@@ -88,6 +89,8 @@ const UPLOAD_ACCEPT = ".mp3,.ogg,.oga,.flac,.m4a,.wav,.opus";
 export function PlayerPage() {
   const { guildId } = useParams<{ guildId: string }>();
   const gid = guildId ?? "";
+  const location = useLocation();
+  const navigate = useNavigate();
   const { me, loading } = useAuth();
   const feedback = useFeedback();
   const queryClient = useQueryClient();
@@ -120,7 +123,6 @@ export function PlayerPage() {
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
-  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [queueView, setQueueView] = useState<"next" | "recent">("next");
   const [playlist, setPlaylist] = useState<PlaylistPageInfo | null>(null);
   const [playlistBusy, setPlaylistBusy] = useState(false);
@@ -138,10 +140,29 @@ export function PlayerPage() {
     return !!brief && (brief.is_admin || !!brief.is_owner);
   })();
 
-  // Player-local section switcher: independent of the global nav collapse.
-  const [playerTab, setPlayerTab] = useLocalPrefValue("ui.playerTab", "search");
+  // Player-local section switcher lives in the URL, so the browser back
+  // button and the in-page Back controls both work. Nested views (liked
+  // tracks, a playlist page) are deeper segments of the same scheme.
+  const basePath = `/guild/${gid}`;
+  const collectionPath = `${basePath}/collection`;
+  const likedOpen = location.pathname === `${collectionPath}/liked`;
+  const plId = Number(location.pathname.match(/^\/guild\/[^/]+\/collection\/playlist\/(\d+)$/)?.[1]) || null;
+  const activeTab: PlayerTab = location.pathname.startsWith(collectionPath)
+    ? "collection"
+    : location.pathname === `${basePath}/history`
+      ? "history"
+      : "search";
+  const setPlayerTab = (t: PlayerTab) =>
+    navigate(t === "search" ? basePath : t === "collection" ? collectionPath : `${basePath}/history`);
+  // Back to the previous view when the history has one, else to the
+  // collection root (deep links have nothing to go back to).
+  const goBack = () => {
+    const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : 0;
+    if (idx > 0) navigate(-1);
+    else navigate(collectionPath);
+  };
+  const openPlaylistRoute = (pid: number) => navigate(`${collectionPath}/playlist/${pid}`);
   const [playerNavCollapsed, setPlayerNavCollapsed] = useLocalPref("ui.playerNavCollapsed", false);
-  const activeTab = (PLAYER_TABS.some((t) => t.id === playerTab) ? playerTab : "search") as PlayerTab;
 
   useEffect(() => {
     const d = sourcesQuery.data;
@@ -327,14 +348,32 @@ export function PlayerPage() {
     );
   };
 
-  const openPlaylistTracks = (pid: number) => {
+  // A playlist route loads its full contents; leaving the route clears it.
+  useEffect(() => {
+    if (plId === null) {
+      setOpenPl(null);
+      return;
+    }
+    if (openPl?.id === plId) return;
+    let alive = true;
     setPlBusy(true);
     api
-      .userPlaylist(pid)
-      .then(setOpenPl)
-      .catch(guard)
-      .finally(() => setPlBusy(false));
-  };
+      .userPlaylist(plId)
+      .then((p) => {
+        if (alive) setOpenPl(p);
+      })
+      .catch((e) => {
+        guard(e as Error);
+        navigate(collectionPath);
+      })
+      .finally(() => {
+        if (alive) setPlBusy(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plId]);
 
   const cycleRepeat = () => {
     const next = state?.repeat === "all" ? "one" : state?.repeat === "one" ? "off" : "all";
@@ -374,6 +413,22 @@ export function PlayerPage() {
       onStop={() => act(() => api.simpleAction(gid, "stop"))}
       onSeek={(p) => act(() => api.seek(gid, p))}
       onRepeatCycle={cycleRepeat}
+      favorite={!!state?.current && favorites.some((f) => f.uri === state.current?.uri)}
+      onToggleFavorite={state?.current ? () => toggleFavorite(state.current as TrackInfo) : undefined}
+      playlistMenu={
+        state?.current ? (
+          <PlaylistAddMenu
+            track={{
+              title: state.current.title,
+              author: state.current.author,
+              uri: state.current.uri ?? "",
+              source: state.current.source ?? "",
+              length_ms: state.current.length,
+              artwork: state.current.artwork,
+            }}
+          />
+        ) : null
+      }
     />
   );
 
@@ -542,13 +597,10 @@ export function PlayerPage() {
                           gap: 1.5,
                           bgcolor: dragOverIndex === i ? "action.hover" : undefined,
                           "&:hover": { bgcolor: "action.hover" },
-                          "& .MuiListItemSecondaryAction-root": { right: 12 },
-                          "& .row-actions": { visibility: "hidden" },
-                          "&:hover .row-actions": { visibility: "visible" },
-                          ["@media (hover: none)"]: { "& .row-actions": { visibility: "visible" } },
+                          ...rowActionsRowSx,
                         }}
                         secondaryAction={
-                          <Stack direction="row" spacing={0.5} className="row-actions">
+                          <RowActions>
                             <PlaylistAddMenu
                               track={{
                                 title: t.title,
@@ -559,6 +611,20 @@ export function PlayerPage() {
                                 artwork: t.artwork,
                               }}
                             />
+                            <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(t);
+                                }}
+                              >
+                                <Favorite
+                                  filled={favorites.some((f) => f.uri === t.uri)}
+                                  fontSize="small"
+                                />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="Move up">
                               <span>
                                 <IconButton
@@ -584,7 +650,7 @@ export function PlayerPage() {
                                 <DeleteOutlined fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                          </Stack>
+                          </RowActions>
                         }
                       >
                         <ListItemAvatar sx={{ minWidth: 28 }}>
@@ -624,13 +690,10 @@ export function PlayerPage() {
                       px: 1.5,
                       gap: 1.5,
                       "&:hover": { bgcolor: "action.hover" },
-                      "& .MuiListItemSecondaryAction-root": { right: 12 },
-                      "& .row-actions": { visibility: "hidden" },
-                      "&:hover .row-actions": { visibility: "visible" },
-                      ["@media (hover: none)"]: { "& .row-actions": { visibility: "visible" } },
+                      ...rowActionsRowSx,
                     }}
                     secondaryAction={
-                      <Box sx={{ display: "flex", gap: 0.5 }} className="row-actions">
+                      <RowActions>
                         <Tooltip title="Add to queue">
                           <IconButton
                             size="small"
@@ -653,7 +716,28 @@ export function PlayerPage() {
                             <PlayArrow fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                      </Box>
+                        <PlaylistAddMenu
+                          track={{
+                            title: t.title,
+                            author: t.author,
+                            uri: t.uri ?? "",
+                            source: t.source,
+                            length_ms: t.length,
+                            artwork: t.artwork,
+                          }}
+                        />
+                        <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(t);
+                            }}
+                          >
+                            <Favorite filled={favorites.some((f) => f.uri === t.uri)} fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </RowActions>
                     }
                   >
                     <ListItemAvatar sx={{ minWidth: 36 }}>
@@ -781,10 +865,7 @@ export function PlayerPage() {
                           key={p.id}
                           title={p.name}
                           subtitle={`${p.tracks} track(s)`}
-                          onClick={() => {
-                            openPlaylistTracks(p.id);
-                            setPlayerTab("collection");
-                          }}
+                          onClick={() => openPlaylistRoute(p.id)}
                         />
                       ))}
                     </HomeRail>
@@ -797,6 +878,7 @@ export function PlayerPage() {
                             subtitle={[SOURCE_LABELS[t.source ?? ""] ?? "", t.requested_by].filter(Boolean).join(" · ")}
                             artwork={t.artwork}
                             onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
+                            onQueue={() => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`)}
                           />
                         ))}
                       </HomeRail>
@@ -813,19 +895,34 @@ export function PlayerPage() {
               me={me}
               favorites={favorites}
               onPlayFavorite={enqueueFavorite}
+              onQueueFavorite={(f) =>
+                enqueue(`fq:${f.id}`, {
+                  query: f.uri, source: f.source || "yt", title: f.title,
+                  author: f.author, length_ms: f.length_ms, artwork: f.artwork,
+                })
+              }
               onRemoveFavorite={(id) =>
                 api.removeFavorite(id).then(() => queryClient.invalidateQueries({ queryKey: ["favorites"] })).catch(guard)
               }
               myPls={myPls}
+              likedOpen={likedOpen}
+              onOpenLiked={() => navigate(`${collectionPath}/liked`)}
+              onBack={goBack}
               openPl={openPl}
-              onClosePlaylist={() => setOpenPl(null)}
+              plOpening={plId !== null && openPl === null}
               createPlaylist={createPlaylist}
               plBusy={plBusy}
-              openPlaylistTracks={openPlaylistTracks}
+              onOpenPlaylist={openPlaylistRoute}
               onDetailDelete={() =>
-                openPl && plAction(() => api.deleteUserPlaylist(openPl.id), `Playlist "${openPl.name}" deleted`)
+                openPl &&
+                plAction(
+                  () => api.deleteUserPlaylist(openPl.id),
+                  `Playlist "${openPl.name}" deleted`,
+                  () => navigate(collectionPath),
+                )
               }
               onShufflePlay={(pid, name) => act(() => api.queueUserPlaylist(gid, pid, true), `Queued "${name}" (shuffled)`)}
+              onPlayPlaylist={(pid, name) => act(() => api.queueUserPlaylist(gid, pid), `Playing "${name}"`)}
               onQueueFavorites={() => act(() => api.queueFavorites(gid), "Favorites queued")}
               onQueueAll={() =>
                 openPl &&
@@ -833,6 +930,10 @@ export function PlayerPage() {
               }
               onPlayPlaylistTrack={(index, title) =>
                 openPl && plAction(() => api.playUserPlaylistTrack(gid, openPl.id, index), `Now playing: ${title}`)
+              }
+              onQueuePlaylistTrack={(index, title) =>
+                openPl &&
+                plAction(() => api.queueUserPlaylistTrack(gid, openPl.id, index), `Added to queue: ${title}`)
               }
               onRemovePlaylistTrack={(trackId) =>
                 openPl &&
@@ -861,8 +962,8 @@ export function PlayerPage() {
           {activeTab === "history" && (
             <HistoryTab
               played={state?.played ?? []}
-              hoveredRow={hoveredRow}
-              setHoveredRow={setHoveredRow}
+              favorites={favorites}
+              toggleFavorite={toggleFavorite}
               onReplay={(i, title) => act(() => api.replayPlayed(gid, i), `Now playing: ${title}`)}
               onRequeue={(i, title) => act(() => api.requeuePlayed(gid, i), `Added to queue: ${title}`)}
             />

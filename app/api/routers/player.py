@@ -699,6 +699,41 @@ async def queue_user_playlist(
     return {"queued": queued}
 
 
+@router.post("/myplaylist/{playlist_id}/queue/{index}")
+async def queue_user_playlist_track(
+    guild_id: int,
+    playlist_id: int,
+    index: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Queue one track of the user's playlist by its position."""
+    playlist = await db.get_user_playlist(user.discord_id, playlist_id)
+    if playlist is None:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    tracks = playlist["tracks"]
+    if index < 0 or index >= len(tracks):
+        raise HTTPException(status_code=400, detail="That playlist position does not exist.")
+    row = tracks[index]
+    item = QueueItem(
+        track=None,
+        requested_by_id=user.discord_id,
+        requested_by_name=user.global_name,
+        source=row["source"],
+        pending_url=row["uri"],
+        title=row["title"],
+        author=row["author"],
+        length=row["length_ms"],
+        artwork=row["artwork"],
+    )
+    try:
+        queued = await music.queue_pending_items(guild_id, [item], user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"queued": queued}
+
+
 @router.post("/played/replay")
 async def replay_played(
     guild_id: int,

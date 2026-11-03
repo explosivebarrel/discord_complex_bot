@@ -1,18 +1,20 @@
 import { Box, IconButton, List, ListItem, ListItemAvatar, ListItemText, Tooltip, Typography } from "@mui/material";
-import { IconPlaylistAdd as PlaylistAdd, IconPlayArrow as PlayArrow } from "../icons";
+import { IconFavorite as Favorite, IconPlayArrow as PlayArrow, IconQueueMusic as QueueMusic } from "../icons";
+import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { CoverImg } from "./CoverImg";
+import { RowActions, rowActionsRowSx } from "./RowActions";
 import { SOURCE_LABELS } from "./labels";
 
 export interface HistoryTabProps {
   played: import("../../api").TrackInfo[];
-  hoveredRow: string | null;
-  setHoveredRow: (v: string | null | ((h: string | null) => string | null)) => void;
+  favorites: { uri: string }[];
+  toggleFavorite: (t: import("../../api").TrackInfo) => void;
   onReplay: (index: number, title: string) => void;
   onRequeue: (index: number, title: string) => void;
 }
 
 /** The player History tab: this session's played tracks, newest first. */
-export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequeue }: HistoryTabProps) {
+export function HistoryTab({ played, favorites, toggleFavorite, onReplay, onRequeue }: HistoryTabProps) {
   return (
     <Box sx={{ px: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 }, maxWidth: 900 }}>
       <Typography variant="h6" gutterBottom>
@@ -31,15 +33,11 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
                 borderRadius: 1,
                 px: 1.5,
                 gap: 1.5,
-                pr: 4.5,
                 "&:hover": { bgcolor: "action.hover" },
-                // The actions inset equals the left padding.
-                "& .MuiListItemSecondaryAction-root": { right: 12 },
+                ...rowActionsRowSx,
               }}
-              onMouseEnter={() => setHoveredRow(`r${i}`)}
-              onMouseLeave={() => setHoveredRow((h) => (h === `r${i}` ? null : h))}
               secondaryAction={
-                <Box sx={{ display: "flex", gap: 0.5 }}>
+                <RowActions>
                   <Tooltip title="Add to queue">
                     <IconButton
                       size="small"
@@ -48,14 +46,8 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
                         e.stopPropagation();
                         onRequeue(i, t.title);
                       }}
-                      sx={(t) => ({
-                        bgcolor: t.palette.m3.surfaceContainerHighest,
-                        "&:hover": { bgcolor: t.palette.m3.secondaryContainer },
-                        visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
-                        ["@media (hover: none)"]: { visibility: "visible" },
-                      })}
                     >
-                      <PlaylistAdd fontSize="small" />
+                      <QueueMusic fontSize="small" />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Play now">
@@ -66,17 +58,33 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
                         e.stopPropagation();
                         onReplay(i, t.title);
                       }}
-                      sx={(t) => ({
-                        bgcolor: t.palette.m3.surfaceContainerHighest,
-                        "&:hover": { bgcolor: t.palette.m3.secondaryContainer },
-                        visibility: hoveredRow === `r${i}` ? "visible" : "hidden",
-                        ["@media (hover: none)"]: { visibility: "visible" },
-                      })}
                     >
                       <PlayArrow fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                </Box>
+                  <PlaylistAddMenu
+                    track={{
+                      title: t.title,
+                      author: t.author,
+                      uri: t.uri ?? "",
+                      source: t.source ?? "",
+                      length_ms: t.length,
+                      artwork: t.artwork,
+                    }}
+                  />
+                  <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>
+                    <IconButton
+                      size="small"
+                      aria-label="Toggle favorite"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(t);
+                      }}
+                    >
+                      <Favorite filled={favorites.some((f) => f.uri === t.uri)} fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </RowActions>
               }
             >
               <ListItemAvatar

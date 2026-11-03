@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, IconButton, LinearProgress, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
+import { IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
@@ -106,6 +106,9 @@ export function PlayerDock({
   onStop,
   onSeek,
   onRepeatCycle,
+  favorite,
+  onToggleFavorite,
+  playlistMenu,
 }: {
   state: PlayerState | null;
   volume: number;
@@ -117,6 +120,9 @@ export function PlayerDock({
   onStop: () => void;
   onSeek: (positionMs: number) => void;
   onRepeatCycle: () => void;
+  favorite: boolean;
+  onToggleFavorite?: () => void;
+  playlistMenu?: React.ReactNode;
 }) {
   const current = state?.current;
   const paused = !!current?.paused;
@@ -296,6 +302,18 @@ export function PlayerDock({
         >
           {fmt(position)} / {fmt(current.length)}
         </Typography>
+      )}
+      {/* Current-track actions: like (filled when already favorited) and
+          add-to-playlist, so the playing track is manageable from the dock. */}
+      {current && (
+        <Box sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+          <Tooltip title={favorite ? "Remove from favorites" : "Add to favorites"}>
+            <IconButton size="small" onClick={onToggleFavorite} aria-label="Toggle favorite">
+              <Favorite filled={favorite} fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {playlistMenu}
+        </Box>
       )}
       </Stack>
 

@@ -548,6 +548,11 @@ export const api = {
       method: "POST",
     }).then((r) => handle<{ queued: number }>(r)),
 
+  queueUserPlaylistTrack: (guildId: string, playlistId: number, index: number) =>
+    fetch(`/api/guilds/${guildId}/player/myplaylist/${playlistId}/queue/${index}`, {
+      method: "POST",
+    }).then((r) => handle<{ queued: number }>(r)),
+
   volume: (guildId: string, volume: number) =>
     fetch(`/api/guilds/${guildId}/player/volume`, {
       method: "POST",

@@ -13,7 +13,6 @@ import {
 import { IconPlaylistAdd as PlaylistAdd } from "./icons";
 import { api, UserPlaylistBrief } from "../api";
 import { useFeedback } from "./Feedback";
-import { mixHex } from "../themes/palettes";
 
 export interface PlaylistTrackRef {
   title: string;
@@ -94,15 +93,7 @@ export function PlaylistAddMenu({ track }: { track: PlaylistTrackRef }) {
   return (
     <>
       <Tooltip title="Add to playlist">
-        <IconButton
-          size="small"
-          onClick={open}
-          sx={(t) => ({
-            bgcolor: t.palette.m3.secondaryContainer,
-            "&:hover": { bgcolor: mixHex(t.palette.m3.secondaryContainer, t.palette.m3.onSecondaryContainer, 0.15) },
-          })}
-          aria-label="Add to playlist"
-        >
+        <IconButton size="small" onClick={open} aria-label="Add to playlist">
           <PlaylistAdd fontSize="small" />
         </IconButton>
       </Tooltip>
