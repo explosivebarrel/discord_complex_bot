@@ -328,6 +328,7 @@ export function AppShell({
   right,
   rightBadge,
   dock,
+  leftNav,
   children,
 }: {
   me: Me | null;
@@ -341,6 +342,9 @@ export function AppShell({
   rightBadge?: number;
   /** Bottom dock of the content column (the player dock on the player page). */
   dock?: ReactNode;
+  /** A second nav column pinned right next to the app nav (the player
+      page's section menu). Styled like the nav column. */
+  leftNav?: ReactNode;
   children: ReactNode;
 }) {
   const theme = useTheme();
@@ -540,6 +544,20 @@ export function AppShell({
                 {navCollapsed ? Ic.leftOpen : Ic.leftClose}
               </IconButton>
             </Tooltip>
+          </Box>
+        )}
+
+        {leftNav && isWide && (
+          <Box
+            sx={(t) => ({
+              flexShrink: 0,
+              position: "relative",
+              overflow: "hidden",
+              ...(t.surface.islands ? islandStyle(t, t.palette.m3.surface) : {}),
+              borderRight: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+            })}
+          >
+            {leftNav}
           </Box>
         )}
 

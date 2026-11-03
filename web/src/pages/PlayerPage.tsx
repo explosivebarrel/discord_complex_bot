@@ -669,6 +669,16 @@ export function PlayerPage() {
     </Box>
   );
 
+  const playerNav = (
+    <PlayerNav
+      tab={activeTab}
+      onTab={setPlayerTab}
+      collapsed={playerNavCollapsed}
+      onToggle={() => setPlayerNavCollapsed(!playerNavCollapsed)}
+      queueLength={state?.queue.length ?? 0}
+    />
+  );
+
   const searchBarProps = {
     gid, source, setSource, query, setQuery, hasQuery, searchActive, setSearchActive,
     setResults, setSearching, searching, enqueueing, enqueue, doSearch: () => doSearch(),
@@ -698,25 +708,15 @@ export function PlayerPage() {
       right={rightPanel}
       rightBadge={state?.queue.length ?? 0}
       dock={dock}
+      leftNav={playerNav}
     >
       {stateError && (
         <Typography variant="body2" sx={{ color: "error.main", mb: 1 }}>
           Player status is unavailable: {stateError}
         </Typography>
       )}
-      <Box sx={{ display: "flex", alignItems: "flex-start" }}>
-        {/* The player-local sidebar: hidden on phones, an icon row there. */}
-        <Box sx={{ display: { xs: "none", sm: "block" }, position: "sticky", top: 8 }}>
-          <PlayerNav
-            tab={activeTab}
-            onTab={setPlayerTab}
-            collapsed={playerNavCollapsed}
-            onToggle={() => setPlayerNavCollapsed(!playerNavCollapsed)}
-            queueLength={state?.queue.length ?? 0}
-          />
-        </Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          {/* Phones: the sections collapse into an icon chip row on top. */}
+      <Box>
+        {/* Phones: the sections collapse into an icon chip row on top. */}
           <Stack
             direction="row"
             spacing={1}
@@ -857,7 +857,6 @@ export function PlayerPage() {
               onRequeue={(i, title) => act(() => api.requeuePlayed(gid, i), `Added to queue: ${title}`)}
             />
           )}
-        </Box>
       </Box>
 
       {feedback.node}

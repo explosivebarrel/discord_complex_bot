@@ -30,17 +30,14 @@ export function PlayerNav({
 }) {
   return (
     <Box
-      sx={(t) => ({
+      sx={{
         width: collapsed ? 64 : 200,
         flexShrink: 0,
-        position: "relative",
         display: "flex",
         flexDirection: "column",
+        height: "100%",
         transition: (tt) => tt.transitions.create("width", { duration: tt.transitions.duration.standard }),
-        ...(t.surface.islands
-          ? {}
-          : { borderRight: `1px solid ${t.palette.divider}` }),
-      })}
+      }}
     >
       {/* Header row: the collapse toggle doubles as it on the rail. */}
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "space-between", px: collapsed ? 0 : 1.5, pt: 1, minHeight: 48 }}>
@@ -51,7 +48,7 @@ export function PlayerNav({
         )}
         <Tooltip title={collapsed ? "Expand player menu" : "Collapse player menu"}>
           <IconButton onClick={onToggle} aria-label={collapsed ? "Expand player menu" : "Collapse player menu"} size="small">
-            <MsIcon name={collapsed ? "right_panel_open" : "right_panel_close"} fill={false} fontSize={22} />
+            <MsIcon name={collapsed ? "left_panel_open" : "left_panel_close"} fill={false} fontSize={22} />
           </IconButton>
         </Tooltip>
       </Box>

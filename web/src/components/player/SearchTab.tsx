@@ -19,6 +19,7 @@ import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { fmt, SOURCE_LABELS } from "./labels";
 import type { SearchTabProps } from "./playerProps";
+import { surfaceStyle } from "../../themes/buildTheme";
 
 /** The sticky search header of the player home: field + Queue URL + source
     chips (+ radio presets / upload). It stays put while the page scrolls
@@ -38,13 +39,11 @@ export function SearchBar({
         zIndex: 5,
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1, md: 2 },
-        pb: 1,
-        ...(t.surface.islands
-          ? {
-              bgcolor: "rgba(14,10,26,.55)",
-              backdropFilter: `blur(${t.surface.shellBlur}px) saturate(${t.surface.saturate})`,
-            }
-          : { bgcolor: "background.default" }),
+        pb: 1.5,
+        // Card-style backdrop (what the search block used to be): the same
+        // translucent filled surface as every card, plus a hairline bottom.
+        ...surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card"),
+        borderBottom: `1px solid ${t.palette.m3.outlineVariant}`,
       })}
     >
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { xs: "stretch", sm: "center" } }}>
