@@ -811,13 +811,13 @@ export function PlayerPage() {
               myPls={myPls}
               openPl={openPl}
               onClosePlaylist={() => setOpenPl(null)}
-              newPlName={newPlName}
-              setNewPlName={setNewPlName}
               createPlaylist={createPlaylist}
               plBusy={plBusy}
               openPlaylistTracks={openPlaylistTracks}
+              onDetailDelete={() =>
+                openPl && plAction(() => api.deleteUserPlaylist(openPl.id), `Playlist "${openPl.name}" deleted`)
+              }
               onShufflePlay={(pid, name) => act(() => api.queueUserPlaylist(gid, pid, true), `Queued "${name}" (shuffled)`)}
-              onDeletePlaylist={(pid, name) => plAction(() => api.deleteUserPlaylist(pid), `Playlist "${name}" deleted`, loadMyPls)}
               onQueueAll={() =>
                 openPl &&
                 plAction(() => api.queueUserPlaylist(gid, openPl.id), `Queued ${openPl.tracks.length} track(s)`)

@@ -136,6 +136,7 @@ export interface UserPlaylistBrief {
   id: number;
   name: string;
   tracks: number;
+  artwork?: string | null;
   created_at: string;
 }
 

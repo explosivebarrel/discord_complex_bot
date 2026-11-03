@@ -48,7 +48,7 @@ export function PlayerNav({
         )}
         <Tooltip title={collapsed ? "Expand player menu" : "Collapse player menu"}>
           <IconButton onClick={onToggle} aria-label={collapsed ? "Expand player menu" : "Collapse player menu"} size="small">
-            <MsIcon name={collapsed ? "left_panel_open" : "left_panel_close"} fill={false} fontSize={22} />
+            <MsIcon name={collapsed ? "arrow_menu_open" : "arrow_menu_close"} fill={false} fontSize={22} />
           </IconButton>
         </Tooltip>
       </Box>

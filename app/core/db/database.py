@@ -491,11 +491,27 @@ class Database:
                 .group_by(UserPlaylistTrack.playlist_id)
             )
             track_counts = dict(counts.all())
+            # Cover of the first track with one: playlist card artwork.
+            covers = await session.execute(
+                select(
+                    UserPlaylistTrack.playlist_id,
+                    func.min(UserPlaylistTrack.position),
+                    UserPlaylistTrack.artwork,
+                )
+                .where(
+                    UserPlaylistTrack.playlist_id.in_([p.id for p in playlists]),
+                    UserPlaylistTrack.artwork.is_not(None),
+                    UserPlaylistTrack.artwork != "",
+                )
+                .group_by(UserPlaylistTrack.playlist_id)
+            )
+            first_cover = {pid: art for pid, _pos, art in covers.all() if art}
             return [
                 {
                     "id": p.id,
                     "name": p.name,
                     "tracks": track_counts.get(p.id, 0),
+                    "artwork": first_cover.get(p.id),
                     "created_at": p.created_at.isoformat(),
                 }
                 for p in playlists

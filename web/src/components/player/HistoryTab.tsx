@@ -36,7 +36,7 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
               onMouseEnter={() => setHoveredRow(`r${i}`)}
               onMouseLeave={() => setHoveredRow((h) => (h === `r${i}` ? null : h))}
               secondaryAction={
-                <Box sx={{ display: "flex", gap: 0.5 }}>
+                <Box sx={{ display: "flex", gap: 0.5, right: 12 }}>
                   <Tooltip title="Add to queue">
                     <IconButton
                       size="small"
@@ -76,7 +76,9 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
                 </Box>
               }
             >
-              <ListItemAvatar sx={{ minWidth: 36 }}>
+              <ListItemAvatar
+                sx={{ minWidth: 36, width: 36, height: 36, display: "grid", placeItems: "center" }}
+              >
                 <CoverImg src={t.artwork} size={36} />
               </ListItemAvatar>
               <ListItemText
