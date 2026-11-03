@@ -31,7 +31,7 @@ import {
   IconLibraryMusic as LibraryMusic,
   IconMusicNote as MusicNote,
   IconPlayArrow as PlayArrow,
-  IconPlaylistAdd as PlaylistAdd,
+  IconQueueMusic as QueueMusic,
   IconRadio as RadioIcon,
   IconShuffle as Shuffle,
   IconTag as TagIcon,
@@ -538,11 +538,17 @@ export function PlayerPage() {
                         sx={{
                           cursor: "pointer",
                           borderRadius: 1,
+                          px: 1.5,
+                          gap: 1.5,
                           bgcolor: dragOverIndex === i ? "action.hover" : undefined,
                           "&:hover": { bgcolor: "action.hover" },
+                          "& .MuiListItemSecondaryAction-root": { right: 12 },
+                          "& .row-actions": { visibility: "hidden" },
+                          "&:hover .row-actions": { visibility: "visible" },
+                          ["@media (hover: none)"]: { "& .row-actions": { visibility: "visible" } },
                         }}
                         secondaryAction={
-                          <Stack direction="row" spacing={0.5}>
+                          <Stack direction="row" spacing={0.5} className="row-actions">
                             <PlaylistAddMenu
                               track={{
                                 title: t.title,
@@ -618,9 +624,13 @@ export function PlayerPage() {
                       px: 1.5,
                       gap: 1.5,
                       "&:hover": { bgcolor: "action.hover" },
+                      "& .MuiListItemSecondaryAction-root": { right: 12 },
+                      "& .row-actions": { visibility: "hidden" },
+                      "&:hover .row-actions": { visibility: "visible" },
+                      ["@media (hover: none)"]: { "& .row-actions": { visibility: "visible" } },
                     }}
                     secondaryAction={
-                      <Box sx={{ display: "flex", gap: 0.5, right: 12 }}>
+                      <Box sx={{ display: "flex", gap: 0.5 }} className="row-actions">
                         <Tooltip title="Add to queue">
                           <IconButton
                             size="small"
@@ -629,7 +639,7 @@ export function PlayerPage() {
                               act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`);
                             }}
                           >
-                            <PlaylistAdd fontSize="small" />
+                            <QueueMusic fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Play now">
@@ -674,7 +684,6 @@ export function PlayerPage() {
       onTab={setPlayerTab}
       collapsed={playerNavCollapsed}
       onToggle={() => setPlayerNavCollapsed(!playerNavCollapsed)}
-      queueLength={state?.queue.length ?? 0}
     />
   );
 

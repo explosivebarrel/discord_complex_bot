@@ -73,8 +73,10 @@ function TrackRow({
         cursor: "pointer",
         borderRadius: 1,
         px: 1,
+        pr: 4.5,
         gap: 1.25,
         "&:hover": { bgcolor: "action.hover" },
+        "& .MuiListItemSecondaryAction-root": { right: 12 },
       }}
       secondaryAction={actions}
     >
@@ -439,7 +441,7 @@ export function CollectionTab(props: CollectionTabProps) {
                           disabled={enqueueing !== null}
                           onClick={() => queueUpload(`up:${u.path}`, u.path, u.name)}
                         >
-                          <MsIcon name="add" fontSize={20} />
+                          <MsIcon name="queue_music" fontSize={20} />
                         </IconButton>
                       </Tooltip>
                       <Tooltip title={mine ? "Delete upload" : "Delete (admin)"}>

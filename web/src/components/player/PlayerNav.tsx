@@ -1,4 +1,4 @@
-import { Badge, Box, IconButton, ListItemButton, ListItemIcon, ListItemText, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, ListItemButton, ListItemIcon, ListItemText, Tooltip, Typography } from "@mui/material";
 import { IconHistory, IconSearch } from "../icons";
 import { MsIcon } from "../MsIcon";
 
@@ -20,13 +20,11 @@ export function PlayerNav({
   onTab,
   collapsed,
   onToggle,
-  queueLength,
 }: {
   tab: PlayerTab;
   onTab: (t: PlayerTab) => void;
   collapsed: boolean;
   onToggle: () => void;
-  queueLength: number;
 }) {
   return (
     <Box
@@ -68,13 +66,7 @@ export function PlayerNav({
               }}
             >
               <ListItemIcon sx={{ minWidth: collapsed ? 0 : 40, justifyContent: "center" }}>
-                {t.id === "history" ? (
-                  <Badge badgeContent={queueLength} color="primary">
-                    {t.icon}
-                  </Badge>
-                ) : (
-                  t.icon
-                )}
+                {t.icon}
               </ListItemIcon>
               {!collapsed && (
                 <ListItemText primary={t.label} slotProps={{ primary: { noWrap: true, variant: "body1" } }} />

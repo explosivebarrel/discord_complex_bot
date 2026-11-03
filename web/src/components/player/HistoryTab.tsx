@@ -31,12 +31,15 @@ export function HistoryTab({ played, hoveredRow, setHoveredRow, onReplay, onRequ
                 borderRadius: 1,
                 px: 1.5,
                 gap: 1.5,
+                pr: 4.5,
                 "&:hover": { bgcolor: "action.hover" },
+                // The actions inset equals the left padding.
+                "& .MuiListItemSecondaryAction-root": { right: 12 },
               }}
               onMouseEnter={() => setHoveredRow(`r${i}`)}
               onMouseLeave={() => setHoveredRow((h) => (h === `r${i}` ? null : h))}
               secondaryAction={
-                <Box sx={{ display: "flex", gap: 0.5, right: 12 }}>
+                <Box sx={{ display: "flex", gap: 0.5 }}>
                   <Tooltip title="Add to queue">
                     <IconButton
                       size="small"
