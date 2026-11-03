@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Box, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import {
   IconFavorite as Favorite,
@@ -91,7 +92,10 @@ export function NowPlayingScreen({
     </Tooltip>
   );
 
-  return (
+  // Portal to <body>: ancestors carry backdrop-filter, which would turn
+  // position:fixed into a containing block and keep the overlay trapped
+  // inside the content column.
+  return createPortal(
     <Box
       sx={{
         position: "fixed",
@@ -277,6 +281,7 @@ export function NowPlayingScreen({
           </Stack>
         )}
       </Stack>
-    </Box>
+    </Box>,
+    document.body,
   );
 }

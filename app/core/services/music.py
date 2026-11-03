@@ -180,13 +180,22 @@ class MusicService:
             self.played[guild_id] = played
         return played
 
+    @staticmethod
+    def _played_key(item: QueueItem) -> str:
+        """Stable identity of a history entry. Title+author, not the uri:
+        resolved stream urls carry a fresh token/expiry on every load.
+        Restored (pending) entries have no track yet."""
+        if item.track is not None:
+            return f"{item.track.title}|{item.track.author or ''}"
+        return item.pending_url or item.display_title
+
     def _push_played(self, guild_id: int, item: QueueItem) -> None:
         """Record a played track in the session history. Re-playing a track
         moves its entry to the front instead of duplicating it, so Recent
         never shows the same track twice."""
-        key = item.track.uri or item.display_title
+        key = self._played_key(item)
         played = deque(
-            (p for p in self._played(guild_id) if (p.track.uri or p.display_title) != key),
+            (p for p in self._played(guild_id) if self._played_key(p) != key),
             maxlen=PLAYED_LIMIT,
         )
         played.append(item)
@@ -1599,7 +1608,17 @@ class MusicService:
                 markers.extend((gid, it) for it in queue_items if it.more_from_playlist is not None)
             history = [self._item_from_payload(d) for d in reversed(data.get("played") or [])]
             if history:
-                self.played[gid] = deque(history[-PLAYED_LIMIT:], maxlen=PLAYED_LIMIT)
+                # Same dedupe as live plays: a restored snapshot may still
+                # carry repeated entries from before the rule existed.
+                seen: set[str] = set()
+                deduped: list[QueueItem] = []
+                for it in reversed(history):
+                    key = self._played_key(it)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    deduped.append(it)
+                self.played[gid] = deque(reversed(deduped[-PLAYED_LIMIT:]), maxlen=PLAYED_LIMIT)
             repeat = data.get("repeat")
             if repeat in ("off", "one", "all") and repeat != "off":
                 self.repeat_modes[gid] = repeat

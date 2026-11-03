@@ -247,7 +247,9 @@ export function AdminPage() {
                   Manage Server permission, or an id added below.
                   {!isOwner && " Only the server owner can change the access levels."}
                 </Typography>
-                <Stack spacing={1.5}>
+                {/* The form keeps a fixed readable width instead of stretching
+                    the selects across the whole card. */}
+                <Stack spacing={1.5} sx={{ maxWidth: 560 }}>
                   {(
                     [
                       ["stats", "Stats"],
@@ -256,7 +258,7 @@ export function AdminPage() {
                     ] as const
                   ).map(([key, label]) => (
                     <Stack key={key} direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                      <Typography variant="body2" sx={{ width: 110 }}>
+                      <Typography variant="body2" sx={{ width: 110, flexShrink: 0 }}>
                         {label}
                       </Typography>
                       <Tooltip title={isOwner ? undefined : "Only the server owner can change this"}>
@@ -277,25 +279,30 @@ export function AdminPage() {
                     </Stack>
                   ))}
                   <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                    <Typography variant="body2" sx={{ width: 110 }}>
+                    <Typography variant="body2" sx={{ width: 110, flexShrink: 0 }}>
                       Mod log
                     </Typography>
-                    <Select
-                      fullWidth
-                      size="small"
-                      value={access.modLog}
-                      onChange={(e) => setAccess({ ...access, modLog: e.target.value as string })}
-                      displayEmpty
-                    >
-                      <MenuItem value="">
-                        <em>Not set</em>
-                      </MenuItem>
-                      {textChannels.map((c) => (
-                        <MenuItem key={c.id} value={c.id}>
-                          # {c.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
+                    <Tooltip title={isOwner ? undefined : "Only the server owner can change this"}>
+                      <span style={{ display: "flex", flex: 1, minWidth: 0 }}>
+                        <Select
+                          fullWidth
+                          size="small"
+                          disabled={!isOwner}
+                          value={access.modLog}
+                          onChange={(e) => setAccess({ ...access, modLog: e.target.value as string })}
+                          displayEmpty
+                        >
+                          <MenuItem value="">
+                            <em>Not set</em>
+                          </MenuItem>
+                          {textChannels.map((c) => (
+                            <MenuItem key={c.id} value={c.id}>
+                              # {c.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </span>
+                    </Tooltip>
                   </Stack>
                   <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                     <Button
