@@ -38,7 +38,7 @@ export function CoverImg({
       component="img"
       src={src}
       onError={() => setBroken(true)}
-      sx={{ width: size, height: size, borderRadius: radius, objectFit: "cover", ...sx }}
+      sx={{ display: "block", width: size, height: size, borderRadius: radius, objectFit: "cover", ...sx }}
     />
   );
 }

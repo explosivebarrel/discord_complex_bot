@@ -538,6 +538,11 @@ export const api = {
       body: JSON.stringify({ index }),
     }).then((r) => handle<{ playing: string }>(r)),
 
+  queueFavorites: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/favorites/queue`, { method: "POST" }).then(
+      (r) => handle<{ queued: number }>(r),
+    ),
+
   queueUserPlaylist: (guildId: string, playlistId: number, shuffle = false) =>
     fetch(`/api/guilds/${guildId}/player/myplaylist/${playlistId}/queue${shuffle ? "?shuffle=true" : ""}`, {
       method: "POST",

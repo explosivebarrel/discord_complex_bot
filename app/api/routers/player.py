@@ -631,6 +631,39 @@ async def play_user_playlist_track(
     return {"playing": title}
 
 
+@router.post("/favorites/queue")
+async def queue_favorites(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Queue every favorite of the user, oldest first; the first track
+    starts at once when the bot is connected and idle."""
+    favorites = await db.list_favorites(user.discord_id, limit=1000)
+    if not favorites:
+        raise HTTPException(status_code=400, detail="No favorites yet.")
+    items = [
+        QueueItem(
+            track=None,
+            requested_by_id=user.discord_id,
+            requested_by_name=user.global_name,
+            source=row["source"],
+            pending_url=row["uri"],
+            title=row["title"],
+            author=row["author"],
+            length=row["length_ms"],
+            artwork=row["artwork"],
+        )
+        for row in favorites
+    ]
+    try:
+        queued = await music.queue_pending_items(guild_id, items, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"queued": queued}
+
+
 @router.post("/myplaylist/{playlist_id}/queue")
 async def queue_user_playlist(
     guild_id: int,

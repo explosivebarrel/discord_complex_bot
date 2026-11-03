@@ -29,7 +29,8 @@ export interface CollectionTabProps {
   openPl: { id: number; name: string; tracks: { id: number; title: string; author: string; source: string; length_ms: number; artwork?: string | null; uri?: string }[] } | null;
   onClosePlaylist: () => void;
   openPlaylistTracks: (pid: number) => void;
-  createPlaylist: () => void;
+  createPlaylist: (name: string) => void;
+  onQueueFavorites: () => void;
   plBusy: boolean;
   onShufflePlay: (pid: number, name: string) => void;
   onDetailDelete: () => void;
@@ -101,13 +102,15 @@ export function CollectionTab(props: CollectionTabProps) {
   const {
     me, favorites, onPlayFavorite, onRemoveFavorite, myPls, openPl, onClosePlaylist, createPlaylist, plBusy,
     onShufflePlay, onQueueAll, onPlayPlaylistTrack, onRemovePlaylistTrack,
-    openPlaylistTracks, onDetailDelete,
+    openPlaylistTracks, onDetailDelete, onQueueFavorites,
     uploads, canModerateUploads, queueUpload, removeUpload, enqueueing, playlist, playlistBusy, onCloseBrowser,
     onReloadBrowser, onBrowserPlay, onBrowserAdd, onBrowserAddAll,
   } = props;
   const [newPlOpen, setNewPlOpen] = useState(false);
   const [newPlName, setNewPlName] = useState("");
   const [plFilter, setPlFilter] = useState("");
+  // A full liked-tracks page (opened from the collection hero).
+  const [likedPage, setLikedPage] = useState(false);
 
   const favRow = (f: CollectionTabProps["favorites"][number]) => (
     <TrackRow
@@ -138,6 +141,47 @@ export function CollectionTab(props: CollectionTabProps) {
       }
     />
   );
+
+  // ---- Full liked-tracks page (opened from the collection hero) ----
+  if (likedPage) {
+    return (
+      <Box sx={{ px: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 }, maxWidth: 1000 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2, alignItems: { sm: "center" } }}>
+          <Box
+            sx={(t) => ({
+              width: 120, height: 120, borderRadius: "12px",
+              bgcolor: t.palette.m3.primaryContainer, display: "grid", placeItems: "center",
+            })}
+          >
+            <Favorite sx={{ fontSize: 56, color: (tt) => tt.palette.m3.onPrimaryContainer }} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="overline" sx={{ color: "text.secondary" }}>Collection</Typography>
+            <Typography variant="h4">Liked tracks</Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5 }}>
+              {favorites.length} track(s)
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="contained"
+                disabled={plBusy || favorites.length === 0}
+                startIcon={<PlayArrow />}
+                onClick={onQueueFavorites}
+              >
+                Play
+              </Button>
+              <Button size="small" variant="text" onClick={() => setLikedPage(false)} sx={{ alignSelf: "center" }}>
+                Back
+              </Button>
+            </Stack>
+          </Box>
+        </Stack>
+        <List disablePadding>
+          {favorites.map((f) => favRow(f))}
+        </List>
+      </Box>
+    );
+  }
 
   // ---- Full playlist page (opened from a card) ----
   if (openPl) {
@@ -274,7 +318,12 @@ export function CollectionTab(props: CollectionTabProps) {
 
       {/* Liked tracks: hero + two-column preview of the first tracks. */}
       <Box sx={{ mb: 4 }}>
-        <Stack direction="row" spacing={2} sx={{ alignItems: "center", mb: 1.5 }}>
+        <Stack
+          direction="row"
+          spacing={2}
+          onClick={() => setLikedPage(true)}
+          sx={{ alignItems: "center", mb: 1.5, cursor: "pointer" }}
+        >
           <Box
             sx={(t) => ({
               width: 84, height: 84, borderRadius: "12px",
@@ -328,11 +377,11 @@ export function CollectionTab(props: CollectionTabProps) {
                   value={newPlName}
                   onChange={(e) => setNewPlName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && newPlName.trim()) { createPlaylist(); setNewPlOpen(false); }
+                    if (e.key === "Enter" && newPlName.trim()) { createPlaylist(newPlName); setNewPlOpen(false); }
                     if (e.key === "Escape") setNewPlOpen(false);
                   }}
                 />
-                <Button size="small" variant="tonal" disabled={!newPlName.trim() || plBusy} onClick={() => { createPlaylist(); setNewPlOpen(false); }}>
+                <Button size="small" variant="tonal" disabled={!newPlName.trim() || plBusy} onClick={() => { createPlaylist(newPlName); setNewPlOpen(false); }}>
                   Create
                 </Button>
               </Stack>

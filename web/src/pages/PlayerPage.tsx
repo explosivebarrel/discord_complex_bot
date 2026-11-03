@@ -126,7 +126,6 @@ export function PlayerPage() {
   const [playlistBusy, setPlaylistBusy] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [openPl, setOpenPl] = useState<UserPlaylistFull | null>(null);
-  const [newPlName, setNewPlName] = useState("");
   const [plBusy, setPlBusy] = useState(false);
   const [volume, setVolume] = useState<number | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -317,16 +316,14 @@ export function PlayerPage() {
       .finally(() => setPlBusy(false));
   };
 
-  const createPlaylist = () => {
-    const name = newPlName.trim();
-    if (!name || plBusy) return;
+  const createPlaylist = (name: string) => {
+    if (!name.trim() || plBusy) return;
     plAction(
       async () => {
-        await api.createUserPlaylist(name);
-        setNewPlName("");
+        await api.createUserPlaylist(name.trim());
         await loadMyPls();
       },
-      `Playlist "${name}" created`,
+      `Playlist "${name.trim()}" created`,
     );
   };
 
@@ -618,10 +615,12 @@ export function PlayerPage() {
                     sx={{
                       cursor: "pointer",
                       borderRadius: 1,
+                      px: 1.5,
+                      gap: 1.5,
                       "&:hover": { bgcolor: "action.hover" },
                     }}
                     secondaryAction={
-                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                      <Box sx={{ display: "flex", gap: 0.5, right: 12 }}>
                         <Tooltip title="Add to queue">
                           <IconButton
                             size="small"
@@ -818,6 +817,7 @@ export function PlayerPage() {
                 openPl && plAction(() => api.deleteUserPlaylist(openPl.id), `Playlist "${openPl.name}" deleted`)
               }
               onShufflePlay={(pid, name) => act(() => api.queueUserPlaylist(gid, pid, true), `Queued "${name}" (shuffled)`)}
+              onQueueFavorites={() => act(() => api.queueFavorites(gid), "Favorites queued")}
               onQueueAll={() =>
                 openPl &&
                 plAction(() => api.queueUserPlaylist(gid, openPl.id), `Queued ${openPl.tracks.length} track(s)`)
