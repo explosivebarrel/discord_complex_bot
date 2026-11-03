@@ -100,6 +100,20 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def cache_headers(request, call_next):
+        # The SPA shell must always revalidate (otherwise phones keep an old
+        # index.html and never see new bundles); hashed assets and the
+        # versioned font subset are safe to cache forever.
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith(("/assets/", "/fonts/")):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif not path.startswith(("/api/",)) and path != "/api/health":
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     app.include_router(auth.router)
     app.include_router(player.router)
     app.include_router(admin.router)

@@ -30,6 +30,8 @@ class UpdateSettingsBody(BaseModel):
     default_voice_channel_id: int | None = None
     autoplay_enabled: bool | None = None
     autoplay_query: str | None = None
+    # None = keep, -1 = clear (switch back to radio), >0 = playlist id.
+    autoplay_playlist_id: int | None = None
     stats_access: str | None = None
     posts_access: str | None = None
     moderation_access: str | None = None
@@ -75,6 +77,7 @@ async def get_settings(
         "admins": [str(a) for a in admins],
         "autoplay_enabled": settings.autoplay_enabled,
         "autoplay_query": settings.autoplay_query,
+        "autoplay_playlist_id": settings.autoplay_playlist_id,
         "stats_access": settings.stats_access,
         "posts_access": settings.posts_access,
         "moderation_access": settings.moderation_access,
@@ -107,6 +110,8 @@ async def update_settings(
         default_voice_channel_id=body.default_voice_channel_id,
         autoplay_enabled=body.autoplay_enabled,
         autoplay_query=body.autoplay_query,
+        clear_autoplay_playlist=body.autoplay_playlist_id == -1,
+        autoplay_playlist_id=(body.autoplay_playlist_id if (body.autoplay_playlist_id or 0) > 0 else None),
         stats_access=body.stats_access,
         posts_access=body.posts_access,
         moderation_access=body.moderation_access,

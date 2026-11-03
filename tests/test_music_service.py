@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import asyncio
 from collections import deque
 
 import pytest
@@ -857,3 +858,104 @@ async def test_vk_open_playlist_stores_deep_links(
 async def test_vk_requires_token(music: MusicService) -> None:
     with pytest.raises(MusicServiceError, match="VK Music is not configured"):
         await music.search("song", source="vk")
+
+
+async def test_autoplay_yields_to_enqueue_during_resolve(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The autoplay filler resolves over the network; a track enqueued while
+    that resolve is in flight must win, and the filler is dropped."""
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    release = asyncio.Event()
+
+    async def slow_load(url: str):
+        await release.wait()
+        return make_track("radio station")
+
+    music._load_stream = slow_load  # type: ignore[method-assign]
+    await music.db.update_guild_settings(GUILD_ID, autoplay_enabled=True, autoplay_query="lofi")
+
+    fill_queue(music, ["a"])
+    await music.play_next(GUILD_ID, "finished")
+    assert player.played == ["a"]
+
+    # The queue drains; play_next stalls inside _load_stream awaiting the net.
+    pending = asyncio.create_task(music.play_next(GUILD_ID, "finished"))
+    await asyncio.sleep(0.01)
+    # The finished track means an idle player (wavelink clears it on end).
+    player.playing = False
+    # Meanwhile the user enqueues a real track: it sees an idle bot and plays.
+    await music.enqueue(
+        GUILD_ID, "https://www.youtube.com/watch?v=x", 1, "u",
+        source="yt", meta={"title": "user track", "length_ms": 1000},
+    )
+    release.set()
+    await pending
+
+    assert player.played == ["a", "user track"]
+    assert music.current_items[GUILD_ID].display_title == "user track"
+
+
+async def test_autoplay_playlist_shuffles_without_recent_repeats(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Playlist autoplay: shuffled picks, no track repeats inside the
+    recent window, and the source falls back to radio when unset."""
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    async def fake_load(url: str):
+        track = make_track(f"song {url.rsplit('/', 1)[-1]}")
+        track.uri = url  # keep the playlist uri so the recent window matches
+        return track
+
+    music._load_stream = fake_load  # type: ignore[method-assign]
+
+    playlist_id = await music.db.create_user_playlist(1, "autopl")
+    await music.db.add_user_playlist_tracks(
+        1, playlist_id,
+        [{"title": f"song {n}", "author": "a", "uri": f"https://ex.com/{n}",
+          "source": "yt", "length_ms": 10, "artwork": None} for n in range(6)],
+    )
+    await music.db.update_guild_settings(
+        GUILD_ID, autoplay_enabled=True, autoplay_playlist_id=playlist_id,
+    )
+
+    fill_queue(music, ["a"])
+    await music.play_next(GUILD_ID, "finished")
+    played: list[str] = []
+    for _ in range(6):
+        track = await music.play_next(GUILD_ID, "finished")
+        played.append(track.title)
+        assert track.title.startswith("song ")
+    # The recent window is min(tracks-1, 15) = 5: within any 5 consecutive
+    # picks there must be no repeat.
+    titles = [t.replace("song ", "") for t in played]
+    for i in range(len(titles) - 5):
+        assert len(set(titles[i:i + 5])) == 5
+
+
+async def test_add_user_playlist_tracks_skips_duplicates(db: Database) -> None:
+    pid = await db.create_user_playlist(1, "dupes")
+    body = [
+        {"title": "a", "uri": "https://ex.com/1"},
+        {"title": "b", "uri": "https://ex.com/2"},
+    ]
+    added, skipped = await db.add_user_playlist_tracks(1, pid, body)
+    assert (added, skipped) == (2, 0)
+    added, skipped = await db.add_user_playlist_tracks(
+        1, pid, [{"title": "a copy", "uri": "https://ex.com/1"}],
+    )
+    assert (added, skipped) == (0, 1)

@@ -237,6 +237,7 @@ export interface GuildSettings {
   admins: string[];
   autoplay_enabled: boolean;
   autoplay_query: string;
+  autoplay_playlist_id: number | null;
   stats_access: string;
   posts_access: string;
   moderation_access: string;
@@ -522,7 +523,7 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tracks }),
-    }).then((r) => handle<{ added: number }>(r)),
+    }).then((r) => handle<{ added: number; skipped: number }>(r)),
 
   removeUserPlaylistTrack: (playlistId: number, trackId: number) =>
     fetch(`/api/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" }).then((r) =>
@@ -536,10 +537,10 @@ export const api = {
       body: JSON.stringify({ index }),
     }).then((r) => handle<{ playing: string }>(r)),
 
-  queueUserPlaylist: (guildId: string, playlistId: number) =>
-    fetch(`/api/guilds/${guildId}/player/myplaylist/${playlistId}/queue`, { method: "POST" }).then(
-      (r) => handle<{ queued: number }>(r),
-    ),
+  queueUserPlaylist: (guildId: string, playlistId: number, shuffle = false) =>
+    fetch(`/api/guilds/${guildId}/player/myplaylist/${playlistId}/queue${shuffle ? "?shuffle=true" : ""}`, {
+      method: "POST",
+    }).then((r) => handle<{ queued: number }>(r)),
 
   volume: (guildId: string, volume: number) =>
     fetch(`/api/guilds/${guildId}/player/volume`, {
@@ -567,6 +568,7 @@ export const api = {
       default_voice_channel_id?: string | null;
       autoplay_enabled?: boolean;
       autoplay_query?: string;
+      autoplay_playlist_id?: number | null;
       stats_access?: string;
       posts_access?: string;
       moderation_access?: string;

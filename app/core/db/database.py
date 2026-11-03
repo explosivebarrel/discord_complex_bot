@@ -58,6 +58,9 @@ class Database:
         admin_role_ids: list[int] | None = None,
         autoplay_enabled: bool | None = None,
         autoplay_query: str | None = None,
+        autoplay_playlist_id: int | None = None,
+        *,
+        clear_autoplay_playlist: bool = False,
         stats_access: str | None = None,
         posts_access: str | None = None,
         moderation_access: str | None = None,
@@ -78,6 +81,10 @@ class Database:
                 settings.autoplay_enabled = autoplay_enabled
             if autoplay_query is not None:
                 settings.autoplay_query = autoplay_query
+            if clear_autoplay_playlist:
+                settings.autoplay_playlist_id = None
+            elif autoplay_playlist_id is not None:
+                settings.autoplay_playlist_id = autoplay_playlist_id
             if stats_access is not None:
                 settings.stats_access = stats_access
             if posts_access is not None:
@@ -533,34 +540,79 @@ class Database:
 
     async def add_user_playlist_tracks(
         self, user_id: int, playlist_id: int, tracks: list[dict[str, Any]]
-    ) -> int:
-        """Append track dicts (title/author/uri/source/length_ms/artwork)."""
+    ) -> tuple[int, int]:
+        """Append track dicts (title/author/uri/source/length_ms/artwork).
+
+        Tracks whose uri is already in the playlist are skipped; returns
+        (added, skipped_duplicate).
+        """
         async with self.session_factory() as session:
             row = await session.get(UserPlaylist, playlist_id)
             if row is None or row.user_id != user_id:
-                return 0
+                return (0, 0)
+            existing = await session.execute(
+                select(UserPlaylistTrack.uri).where(UserPlaylistTrack.playlist_id == playlist_id)
+            )
+            known = {u for (u,) in existing.all() if u}
             last = await session.execute(
                 select(func.max(UserPlaylistTrack.position)).where(
                     UserPlaylistTrack.playlist_id == playlist_id
                 )
             )
             position = (last.scalar() or 0) + 1
+            added = 0
+            skipped = 0
             for t in tracks:
+                uri = str(t.get("uri") or "")
+                if uri and uri in known:
+                    skipped += 1
+                    continue
+                if uri:
+                    known.add(uri)
                 session.add(
                     UserPlaylistTrack(
                         playlist_id=playlist_id,
                         position=position,
                         title=str(t.get("title") or "")[:256],
                         author=str(t.get("author") or "")[:256],
-                        uri=str(t.get("uri") or ""),
+                        uri=uri,
                         source=str(t.get("source") or "")[:32],
                         length_ms=int(t.get("length_ms") or 0),
                         artwork=t.get("artwork"),
                     )
                 )
                 position += 1
+                added += 1
             await session.commit()
-            return len(tracks)
+            return (added, skipped)
+
+    async def get_playlist_by_id(self, playlist_id: int) -> dict[str, Any] | None:
+        """Owner-agnostic playlist read: autoplay outlives its creator."""
+        async with self.session_factory() as session:
+            row = await session.get(UserPlaylist, playlist_id)
+            if row is None:
+                return None
+            tracks = await session.execute(
+                select(UserPlaylistTrack)
+                .where(UserPlaylistTrack.playlist_id == playlist_id)
+                .order_by(UserPlaylistTrack.position, UserPlaylistTrack.id)
+            )
+            return {
+                "id": row.id,
+                "name": row.name,
+                "tracks": [
+                    {
+                        "id": t.id,
+                        "title": t.title,
+                        "author": t.author,
+                        "uri": t.uri,
+                        "source": t.source,
+                        "length_ms": t.length_ms,
+                        "artwork": t.artwork,
+                    }
+                    for t in tracks.scalars().all()
+                ],
+            }
 
     async def remove_user_playlist_track(self, user_id: int, playlist_id: int, track_id: int) -> bool:
         async with self.session_factory() as session:

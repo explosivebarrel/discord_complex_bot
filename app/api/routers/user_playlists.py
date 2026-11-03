@@ -79,14 +79,14 @@ async def add_tracks(
     user: CurrentUser = Depends(get_current_user),
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
-    added = await db.add_user_playlist_tracks(
+    added, skipped = await db.add_user_playlist_tracks(
         user.discord_id,
         playlist_id,
         [t.model_dump() for t in body.tracks],
     )
-    if added == 0:
+    if added == 0 and skipped == 0:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    return {"added": added}
+    return {"added": added, "skipped": skipped}
 
 
 @router.delete("/{playlist_id}/tracks/{track_id}")
@@ -100,3 +100,4 @@ async def remove_track(
     if not removed:
         raise HTTPException(status_code=404, detail="Track not found in the playlist")
     return {"removed": True}
+

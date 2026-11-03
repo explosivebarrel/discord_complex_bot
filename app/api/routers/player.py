@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -634,6 +635,7 @@ async def play_user_playlist_track(
 async def queue_user_playlist(
     guild_id: int,
     playlist_id: int,
+    shuffle: bool = False,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
     db: Database = Depends(get_db),
@@ -655,6 +657,8 @@ async def queue_user_playlist(
         )
         for row in playlist["tracks"][:1000]
     ]
+    if shuffle:
+        random.shuffle(items)
     try:
         queued = await music.queue_pending_items(guild_id, items, user.discord_id)
     except MusicServiceError as exc:

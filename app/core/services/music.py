@@ -146,6 +146,9 @@ class MusicService:
         # Cached flat playlists for the panel browser (PlaylistSession).
         self.playlist_sessions: dict[int, PlaylistSession] = {}
         self._playlist_seq = 0
+        # Recently played autoplay items per guild (track ids/uris), so the
+        # playlist autoplay shuffles without immediate repeats.
+        self._autoplay_recent: dict[int, deque[str]] = {}
 
     # --- helpers ---
 
@@ -788,9 +791,19 @@ class MusicService:
             # Cycle the finished track to the end so the queue keeps rotating.
             queue.append(current)
         if not queue:
-            station = await self._autoplay_station(guild_id)
+            station = await self._autoplay_item(guild_id)
             if station is None:
                 self.current_items.pop(guild_id, None)
+                return None
+            # The autoplay resolve awaited the network: a real track may have
+            # taken over meanwhile (enqueue plays instantly when the bot is
+            # idle). Re-check the world before forcing the filler in -- note
+            # current_items still holds the just-finished track here, so only
+            # a *different* non-autoplay current means someone cut in.
+            current_after = self.current_items.get(guild_id)
+            if self._queue(guild_id) or (
+                current_after is not None and current_after is not current and not current_after.is_autoplay
+            ):
                 return None
             queue.append(station)
         if current is not None and current.track is not None and not current.is_autoplay:
@@ -847,19 +860,71 @@ class MusicService:
             "Lavalink failed to load that playlist. Try again in a moment."
         ) from last_error
 
-    async def _autoplay_station(self, guild_id: int) -> QueueItem | None:
-        """The first playable radio station for the guild autoplay setting.
-
-        Stations resolve eagerly here: a dead stream must not enter the
-        queue and loop the autoplay path forever.
-        """
+    async def _autoplay_item(self, guild_id: int) -> QueueItem | None:
+        """The autoplay filler for the guild: a shuffled track from the
+        configured playlist, or a radio station from the query."""
         try:
             settings = await self.db.get_guild_settings(guild_id)
         except Exception:  # noqa: BLE001 - settings trouble must not break playback
             return None
-        query = (settings.autoplay_query or "").strip()
-        if not settings.autoplay_enabled or not query:
+        if not settings.autoplay_enabled:
             return None
+        if settings.autoplay_playlist_id:
+            item = await self._autoplay_from_playlist(guild_id, settings.autoplay_playlist_id)
+            if item is not None:
+                return item
+        query = (settings.autoplay_query or "").strip()
+        if not query:
+            return None
+        return await self._autoplay_station(guild_id, query)
+
+    async def _autoplay_from_playlist(self, guild_id: int, playlist_id: int) -> QueueItem | None:
+        """A shuffled track from the guild autoplay playlist, avoiding the
+        recently played ones. Resolves eagerly: a dead entry must not loop."""
+        playlist = await self.db.get_playlist_by_id(playlist_id)
+        if not playlist or not playlist["tracks"]:
+            return None
+        tracks = playlist["tracks"]
+        recent = self._autoplay_recent.setdefault(guild_id, deque(maxlen=max(1, min(len(tracks) - 1, 15))))
+        candidates = [t for t in tracks if t["uri"] not in recent]
+        chosen = random.choice(candidates or tracks)
+        resolved: QueueItem | None = None
+        # Try the chosen track and up to two other random picks before giving
+        # up: a dead entry must not stop the autoplay for this idle tick.
+        tried: set[str] = set()
+        for _ in range(3):
+            if len(tried) >= len(tracks):
+                break
+            pick = chosen if chosen["uri"] not in tried else random.choice([t for t in tracks if t["uri"] not in tried] or tracks)
+            tried.add(pick["uri"])
+            track = await self._load_stream(pick["uri"])
+            if track is None:
+                continue
+            track._title = pick["title"] or track.title  # noqa: SLF001 - nicer panel titles
+            track._author = pick["author"] or track.author  # noqa: SLF001
+            resolved = QueueItem(
+                track=track,
+                requested_by_id=0,
+                requested_by_name="autoplay",
+                source=pick["source"] or "radio",
+                title=pick["title"],
+                author=pick["author"] or "",
+                length=pick["length_ms"],
+                artwork=pick["artwork"],
+                is_autoplay=True,
+            )
+            break
+        if resolved is None:
+            return None
+        recent.append(resolved.track.uri or resolved.title)
+        return resolved
+
+    async def _autoplay_station(self, guild_id: int, query: str) -> QueueItem | None:
+        """The first playable radio station for the autoplay query.
+
+        Stations resolve eagerly here: a dead stream must not enter the
+        queue and loop the autoplay path forever.
+        """
         try:
             from app.core.services.extern_search import radio_search
 

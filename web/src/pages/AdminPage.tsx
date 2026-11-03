@@ -20,7 +20,7 @@ import {
 } from "@mui/material";
 import { IconDelete as Delete } from "../components/icons";
 import { api, GuildSettings } from "../api";
-import { useGuildSettings, useGuilds, useVoiceChannels, usePostComposer } from "../queries";
+import { useGuildSettings, useGuilds, useVoiceChannels, usePostComposer, useMyPlaylists } from "../queries";
 import { CardSkeleton } from "../components/Skeletons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -48,7 +48,12 @@ export function AdminPage() {
   const composerQuery = usePostComposer(gid);
   const textChannels = (composerQuery.data?.channels ?? []).filter((ch) => ch.type === "text");
   const [newAdmin, setNewAdmin] = useState("");
-  const [autoplay, setAutoplay] = useState<{ enabled: boolean; query: string } | null>(null);
+  const [autoplay, setAutoplay] = useState<{
+    enabled: boolean;
+    query: string;
+    playlistId: number | null;
+  } | null>(null);
+  const myPlaylists = useMyPlaylists().data ?? [];
   const [access, setAccess] = useState<{
     stats: string;
     posts: string;
@@ -63,7 +68,11 @@ export function AdminPage() {
   // Keep local forms in sync with the loaded settings.
   useEffect(() => {
     if (settings) {
-      setAutoplay({ enabled: settings.autoplay_enabled, query: settings.autoplay_query });
+      setAutoplay({
+        enabled: settings.autoplay_enabled,
+        query: settings.autoplay_query,
+        playlistId: settings.autoplay_playlist_id,
+      });
       setAccess({
         stats: settings.stats_access,
         posts: settings.posts_access,
@@ -73,10 +82,6 @@ export function AdminPage() {
     }
   }, [settings]);
 
-  // Keep the local autoplay form in sync with the loaded settings.
-  useEffect(() => {
-    if (settings) setAutoplay({ enabled: settings.autoplay_enabled, query: settings.autoplay_query });
-  }, [settings]);
 
   if (loading) {
     return (
@@ -150,10 +155,11 @@ export function AdminPage() {
                   After the queue
                 </Typography>
                 <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-                  When the queue runs dry, the bot starts a radio station that
-                  matches this query (for example lofi or jazz).
+                  When the queue runs dry, the bot keeps the music going: a
+                  shuffled track from the playlist, or a radio station that
+                  matches the query.
                 </Typography>
-                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 1 }}>
                   <FormControlLabel
                     control={
                       <Switch
@@ -163,13 +169,45 @@ export function AdminPage() {
                     }
                     label="Autoplay"
                   />
-                  <TextField
-                    fullWidth
+                  <Select
                     size="small"
-                    placeholder="Station query (lofi, jazz, news…)"
-                    value={autoplay.query}
-                    onChange={(e) => setAutoplay({ ...autoplay, query: e.target.value })}
-                  />
+                    value={autoplay.playlistId ? "playlist" : "radio"}
+                    onChange={(e) =>
+                      setAutoplay({
+                        ...autoplay,
+                        playlistId: e.target.value === "playlist" ? (myPlaylists[0]?.id ?? null) : null,
+                      })
+                    }
+                  >
+                    <MenuItem value="radio">Radio query</MenuItem>
+                    <MenuItem value="playlist" disabled={!myPlaylists.length}>
+                      My playlist
+                    </MenuItem>
+                  </Select>
+                  {autoplay.playlistId ? (
+                    <TextField
+                      select
+                      fullWidth
+                      size="small"
+                      label="Autoplay playlist"
+                      value={myPlaylists.some((p) => p.id === autoplay.playlistId) ? autoplay.playlistId : ""}
+                      onChange={(e) => setAutoplay({ ...autoplay, playlistId: Number(e.target.value) })}
+                    >
+                      {myPlaylists.map((p) => (
+                        <MenuItem key={p.id} value={p.id}>
+                          {p.name} ({p.tracks})
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  ) : (
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Station query (lofi, jazz, news…)"
+                      value={autoplay.query}
+                      onChange={(e) => setAutoplay({ ...autoplay, query: e.target.value })}
+                    />
+                  )}
                   <Button
                     variant="contained"
                     onClick={() =>
@@ -177,10 +215,15 @@ export function AdminPage() {
                         .updateGuildSettings(gid, {
                           autoplay_enabled: autoplay.enabled,
                           autoplay_query: autoplay.query,
+                          autoplay_playlist_id: autoplay.playlistId ?? -1,
                         })
                         .then((s) => {
                           setDraftSettings(s);
-                          setAutoplay({ enabled: s.autoplay_enabled, query: s.autoplay_query });
+                          setAutoplay({
+                            enabled: s.autoplay_enabled,
+                            query: s.autoplay_query,
+                            playlistId: s.autoplay_playlist_id,
+                          });
                           feedback.show("Autoplay saved");
                         })
                         .catch(guard)

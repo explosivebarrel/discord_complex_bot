@@ -26,6 +26,9 @@ class GuildSettings(Base):
     # When the queue drains, the bot can start a radio station by query.
     autoplay_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     autoplay_query: Mapped[str] = mapped_column(String(128), default="")
+    # When set (and the playlist still exists), autoplay picks shuffled
+    # tracks from this user playlist instead of the radio query.
+    autoplay_playlist_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Panel section visibility: admins | everyone | off.
     stats_access: Mapped[str] = mapped_column(String(16), default="admins")
     posts_access: Mapped[str] = mapped_column(String(16), default="admins")

@@ -41,11 +41,13 @@ export function PlaylistAddMenu({ track }: { track: PlaylistTrackRef }) {
   };
   const close = () => setAnchor(null);
 
-  const add = async (fn: () => Promise<unknown>, okMsg: string) => {
+  const add = async (fn: () => Promise<{ added: number; skipped: number } | unknown>, okMsg: string) => {
     setBusy(true);
     try {
-      await fn();
-      feedback.show(okMsg);
+      const res = (await fn()) as { added?: number; skipped?: number } | undefined;
+      feedback.show(
+        res?.skipped ? `${okMsg} (${res.skipped} duplicate${res.skipped > 1 ? "s" : ""} skipped)` : okMsg,
+      );
       close();
     } catch (err) {
       feedback.show((err as Error).message, "error");
