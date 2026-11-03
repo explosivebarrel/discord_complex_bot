@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
   CircularProgress,
   IconButton,
+  LinearProgress,
   List,
   ListItem,
   ListItemAvatar,
@@ -315,64 +318,26 @@ export function HomeRail({ title, children }: { title: string; children: React.R
 }
 
 /** Banner shown while cached results are already on screen and a forced
-    re-search runs: an animated sweep (a segment runs left to right,
-    lengthening mid-travel and shrinking at the ends) plus a note that the
-    list below is the recent cached query. */
+    re-search runs. Same card surface as the rest of the panel (Queue,
+    Voice connection) with the sidebar's rounded progress bar. */
 function SearchingBanner() {
   return (
-    <Box
-      sx={(t) => ({
-        display: "flex",
-        alignItems: "center",
-        gap: 2,
-        px: 2.5,
-        py: 1.25,
-        mb: 1.5,
-        borderRadius: 999,
-        bgcolor: t.palette.m3.surfaceContainer,
-        boxShadow: `inset 0 0 0 1px ${t.palette.m3.outlineVariant}`,
-      })}
-    >
-      <Box
-        aria-hidden
-        sx={{
-          position: "relative",
-          width: 120,
-          height: 4,
-          borderRadius: 999,
-          overflow: "hidden",
-          flexShrink: 0,
-          bgcolor: "action.hover",
-          "& .sweep": {
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            borderRadius: 999,
-            bgcolor: "primary.main",
-            animation: "search-sweep 1.6s ease-in-out infinite",
-          },
-          "@keyframes search-sweep": {
-            "0%": { left: "-35%", width: "35%" },
-            "50%": { left: "37%", width: "55%" },
-            "100%": { left: "100%", width: "35%" },
-          },
-          "@media (prefers-reduced-motion: reduce)": {
-            "& .sweep": { animation: "none", left: "30%", width: "40%" },
-          },
-        }}
-      >
-        <Box className="sweep" />
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.3 }}>
-          Searching for audio…
-        </Typography>
-        <Typography variant="caption" sx={{ color: "text.secondary", display: "block", lineHeight: 1.3 }}>
-          Fresh results are loading — the list below is your recent search
-          from the cache.
-        </Typography>
-      </Box>
-    </Box>
+    <Card sx={{ mb: 1.5 }}>
+      <CardContent sx={{ py: 1.5, px: 2.5, "&:last-child": { pb: 1.5 } }}>
+        <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+          <LinearProgress sx={{ width: 140, height: 4, borderRadius: 999, flexShrink: 0 }} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.3 }}>
+              Searching for audio…
+            </Typography>
+            <Typography variant="caption" sx={{ color: "text.secondary", display: "block", lineHeight: 1.3 }}>
+              Fresh results are loading — the list below is your recent search
+              from the cache.
+            </Typography>
+          </Box>
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -411,8 +376,7 @@ export function SearchResults({
           Nothing found.
         </Typography>
       ) : (
-        /* Flex column + gap: the result cards breathe apart instead of touching. */
-        <List disablePadding sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+        <List disablePadding>
       {results.map((t, i) => (
         <ListItem
           key={i}
@@ -430,9 +394,13 @@ export function SearchResults({
           sx={{
             cursor: "pointer",
             borderRadius: 1,
-            // Vertical insets equal the horizontal ones.
+            // Vertical centering makes the cover's top/bottom gaps equal;
+            // the ListItemText's own 4px vertical margins are zeroed so the
+            // visual insets match the 12px sides exactly.
+            alignItems: "center",
             px: 1.5,
             py: 1.5,
+            "& .MuiListItemText-root": { my: 0 },
             "&:hover": { bgcolor: "action.hover" },
             "&:active": { bgcolor: "action.selected" },
           }}
