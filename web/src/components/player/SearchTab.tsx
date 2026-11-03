@@ -241,18 +241,19 @@ export function SearchBar({
     clicks. An optional queue badge (the smaller disc on the left) adds the
     "enqueue without playing" action. */
 export function MediaCard({
-  title, subtitle, artwork, onClick, onQueue,
+  title, subtitle, artwork, onClick, onQueue, onMenu,
 }: {
   title: string;
   subtitle?: string;
   artwork?: string | null;
   onClick?: () => void;
   onQueue?: () => void;
+  onMenu?: (e: React.MouseEvent) => void;
 }) {
   const theme = useTheme();
   const glyphColor = theme.palette.mode === "dark" ? "#362268" : theme.palette.m3.onPrimary;
   return (
-    <Box onClick={onClick} sx={{ width: 148, flexShrink: 0, cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}>
+    <Box onClick={onClick} onContextMenu={onMenu} sx={{ width: 148, flexShrink: 0, cursor: "pointer", "&:hover .card-play": { opacity: 1 } }}>
       <Box sx={{ position: "relative" }}>
         <CoverImg src={artwork} size={148} radius="12px" />
         {onQueue && (
@@ -315,8 +316,10 @@ export function HomeRail({ title, children }: { title: string; children: React.R
 
 /** Search results list under the sticky bar (renders only with a query). */
 export function SearchResults({
-  results, searching, favorites, toggleFavorite, enqueue, enqueueing,
-}: Pick<SearchTabProps, "results" | "searching" | "favorites" | "toggleFavorite" | "enqueue" | "enqueueing">) {
+  results, searching, favorites, toggleFavorite, enqueue, enqueueing, onMenu,
+}: Pick<SearchTabProps, "results" | "searching" | "favorites" | "toggleFavorite" | "enqueue" | "enqueueing"> & {
+  onMenu: (e: React.MouseEvent, spec: import("../TrackMenu").TrackMenuSpec) => void;
+}) {
   if (!results) return null;
   if (searching) {
     return (
@@ -346,6 +349,28 @@ export function SearchResults({
         <ListItem
           key={i}
           disablePadding
+          onContextMenu={(e) =>
+            onMenu(e, {
+              track: {
+                title: t.title,
+                author: t.author,
+                uri: t.uri ?? "",
+                source: t.source ?? "",
+                length_ms: t.length,
+                artwork: t.artwork,
+              },
+              favorite: favorites.some((f) => f.uri === t.uri),
+              onToggleFavorite: () => toggleFavorite(t),
+              onQueue: () => {
+                enqueue(
+                  `t${i}`,
+                  t.encoded
+                    ? { encoded: t.encoded, source: t.source ?? "" }
+                    : { query: t.uri ?? t.title, source: t.source ?? "" },
+                );
+              },
+            })
+          }
           secondaryAction={
             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
               <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>

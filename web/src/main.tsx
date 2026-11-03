@@ -73,7 +73,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
               fontStyle: "normal",
               fontWeight: "100 700",
               fontDisplay: "block",
-              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=5") format("woff2")',
+              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=6") format("woff2")',
             },
           }}
         />

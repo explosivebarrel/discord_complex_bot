@@ -150,6 +150,12 @@ export function PlayerDock({
     return () => ro.disconnect();
   }, []);
   const { glassTuning, scheme } = useAppTheme();
+  // Layout mode from the dock's own width: below ~680px (sidebars open on
+  // a small screen) one row cannot fit cover + title + transport + actions,
+  // so the content stacks into three short rows. The inline volume slider
+  // appears only when there is room for it next to the five icons.
+  const singleRow = (size?.w ?? 0) >= 680;
+  const showSliderBox = singleRow && (size?.w ?? 0) >= 980;
   // The SVG lens only makes sense on liquid-glass themes: elsewhere the
   // button is an opaque disc with nothing to refract.
   const refract =
@@ -240,7 +246,10 @@ export function PlayerDock({
       ) : null)}
 
       {/* Dock content rides above the warp layer, so text and controls
-          never take the lens distortion. */}
+          never take the lens distortion. The row-vs-stack decision keys off
+          the dock's own measured width (not the viewport): sidebar states
+          change how much room is left, and the resize observer already
+          tracks this box for the glass lens. */}
       <Box
         sx={{
           position: "relative",
@@ -248,16 +257,18 @@ export function PlayerDock({
           display: "flex",
           alignItems: "center",
           gap: 2,
-          flexWrap: { xs: "wrap", md: "nowrap" },
+          flexWrap: singleRow ? "nowrap" : "wrap",
         }}
       >
       {/* Left column takes the same flex width as the right one, so the
-          transport cluster stays centered in the dock. On phones the
-          description drops below the controls row. */}
+          transport cluster stays centered in the dock. When the dock is too
+          narrow for one row (sidebars open on a small screen), the
+          description gets its own full row and the action cluster wraps
+          below it — three short rows instead of one squeezed. */}
       <Stack
         direction="row"
         spacing={2}
-        sx={{ flex: 1, minWidth: 0, alignItems: "center", order: { xs: 1, md: 0 } }}
+        sx={{ flex: singleRow ? "1 1 0%" : "1 1 100%", minWidth: 0, alignItems: "center", order: singleRow ? 0 : 1 }}
       >
       <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
         {current?.artwork ? (
@@ -303,18 +314,6 @@ export function PlayerDock({
           {fmt(position)} / {fmt(current.length)}
         </Typography>
       )}
-      {/* Current-track actions: like (filled when already favorited) and
-          add-to-playlist, so the playing track is manageable from the dock. */}
-      {current && (
-        <Box sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-          <Tooltip title={favorite ? "Remove from favorites" : "Add to favorites"}>
-            <IconButton size="small" onClick={onToggleFavorite} aria-label="Toggle favorite">
-              <Favorite filled={favorite} fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {playlistMenu}
-        </Box>
-      )}
       </Stack>
 
       <Stack
@@ -323,11 +322,12 @@ export function PlayerDock({
         sx={{
           alignItems: "flex-start",
           flexShrink: 0,
-          // Phones: the controls take the first row (FAB protrudes over the
-          // dock's top edge, like on desktop) with the description below.
-          flex: { xs: "1 1 100%", md: "0 0 auto" },
-          justifyContent: { xs: "center", md: "flex-start" },
-          order: { xs: 0, md: 0 },
+          // Narrow widths: the controls take the first row (FAB protrudes
+          // over the dock's top edge, like on desktop) with the description
+          // and actions on the rows below.
+          flex: singleRow ? "0 0 auto" : "1 1 100%",
+          justifyContent: singleRow ? "flex-start" : "center",
+          order: 0,
         }}
       >
         <Tooltip title="Previous track">
@@ -411,11 +411,23 @@ export function PlayerDock({
         spacing={0.5}
         sx={{
           alignItems: "center",
-          flex: { xs: "0 0 auto", md: 1 },
-          justifyContent: { xs: "flex-start", md: "flex-end" },
-          order: { xs: 2, md: 0 },
+          flex: singleRow ? "1 1 0%" : "1 1 100%",
+          justifyContent: singleRow ? "flex-end" : "center",
+          order: singleRow ? 0 : 2,
         }}
       >
+        {/* Current-track actions live with the transport side of the dock:
+            like (filled when already favorited) and add-to-playlist. */}
+        {current && (
+          <>
+            <Tooltip title={favorite ? "Remove from favorites" : "Add to favorites"}>
+              <IconButton onClick={onToggleFavorite} aria-label="Toggle favorite" sx={favorite ? { color: "primary.main" } : undefined}>
+                <Favorite filled={favorite} />
+              </IconButton>
+            </Tooltip>
+            {playlistMenu}
+          </>
+        )}
         <Tooltip title={`Repeat: ${repeat === "off" ? "off (click for queue)" : repeat === "all" ? "whole queue (click for one track)" : "one track (click to turn off)"}`}>
           <IconButton
             onClick={onRepeatCycle}
@@ -431,31 +443,43 @@ export function PlayerDock({
             </IconButton>
           </span>
         </Tooltip>
-        <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center", gap: 0.5, width: 120, ml: 1 }}>
-          <VolumeUp fontSize="small" sx={{ color: "text.secondary" }} />
-          <Slider
-            size="small"
-            min={0}
-            max={200}
-            value={Math.min(volume, 200)}
-            onChange={(_, v) => onVolumeChange(v as number)}
-            onChangeCommitted={(_, v) => onVolumeCommit(v as number)}
-          />
-        </Box>
-        {/* Below md the slider does not fit: the icon opens it in a popover. */}
-        <Box sx={{ display: { xs: "flex", md: "none" } }}>
-          <Tooltip title="Volume">
-            <span>
-              <IconButton
-                aria-label="Volume"
-                ref={volumeButtonRef}
-                onClick={() => setVolumeOpen((open) => !open)}
-              >
-                <VolumeUp />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Box>
+        {/* The inline slider needs ~120px on top of the five icons: with a
+            wide dock it fits, otherwise the icon + popover takes over (the
+            popover caption shows the exact percent). */}
+        {showSliderBox && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: 120, ml: 1 }}>
+            <VolumeUp fontSize="small" sx={{ color: "text.secondary" }} />
+            <Slider
+              size="small"
+              min={0}
+              max={200}
+              value={Math.min(volume, 200)}
+              onChange={(_, v) => onVolumeChange(v as number)}
+              onChangeCommitted={(_, v) => onVolumeCommit(v as number)}
+              // The scale is 0-200 with 100% in the middle: a hover bubble and
+              // a center tick keep the actual value readable.
+              valueLabelDisplay="auto"
+              valueLabelFormat={(v) => `${v}%`}
+              marks={[{ value: 100 }]}
+            />
+          </Box>
+        )}
+        {/* Narrow dock: the icon opens the volume popover instead. */}
+        {!showSliderBox && (
+          <Box sx={{ display: "flex" }}>
+            <Tooltip title={`Volume: ${Math.round(volume)}%`}>
+              <span>
+                <IconButton
+                  aria-label="Volume"
+                  ref={volumeButtonRef}
+                  onClick={() => setVolumeOpen((open) => !open)}
+                >
+                  <VolumeUp />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        )}
       </Stack>
       </Box>
 
@@ -465,7 +489,6 @@ export function PlayerDock({
         onClose={() => setVolumeOpen(false)}
         anchorOrigin={{ vertical: "top", horizontal: "right" }}
         transformOrigin={{ vertical: "bottom", horizontal: "right" }}
-        sx={{ display: { md: "none" } }}
       >
         {/* Vertical drag reads like the phone's own volume control; the
             caption marks the current percent, the 100 point has no tick. */}

@@ -50,6 +50,7 @@ import { AppShell } from "../components/AppShell";
 import { PlayerDock } from "../components/PlayerDock";
 import { MsIcon } from "../components/MsIcon";
 import { PlaylistAddMenu } from "../components/PlaylistAddMenu";
+import { useTrackMenu, type TrackMenuSpec } from "../components/TrackMenu";
 import { useFeedback } from "../components/Feedback";
 import { fmt, SOURCE_LABELS } from "../components/player/labels";
 import { CoverImg } from "../components/player/CoverImg";
@@ -218,6 +219,27 @@ export function PlayerPage() {
       .then(done)
       .catch(guard);
   };
+
+  // Right-click menu state shared by every track list on the page.
+  const trackMenu = useTrackMenu();
+  // Build a context-menu spec for a track-ish row: standard items (favorite)
+  // plus the caller's play/queue handlers and context extras.
+  const trackMenuSpec = (
+    t: { title: string; author?: string | null; uri?: string | null; source?: string | null; length?: number; artwork?: string | null },
+    opts: Partial<Pick<TrackMenuSpec, "onPlay" | "onQueue" | "extra">> = {},
+  ): TrackMenuSpec => ({
+    track: {
+      title: t.title,
+      author: t.author,
+      uri: t.uri ?? "",
+      source: t.source ?? "",
+      length_ms: t.length ?? 0,
+      artwork: t.artwork ?? null,
+    },
+    favorite: favorites.some((f) => f.uri === (t.uri ?? "")),
+    onToggleFavorite: () => toggleFavorite(t as TrackInfo),
+    ...opts,
+  });
 
   const guard = (e: Error) => {
     if (e.message !== "unauthorized") feedback.show(e.message, "error");
@@ -418,6 +440,7 @@ export function PlayerPage() {
       playlistMenu={
         state?.current ? (
           <PlaylistAddMenu
+            size="medium"
             track={{
               title: state.current.title,
               author: state.current.author,
@@ -590,6 +613,23 @@ export function PlayerPage() {
                         }}
                         onDragEnd={() => setDragOverIndex(null)}
                         onClick={() => act(() => api.jumpQueued(gid, i), `Now playing: ${t.title}`)}
+                        onContextMenu={(e) =>
+                          trackMenu.open(
+                            e,
+                            trackMenuSpec(t, {
+                              onPlay: () => act(() => api.jumpQueued(gid, i), `Now playing: ${t.title}`),
+                              extra: [
+                                ...(i > 0
+                                  ? [{ key: "up", label: "Move up", icon: "arrow_upward", onClick: () => act(() => api.moveQueued(gid, i, i - 1)) }]
+                                  : []),
+                                ...(i < (state?.queue.length ?? 0) - 1
+                                  ? [{ key: "down", label: "Move down", icon: "arrow_downward", onClick: () => act(() => api.moveQueued(gid, i, i + 1)) }]
+                                  : []),
+                                { key: "rm", label: "Remove from queue", icon: "delete", danger: true, onClick: () => act(() => api.removeQueued(gid, i)) },
+                              ],
+                            }),
+                          )
+                        }
                         sx={{
                           cursor: "pointer",
                           borderRadius: 1,
@@ -684,6 +724,15 @@ export function PlayerPage() {
                     disableGutters
                     dense
                     onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
+                    onContextMenu={(e) =>
+                      trackMenu.open(
+                        e,
+                        trackMenuSpec(t, {
+                          onPlay: () => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`),
+                          onQueue: () => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`),
+                        }),
+                      )
+                    }
                     sx={{
                       cursor: "pointer",
                       borderRadius: 1,
@@ -838,6 +887,7 @@ export function PlayerPage() {
                     toggleFavorite={toggleFavorite}
                     enqueue={enqueue}
                     enqueueing={enqueueing}
+                    onMenu={trackMenu.open}
                   />
                 ) : (
                   <>
@@ -853,6 +903,22 @@ export function PlayerPage() {
                               enqueueFavorite({
                                 uri: f.uri, source: f.source || "yt", title: f.title,
                                 author: f.author, length_ms: f.length_ms, artwork: f.artwork,
+                              })
+                            }
+                            onMenu={(e) =>
+                              trackMenu.open(e, {
+                                track: {
+                                  title: f.title, author: f.author, uri: f.uri,
+                                  source: f.source, length_ms: f.length_ms, artwork: f.artwork,
+                                },
+                                favorite: true,
+                                onToggleFavorite: () =>
+                                  api.removeFavorite(f.id).then(() => queryClient.invalidateQueries({ queryKey: ["favorites"] })).catch(guard),
+                                onQueue: () =>
+                                  enqueueFavorite({
+                                    uri: f.uri, source: f.source || "yt", title: f.title,
+                                    author: f.author, length_ms: f.length_ms, artwork: f.artwork,
+                                  }),
                               })
                             }
                           />
@@ -879,6 +945,15 @@ export function PlayerPage() {
                             artwork={t.artwork}
                             onClick={() => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`)}
                             onQueue={() => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`)}
+                            onMenu={(e) =>
+                              trackMenu.open(
+                                e,
+                                trackMenuSpec(t, {
+                                  onPlay: () => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`),
+                                  onQueue: () => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`),
+                                }),
+                              )
+                            }
                           />
                         ))}
                       </HomeRail>
@@ -904,6 +979,7 @@ export function PlayerPage() {
               onRemoveFavorite={(id) =>
                 api.removeFavorite(id).then(() => queryClient.invalidateQueries({ queryKey: ["favorites"] })).catch(guard)
               }
+              onMenu={trackMenu.open}
               myPls={myPls}
               likedOpen={likedOpen}
               onOpenLiked={() => navigate(`${collectionPath}/liked`)}
@@ -966,11 +1042,13 @@ export function PlayerPage() {
               toggleFavorite={toggleFavorite}
               onReplay={(i, title) => act(() => api.replayPlayed(gid, i), `Now playing: ${title}`)}
               onRequeue={(i, title) => act(() => api.requeuePlayed(gid, i), `Added to queue: ${title}`)}
+              onMenu={trackMenu.open}
             />
           )}
       </Box>
 
       {feedback.node}
+      {trackMenu.node}
     </AppShell>
   );
 }

@@ -11,10 +11,11 @@ export interface HistoryTabProps {
   toggleFavorite: (t: import("../../api").TrackInfo) => void;
   onReplay: (index: number, title: string) => void;
   onRequeue: (index: number, title: string) => void;
+  onMenu: (e: React.MouseEvent, spec: import("../TrackMenu").TrackMenuSpec) => void;
 }
 
 /** The player History tab: this session's played tracks, newest first. */
-export function HistoryTab({ played, favorites, toggleFavorite, onReplay, onRequeue }: HistoryTabProps) {
+export function HistoryTab({ played, favorites, toggleFavorite, onReplay, onRequeue, onMenu }: HistoryTabProps) {
   return (
     <Box sx={{ px: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 }, maxWidth: 900 }}>
       <Typography variant="h6" gutterBottom>
@@ -28,6 +29,22 @@ export function HistoryTab({ played, favorites, toggleFavorite, onReplay, onRequ
               disableGutters
               dense
               onClick={() => onReplay(i, t.title)}
+              onContextMenu={(e) =>
+                onMenu(e, {
+                  track: {
+                    title: t.title,
+                    author: t.author,
+                    uri: t.uri ?? "",
+                    source: t.source ?? "",
+                    length_ms: t.length,
+                    artwork: t.artwork,
+                  },
+                  favorite: favorites.some((f) => f.uri === t.uri),
+                  onToggleFavorite: () => toggleFavorite(t),
+                  onPlay: () => onReplay(i, t.title),
+                  onQueue: () => onRequeue(i, t.title),
+                })
+              }
               sx={{
                 cursor: "pointer",
                 borderRadius: 1,

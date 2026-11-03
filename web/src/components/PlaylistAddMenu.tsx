@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Button,
@@ -23,22 +23,26 @@ export interface PlaylistTrackRef {
   artwork?: string | null;
 }
 
-/** Small "add to playlist" icon with a menu of the user's playlists. */
-export function PlaylistAddMenu({ track }: { track: PlaylistTrackRef }) {
+/** The playlist-picker body shared by the "add to playlist" icon menu and
+    the track context menu's submenu: a new-playlist field plus the list of
+    existing playlists. Calls onDone after a successful add. */
+export function PlaylistMenuContent({
+  track, onDone,
+}: {
+  track: PlaylistTrackRef;
+  onDone?: () => void;
+}) {
   const feedback = useFeedback();
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [playlists, setPlaylists] = useState<UserPlaylistBrief[]>([]);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const open = (e: React.MouseEvent<HTMLElement>) => {
-    setAnchor(e.currentTarget);
+  useEffect(() => {
     api
       .myPlaylists()
       .then(setPlaylists)
       .catch(() => setPlaylists([]));
-  };
-  const close = () => setAnchor(null);
+  }, []);
 
   const add = async (fn: () => Promise<{ added: number; skipped: number } | unknown>, okMsg: string) => {
     setBusy(true);
@@ -47,7 +51,7 @@ export function PlaylistAddMenu({ track }: { track: PlaylistTrackRef }) {
       feedback.show(
         res?.skipped ? `${okMsg} (${res.skipped} duplicate${res.skipped > 1 ? "s" : ""} skipped)` : okMsg,
       );
-      close();
+      onDone?.();
     } catch (err) {
       feedback.show((err as Error).message, "error");
     } finally {
@@ -92,39 +96,51 @@ export function PlaylistAddMenu({ track }: { track: PlaylistTrackRef }) {
 
   return (
     <>
+      <Box sx={{ px: 2, py: 0.5 }}>
+        <TextField
+          size="small"
+          fullWidth
+          placeholder="New playlist name"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && createAndAdd()}
+        />
+        <Button size="small" variant="tonal" disabled={!newName.trim() || busy} onClick={createAndAdd} sx={{ mt: 0.5 }}>
+          Create and add
+        </Button>
+      </Box>
+      {playlists.length > 0 && (
+        <Typography variant="caption" sx={{ color: "text.secondary", px: 2, pt: 1, display: "block" }}>
+          Add to existing
+        </Typography>
+      )}
+      {playlists.map((p) => (
+        <ListItemButton key={p.id} disabled={busy} onClick={() => addTo(p)}>
+          <ListItemText
+            primary={p.name}
+            secondary={`${p.tracks} track(s)`}
+            slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
+          />
+        </ListItemButton>
+      ))}
+    </>
+  );
+}
+
+/** Small "add to playlist" icon with a menu of the user's playlists. */
+export function PlaylistAddMenu({ track, size = "small" }: { track: PlaylistTrackRef; size?: "small" | "medium" }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const close = () => setAnchor(null);
+
+  return (
+    <>
       <Tooltip title="Add to playlist">
-        <IconButton size="small" onClick={open} aria-label="Add to playlist">
-          <PlaylistAdd fontSize="small" />
+        <IconButton size={size} onClick={(e) => setAnchor(e.currentTarget)} aria-label="Add to playlist">
+          <PlaylistAdd fontSize={size === "small" ? "small" : "inherit"} />
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchor} open={!!anchor} onClose={close}>
-        <Box sx={{ px: 2, py: 0.5 }}>
-          <TextField
-            size="small"
-            fullWidth
-            placeholder="New playlist name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createAndAdd()}
-          />
-          <Button size="small" variant="tonal" disabled={!newName.trim() || busy} onClick={createAndAdd} sx={{ mt: 0.5 }}>
-            Create and add
-          </Button>
-        </Box>
-        {playlists.length > 0 && (
-          <Typography variant="caption" sx={{ color: "text.secondary", px: 2, pt: 1, display: "block" }}>
-            Add to existing
-          </Typography>
-        )}
-        {playlists.map((p) => (
-          <ListItemButton key={p.id} disabled={busy} onClick={() => addTo(p)}>
-            <ListItemText
-              primary={p.name}
-              secondary={`${p.tracks} track(s)`}
-              slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
-            />
-          </ListItemButton>
-        ))}
+        <PlaylistMenuContent track={track} onDone={close} />
       </Menu>
     </>
   );

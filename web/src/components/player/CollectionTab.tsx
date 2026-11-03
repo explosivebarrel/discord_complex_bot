@@ -13,6 +13,7 @@ import {
 } from "../icons";
 import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
+import type { TrackMenuSpec } from "../TrackMenu";
 import { PlaylistBrowser } from "../PlaylistBrowser";
 import { CoverImg } from "./CoverImg";
 import { RowActions, rowActionsRowSx } from "./RowActions";
@@ -28,6 +29,7 @@ export interface CollectionTabProps {
   onPlayFavorite: (f: { uri: string; source: string; title: string; author: string; length_ms: number; artwork: string | null }) => void;
   onQueueFavorite: (f: { id: number; uri: string; source: string; title: string; author: string; length_ms: number; artwork: string | null }) => void;
   onRemoveFavorite: (id: number) => void;
+  onMenu: (e: React.MouseEvent, spec: TrackMenuSpec) => void;
   myPls: { id: number; name: string; tracks: number; artwork?: string | null }[];
   likedOpen: boolean;
   onOpenLiked: () => void;
@@ -62,7 +64,7 @@ export interface CollectionTabProps {
 /** A compact track row (two-column favorite grids, playlist contents):
     cover, title/author, hover actions, duration; the whole row plays. */
 function TrackRow({
-  title, author, source, lengthMs, artwork, onPlay, actions,
+  title, author, source, lengthMs, artwork, onPlay, actions, onMenu,
 }: {
   title: string;
   author: string;
@@ -71,12 +73,14 @@ function TrackRow({
   artwork: string | null;
   onPlay: () => void;
   actions?: React.ReactNode;
+  onMenu?: (e: React.MouseEvent) => void;
 }) {
   return (
     <ListItem
       disableGutters
       dense
       onClick={onPlay}
+      onContextMenu={onMenu}
       sx={{
         cursor: "pointer",
         borderRadius: 1,
@@ -111,7 +115,7 @@ function TrackRow({
     previous view. */
 export function CollectionTab(props: CollectionTabProps) {
   const {
-    me, favorites, onPlayFavorite, onQueueFavorite, onRemoveFavorite, myPls, likedOpen, onOpenLiked, onBack,
+    me, favorites, onPlayFavorite, onQueueFavorite, onRemoveFavorite, onMenu, myPls, likedOpen, onOpenLiked, onBack,
     openPl, plOpening, createPlaylist, plBusy, onShufflePlay, onPlayPlaylist, onOpenPlaylist, onDetailDelete,
     onQueueAll, onPlayPlaylistTrack, onQueuePlaylistTrack, onRemovePlaylistTrack, onQueueFavorites,
     uploads, canModerateUploads, queueUpload, removeUpload, enqueueing, playlist, playlistBusy, onCloseBrowser,
@@ -133,6 +137,17 @@ export function CollectionTab(props: CollectionTabProps) {
         uri: f.uri, source: f.source || "yt", title: f.title,
         author: f.author, length_ms: f.length_ms, artwork: f.artwork,
       })}
+      onMenu={(e) =>
+        onMenu(e, {
+          track: {
+            title: f.title, author: f.author, uri: f.uri,
+            source: f.source, length_ms: f.length_ms, artwork: f.artwork,
+          },
+          favorite: true,
+          onToggleFavorite: () => onRemoveFavorite(f.id),
+          onQueue: () => onQueueFavorite(f),
+        })
+      }
       actions={
         <RowActions>
           <Tooltip title="Add to queue">
@@ -297,6 +312,25 @@ export function CollectionTab(props: CollectionTabProps) {
                 lengthMs={t.length_ms}
                 artwork={t.artwork ?? null}
                 onPlay={() => onPlayPlaylistTrack(index, t.title)}
+                onMenu={(e) =>
+                  onMenu(e, {
+                    track: {
+                      title: t.title, author: t.author, uri: t.uri ?? "",
+                      source: t.source, length_ms: t.length_ms, artwork: t.artwork ?? null,
+                    },
+                    onPlay: () => onPlayPlaylistTrack(index, t.title),
+                    onQueue: () => onQueuePlaylistTrack(index, t.title),
+                    extra: [
+                      {
+                        key: "rm",
+                        label: "Remove from playlist",
+                        icon: "delete",
+                        danger: true,
+                        onClick: () => onRemovePlaylistTrack(t.id),
+                      },
+                    ],
+                  })
+                }
                 actions={
                   <RowActions>
                     <Tooltip title="Add to queue">
@@ -512,6 +546,21 @@ export function CollectionTab(props: CollectionTabProps) {
                 <ListItem
                   key={u.path}
                   disableGutters
+                  onContextMenu={(e) =>
+                    onMenu(e, {
+                      track: { title: u.name, uri: u.path, source: "local", artwork: null, length_ms: 0 },
+                      onQueue: () => queueUpload(`up:${u.path}`, u.path, u.name),
+                      extra: [
+                        {
+                          key: "rm",
+                          label: mine ? "Delete upload" : "Delete (admin)",
+                          icon: "delete",
+                          danger: true,
+                          onClick: () => removeUpload(u.path),
+                        },
+                      ],
+                    })
+                  }
                   sx={{ ...rowActionsRowSx }}
                   secondaryAction={
                     <RowActions>
