@@ -344,11 +344,31 @@ export function SearchResults({
     );
   }
   return (
-    <List disablePadding sx={{ mt: 1 }}>
+    // Flex column + gap: the result cards breathe apart instead of touching.
+    <List disablePadding sx={{ mt: 1, display: "flex", flexDirection: "column", gap: 1.25 }}>
       {results.map((t, i) => (
         <ListItem
           key={i}
           disablePadding
+          // Row click adds to the queue, same as the Queue button; play now
+          // stays in the context menu. Hover/active match the other lists.
+          onClick={() => {
+            enqueue(
+              `t${i}`,
+              t.encoded
+                ? { encoded: t.encoded, source: t.source ?? "" }
+                : { query: t.uri ?? t.title, source: t.source ?? "" },
+            );
+          }}
+          sx={{
+            cursor: "pointer",
+            borderRadius: 1,
+            // Vertical insets equal the horizontal ones.
+            px: 1.5,
+            py: 1.5,
+            "&:hover": { bgcolor: "action.hover" },
+            "&:active": { bgcolor: "action.selected" },
+          }}
           onContextMenu={(e) =>
             onMenu(e, {
               track: {
@@ -372,7 +392,13 @@ export function SearchResults({
             })
           }
           secondaryAction={
-            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ alignItems: "center" }}
+              // Action clicks must not bubble into the row's enqueue onClick.
+              onClick={(e) => e.stopPropagation()}
+            >
               <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>
                 <IconButton size="small" onClick={() => toggleFavorite(t)}>
                   <Favorite filled={favorites.some((f) => f.uri === t.uri)} fontSize="small" />
