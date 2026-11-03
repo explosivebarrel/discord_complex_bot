@@ -121,7 +121,9 @@ export function PlayerPage() {
   const [query, setQuery] = useState("");
   const hasQuery = query.trim().length > 0;
   const [searchActive, setSearchActive] = useState(false);
-  const [source, setSource] = useState("yt");
+  // "All" is the default: with the search cache the first slow multi-source
+  // query is remembered, so later searches of the same query are instant.
+  const [source, setSource] = useState("all");
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
   // Sequence guard for search responses: only the newest request may paint.
