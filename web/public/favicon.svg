@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- The app glyph: material "graphic_eq" in the M3 primary lavender. -->
+  <g stroke="#D0BCFF" stroke-width="2.4" stroke-linecap="round" fill="none">
+    <line x1="4.5" y1="9" x2="4.5" y2="15" />
+    <line x1="8.5" y1="5.5" x2="8.5" y2="18.5" />
+    <line x1="12" y1="2.5" x2="12" y2="21.5" />
+    <line x1="15.5" y1="5.5" x2="15.5" y2="18.5" />
+    <line x1="19.5" y1="9" x2="19.5" y2="15" />
+  </g>
+</svg>

@@ -23,6 +23,7 @@ import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as Sea
 import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { MosaicCover } from "../MosaicCover";
+import { RowActions, rowActionsRowSx } from "./RowActions";
 import { CoverImg } from "./CoverImg";
 import { fmt, SOURCE_LABELS } from "./labels";
 import type { SearchTabProps } from "./playerProps";
@@ -410,6 +411,8 @@ export function SearchResults({
             "& .MuiListItemText-root": { my: 0 },
             "&:hover": { bgcolor: "action.hover" },
             "&:active": { bgcolor: "action.selected" },
+            // Actions live in a hover-only pill, so long titles run wide.
+            ...rowActionsRowSx,
           }}
           onContextMenu={(e) =>
             onMenu(e, {
@@ -441,40 +444,43 @@ export function SearchResults({
               // Action clicks must not bubble into the row's enqueue onClick.
               onClick={(e) => e.stopPropagation()}
             >
-              <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>
-                <IconButton size="small" onClick={() => toggleFavorite(t)}>
-                  <Favorite filled={favorites.some((f) => f.uri === t.uri)} fontSize="small" />
-                </IconButton>
-              </Tooltip>
               {t.issue && (
                 <Chip size="small" label={t.issue.toUpperCase()} color="error" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
               )}
-              <PlaylistAddMenu
-                track={{
-                  title: t.title,
-                  author: t.author,
-                  uri: t.uri ?? "",
-                  source: t.source ?? "",
-                  length_ms: t.length,
-                  artwork: t.artwork,
-                }}
-              />
-              <Button
-                size="small"
-                variant="tonal"
-                disabled={enqueueing !== null}
-                startIcon={enqueueing === `t${i}` ? <CircularProgress size={14} /> : undefined}
-                onClick={() => {
-                  enqueue(
-                    `t${i}`,
-                    t.encoded
-                      ? { encoded: t.encoded, source: t.source ?? "" }
-                      : { query: t.uri ?? t.title, source: t.source ?? "" },
-                  );
-                }}
-              >
-                Queue
-              </Button>
+              {/* Hover-only frosted pill: the title is never covered at rest. */}
+              <RowActions>
+                <Tooltip title={favorites.some((f) => f.uri === t.uri) ? "Remove from favorites" : "Add to favorites"}>
+                  <IconButton size="small" onClick={() => toggleFavorite(t)}>
+                    <Favorite filled={favorites.some((f) => f.uri === t.uri)} fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <PlaylistAddMenu
+                  track={{
+                    title: t.title,
+                    author: t.author,
+                    uri: t.uri ?? "",
+                    source: t.source ?? "",
+                    length_ms: t.length,
+                    artwork: t.artwork,
+                  }}
+                />
+                <Button
+                  size="small"
+                  variant="tonal"
+                  disabled={enqueueing !== null}
+                  startIcon={enqueueing === `t${i}` ? <CircularProgress size={14} /> : undefined}
+                  onClick={() => {
+                    enqueue(
+                      `t${i}`,
+                      t.encoded
+                        ? { encoded: t.encoded, source: t.source ?? "" }
+                        : { query: t.uri ?? t.title, source: t.source ?? "" },
+                    );
+                  }}
+                >
+                  Queue
+                </Button>
+              </RowActions>
             </Stack>
           }
         >
