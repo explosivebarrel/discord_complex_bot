@@ -160,6 +160,17 @@ class MusicCog(commands.Cog):
         else:
             await player.disconnect()
 
+    @commands.Cog.listener()
+    async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload) -> None:
+        # A Lavalink (re)connect wipes the node's players: the bot may even
+        # keep audibly playing through a resumed session while the panel
+        # reads "not connected". Rebuild the players for every guild that
+        # still has a voice state and an in-memory current track.
+        try:
+            await self.bot.music.resync_players()
+        except Exception:  # noqa: BLE001 - never crash on the node event
+            logger.exception("Player resync after node ready failed")
+
 
 async def setup(bot: ComplexBot) -> None:
     await bot.add_cog(MusicCog(bot))

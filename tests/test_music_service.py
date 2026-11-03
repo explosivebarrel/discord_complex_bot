@@ -995,3 +995,78 @@ async def test_track_artwork_cache_roundtrip(db: Database) -> None:
     assert rows[1]["artwork"] == "https://own/img.jpg"
     # No cached cover: stays empty.
     assert not rows[2]["artwork"]
+
+
+async def test_resync_players_rejoins_and_replays_after_node_reconnect(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a Lavalink reconnect the app replays the interrupted track for
+    every guild that still has a Discord voice state; guilds whose voice
+    state is really gone drop their stale current item."""
+    class FakeVoice:
+        def __init__(self, channel_id: int | None) -> None:
+            self.channel = None if channel_id is None else FakeChannel(channel_id)
+
+    class FakeChannel:
+        def __init__(self, cid: int) -> None:
+            self.id = cid
+            self.joined: list[bool] = []
+
+        async def connect(self, cls=None, self_deaf=False):
+            player = FakePlayer()
+            player.channel = self
+            async def _set_volume(_v: int) -> None:
+                return None
+            player.set_volume = _set_volume
+            self.joined.append(True)
+            alive.voice_client = player
+            return player
+
+    class FakeMember:
+        def __init__(self, channel_id: int | None) -> None:
+            self.voice = FakeVoice(channel_id)
+
+    class FakeGuild:
+        def __init__(self, cid: int | None) -> None:
+            self.id = GUILD_ID
+            self.me = FakeMember(cid)
+            self.voice_client = None
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    alive = FakeGuild(42)
+    dead = FakeGuild(None)
+
+    class FakeBot:
+        def __init__(self) -> None:
+            self._guilds = {GUILD_ID: alive}
+            self._ready = True
+
+        def is_ready(self) -> bool:
+            return self._ready
+
+        def get_guild(self, gid: int):
+            return self._guilds.get(gid)
+
+    music.bot = FakeBot()  # type: ignore[assignment]
+    # get_player's isinstance(vc, wavelink.Player) cannot work with fakes.
+    music.get_player = lambda gid: (  # type: ignore[method-assign]
+        music.bot.get_guild(gid).voice_client if music.bot.get_guild(gid) else None
+    )
+    item = QueueItem(make_track("resync me"), 1, "tester")
+    music.current_items[GUILD_ID] = item
+
+    await music.resync_players()
+
+    assert alive.voice_client is not None
+    assert "resync me" in alive.voice_client.played
+    assert music.current_items[GUILD_ID] is item
+
+    # A guild without a voice state drops the stale current item instead.
+    music.bot._guilds[GUILD_ID] = dead
+    music.current_items[GUILD_ID] = item
+    await music.resync_players()
+    assert GUILD_ID not in music.current_items

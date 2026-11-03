@@ -254,6 +254,41 @@ class MusicService:
         if player is not None:
             await player.disconnect()
 
+    async def resync_players(self) -> None:
+        """Recreate players after a Lavalink reconnect.
+
+        The node rebuilds its players from scratch, but the bot's voice
+        states and this service's in-memory state survive — and a resumed
+        Lavalink session can even keep the audio playing while the panel
+        reads "not connected". Rejoin the channel and replay the
+        interrupted track so the audio and the panel agree again.
+        """
+        if self.bot is None or not self.bot.is_ready():
+            return
+        for guild_id, item in list(self.current_items.items()):
+            guild = self.get_guild(guild_id)
+            if guild is None or self.get_player(guild_id) is not None:
+                continue  # already healthy, or unknown guild
+            me = guild.me
+            if me is None or me.voice is None or me.voice.channel is None:
+                # The voice state is really gone (e.g. after a full app
+                # restart): drop the stale current so the panel does too.
+                self.current_items.pop(guild_id, None)
+                continue
+            try:
+                # A plain channel.connect, not connect(): the queue-driven
+                # play_next inside it would misinterpret the resync as a
+                # track end and advance the queue.
+                player: wavelink.Player = await me.voice.channel.connect(
+                    cls=wavelink.Player, self_deaf=True
+                )
+                await player.set_volume(100)
+                self.current_items[guild_id] = item
+                await self._play_item(guild_id, item)
+                logger.warning("Re-synced playback in guild %s after a Lavalink reconnect", guild_id)
+            except Exception:  # noqa: BLE001 - never break the node event
+                logger.exception("Failed to resync playback for guild %s", guild_id)
+
     # --- playback ---
 
     @staticmethod
