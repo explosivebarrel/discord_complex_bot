@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Dialog,
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   List,
   ListItemButton,
@@ -13,12 +14,14 @@ import {
   Menu,
   MenuItem,
   Slider,
+  Switch,
   Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { useAppTheme, GLASS_BACKDROPS, type GlassBackdrop, type GlassTuning } from "../themes/AppThemeContext";
 import { ADVANCED_SCHEMES, BASE_SCHEMES, type AppThemeScheme } from "../themes/palettes";
-import { IconCheck, IconPalette, IconTune } from "./icons";
+import { IconCheck, IconPalette, IconTune, IconVisibility } from "./icons";
 
 /** Half primary / half surface circle: a compact preview of a theme. */
 function Swatch({ scheme }: { scheme: AppThemeScheme }) {
@@ -49,113 +52,157 @@ const BACKDROP_PREVIEWS: Record<GlassBackdrop, object> = {
 };
 
 function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { glassBackdrop, setGlassBackdrop, glassTuning, setGlassTuning } = useAppTheme();
+  const { scheme, setThemeId, glassBackdrop, setGlassBackdrop, glassTuning, setGlassTuning } = useAppTheme();
   const tune = (patch: Partial<GlassTuning>) => setGlassTuning({ ...glassTuning, ...patch });
-  return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Liquid Glass settings</DialogTitle>
-      <DialogContent dividers sx={{ pt: 1 }}>
-        <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
-          Backdrop the glass refracts. Stripes and the checkerboard make the
-          lens effect the most visible; the mesh gradient is the moodiest.
+  // Preview ("eye"): the dialog and its backdrop dim go transparent, so the
+  // scene can be judged live; only the eye stays, on a dark backing.
+  // Solo: grabbing a slider hides everything but that slider on a small
+  // dark pill — release restores the dialog.
+  const [preview, setPreview] = useState(false);
+  const [solo, setSolo] = useState<string | null>(null);
+  const hideAll = preview || !!solo;
+  useEffect(() => {
+    if (!solo) return;
+    const up = () => setSolo(null);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [solo]);
+
+  const row = (key: string, node: React.ReactNode) => (
+    <Box sx={{ visibility: !hideAll || solo === key ? "visible" : "hidden", ...(solo === key ? { bgcolor: alpha("#0b0817", 0.72), backdropFilter: "blur(10px)", borderRadius: 3, px: 1.5, py: 1, my: -0.5 } : {}) }}>
+      {node}
+    </Box>
+  );
+
+  const slider = (label: string, key: keyof GlassTuning, min: number, max: number, step: number) =>
+    row(`s-${key}`, (
+      <Box onPointerDown={() => setSolo(`s-${key}`)} sx={{ cursor: "pointer" }}>
+        <Typography variant="caption" sx={{ color: "text.secondary", display: solo === `s-${key}` ? "none" : "block" }}>
+          {label}
         </Typography>
-        <List disablePadding>
-          {GLASS_BACKDROPS.map((o) => (
-            <ListItemButton
-              key={o.id}
-              selected={glassBackdrop === o.id}
-              onClick={() => setGlassBackdrop(o.id)}
-              sx={{ borderRadius: 2, mb: 0.5 }}
-            >
-              <ListItemIcon sx={{ minWidth: 44, justifyContent: "center" }}>
-                <Box
-                  aria-hidden
-                  sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid", borderColor: "divider", ...BACKDROP_PREVIEWS[o.id] }}
-                />
-              </ListItemIcon>
-              <ListItemText primary={o.label} slotProps={{ primary: { noWrap: true } }} />
-              {glassBackdrop === o.id && <IconCheck fontSize={18} sx={{ color: "primary.main" }} />}
-            </ListItemButton>
-          ))}
-        </List>
-        {/* Live lens tuning: every change rebuilds the displacement map and
-            re-renders immediately (persisted per browser). */}
-        <Typography variant="overline" sx={{ display: "block", mt: 1.5, color: "text.secondary" }}>
-          Lens tuning
+        <Slider
+          size="small"
+          min={min}
+          max={max}
+          step={step}
+          value={glassTuning[key] as number}
+          onChange={(_, v) => tune({ [key]: v as number } as Partial<GlassTuning>)}
+          valueLabelDisplay={solo === `s-${key}` ? "on" : "auto"}
+        />
+      </Box>
+    ));
+
+  const tintRow = (label: string, colorKey: "lensTint" | "panelTint", alphaKey: "lensTintAlpha" | "panelTintAlpha") =>
+    row(`t-${colorKey}`, (
+      <Box onPointerDown={() => setSolo(`t-${colorKey}`)} sx={{ cursor: "pointer" }}>
+        <Typography variant="caption" sx={{ color: "text.secondary", display: solo === `t-${colorKey}` ? "none" : "block" }}>
+          {label}
         </Typography>
-        <Box sx={{ px: 1 }}>
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Lens strength — peak rim shift, px (dock + FAB)
-          </Typography>
-          <Slider
-            size="small"
-            min={0}
-            max={36}
-            step={1}
-            value={glassTuning.maxDisp}
-            onChange={(_, v) => tune({ maxDisp: v as number })}
-            valueLabelDisplay="auto"
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Box
+            component="input"
+            type="color"
+            value={glassTuning[colorKey]}
+            onChange={(e) => tune({ [colorKey]: (e.target as HTMLInputElement).value } as Partial<GlassTuning>)}
+            sx={{ width: 34, height: 26, p: 0, border: "1px solid", borderColor: "divider", borderRadius: 1.5, bgcolor: "transparent", cursor: "pointer" }}
           />
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Lens band — rim thickness, px
-          </Typography>
-          <Slider
-            size="small"
-            min={6}
-            max={40}
-            step={1}
-            value={glassTuning.bezel}
-            onChange={(_, v) => tune({ bezel: v as number })}
-            valueLabelDisplay="auto"
-          />
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Glass tint opacity
-          </Typography>
-          <Slider
-            size="small"
-            min={0}
-            max={0.45}
-            step={0.05}
-            value={glassTuning.scrim}
-            onChange={(_, v) => tune({ scrim: v as number })}
-            valueLabelDisplay="auto"
-          />
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Chromatic aberration, px
-          </Typography>
-          <Slider
-            size="small"
-            min={0}
-            max={6}
-            step={0.5}
-            value={glassTuning.aberration}
-            onChange={(_, v) => tune({ aberration: v as number })}
-            valueLabelDisplay="auto"
-          />
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Specular highlight strength
-          </Typography>
           <Slider
             size="small"
             min={0}
             max={1}
             step={0.05}
-            value={glassTuning.specular}
-            onChange={(_, v) => tune({ specular: v as number })}
-            valueLabelDisplay="auto"
+            value={glassTuning[alphaKey] as number}
+            onChange={(_, v) => tune({ [alphaKey]: v as number } as Partial<GlassTuning>)}
+            valueLabelDisplay={solo === `t-${colorKey}` ? "on" : "auto"}
+            sx={{ flex: 1 }}
           />
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Shader resolution ×devicePixelRatio
+        </Box>
+      </Box>
+    ));
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="xs"
+      fullWidth
+      slotProps={{
+        paper: {
+          sx: hideAll
+            ? { bgcolor: "transparent", backgroundImage: "none", boxShadow: "none", overflow: "visible" }
+            : undefined,
+        },
+        backdrop: {
+          sx: hideAll ? { bgcolor: "transparent", backdropFilter: "none", transitionDuration: "0ms" } : undefined,
+        },
+      }}
+    >
+      <DialogTitle sx={{ display: "flex", alignItems: "center", pr: 2 }}>
+        <Typography variant="h6" component="span" sx={{ visibility: hideAll ? "hidden" : "visible", flex: 1 }}>
+          Liquid Glass settings
+        </Typography>
+        <Tooltip title={preview ? "Back to the settings" : "Preview the scene"}>
+          <IconButton
+            onClick={() => setPreview(!preview)}
+            aria-label="Preview the scene"
+            sx={hideAll ? { bgcolor: alpha("#0b0817", 0.75), "&:hover": { bgcolor: alpha("#0b0817", 0.9) } } : {}}
+          >
+            <IconVisibility fontSize={20} />
+          </IconButton>
+        </Tooltip>
+      </DialogTitle>
+      <DialogContent dividers sx={{ pt: 1, ...(hideAll ? { overflow: "hidden", border: "none" } : {}) }}>
+        <Box sx={{ visibility: hideAll && !solo ? "hidden" : "visible" }}>
+          {row("mode", (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={scheme.id === "glass-light"}
+                  onChange={(_, v) => setThemeId(v ? "glass-light" : "glass")}
+                />
+              }
+              label="Light glass (dark text for bright backdrops)"
+            />
+          ))}
+          <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
+            Backdrop the glass refracts. Stripes and the checkerboard make the
+            lens effect the most visible; the mesh gradient is the moodiest.
           </Typography>
-          <Slider
-            size="small"
-            min={0.5}
-            max={2}
-            step={0.25}
-            value={glassTuning.renderScale}
-            onChange={(_, v) => tune({ renderScale: v as number })}
-            valueLabelDisplay="auto"
-          />
+          <List disablePadding>
+            {GLASS_BACKDROPS.map((o) => (
+              <ListItemButton
+                key={o.id}
+                selected={glassBackdrop === o.id}
+                onClick={() => setGlassBackdrop(o.id)}
+                sx={{ borderRadius: 2, mb: 0.5 }}
+              >
+                <ListItemIcon sx={{ minWidth: 44, justifyContent: "center" }}>
+                  <Box
+                    aria-hidden
+                    sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid", borderColor: "divider", ...BACKDROP_PREVIEWS[o.id] }}
+                  />
+                </ListItemIcon>
+                <ListItemText primary={o.label} slotProps={{ primary: { noWrap: true } }} />
+                {glassBackdrop === o.id && <IconCheck fontSize={18} sx={{ color: "primary.main" }} />}
+              </ListItemButton>
+            ))}
+          </List>
+          <Typography variant="overline" sx={{ display: "block", mt: 1.5, color: "text.secondary" }}>
+            Lens tuning
+          </Typography>
+          <Box sx={{ px: 1 }}>
+            {slider("Lens strength — peak rim refraction, px", "maxDisp", 0, 36, 1)}
+            {slider("Lens band — rim thickness, px", "bezel", 6, 40, 1)}
+            {slider("Chromatic aberration, px", "aberration", 0, 6, 0.5)}
+            {slider("Specular highlight strength", "specular", 0, 1, 0.05)}
+            {slider("Shader resolution ×devicePixelRatio", "renderScale", 0.5, 2, 0.25)}
+            {tintRow("Glass tint (dock, buttons, FAB)", "lensTint", "lensTintAlpha")}
+            {tintRow("Panel tint (nav, content, queue)", "panelTint", "panelTintAlpha")}
+          </Box>
         </Box>
       </DialogContent>
     </Dialog>
@@ -210,7 +257,9 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
       <Typography variant="overline" sx={{ px: 2, display: "block", color: "text.secondary" }}>
         Advanced
       </Typography>
-      {ADVANCED_SCHEMES.map(item)}
+      {/* glass-light is reachable via the Light glass switch in the glass
+          settings dialog, not as a separate menu entry. */}
+      {ADVANCED_SCHEMES.filter((s) => s.id !== "glass-light").map(item)}
       <Divider />
       <MenuItem
         onClick={() => setCbPalette(!cbPalette)}

@@ -4,7 +4,7 @@ import { alpha } from "@mui/material/styles";
 import { useAppTheme } from "../../themes/AppThemeContext";
 import type { GlassBackdrop } from "../../themes/AppThemeContext";
 import { BACKDROP_GLSL } from "./backdropGlsl";
-import { glassIslandEntries } from "./glassRegistry";
+import { glassIslandEntries, glassSeek } from "./glassRegistry";
 
 const MAX_ISLANDS = 14;
 
@@ -92,6 +92,32 @@ vec3 lensBody(int i, vec2 px, float t, float gSample, float e, vec2 refr, vec2 d
   return glass;
 }
 
+// The player seek line, drawn into the dock's glass so the FAB lens
+// refracts it too (DOM cannot be read by the shader). u_seek.xywh is the
+// 4px bar in CSS px, w<=0 disables it; u_seekAfter is the lens index the
+// bar belongs to (drawn right after that lens composite).
+uniform vec4 u_seek;
+uniform float u_seekFrac;
+uniform float u_seekThumb;
+uniform float u_seekAfter;
+uniform vec3 u_seekBg;
+uniform vec3 u_seekFill;
+
+vec3 drawSeek(vec3 col, vec2 px) {
+  if (u_seek.z < 4.0) return col;
+  vec2 half_ = vec2(u_seek.z * 0.5 - 1.0, 1.0);
+  vec2 local = px - u_seek.xy - u_seek.zw * 0.5;
+  float d = sdRoundBox(local, half_, 2.0);
+  float inbar = 1.0 - smoothstep(-0.7, 0.7, d);
+  float fillEdge = u_seek.x + u_seek.z * u_seekFrac;
+  float past = smoothstep(fillEdge - 0.6, fillEdge + 0.6, px.x);
+  vec3 bar = mix(u_seekFill, u_seekBg, past);
+  float dt = length(px - vec2(u_seek.x + u_seek.z * u_seekFrac, u_seek.y + 2.0));
+  float thumb = u_seekThumb * (1.0 - smoothstep(5.0, 6.5, dt));
+  bar = mix(bar, u_seekFill * 1.2 + vec3(0.06), thumb);
+  return mix(col, bar, inbar);
+}
+
 // Bottom lens level: refracts the panel layer.
 vec3 lensGlassBase(int i, vec2 px, float t) {
   vec4 rc = u_islands[i];
@@ -135,6 +161,7 @@ vec3 sceneUpTo(vec2 px, float t, int top) {
       continue;
     }
     col = mix(col, lensGlassBase(i, px, t), inside);
+    if (float(i) == u_seekAfter) col = drawSeek(col, px);
   }
   return col;
 }
@@ -164,6 +191,7 @@ void main() {
     vec2 refr = px - dir * e * u_iglass2[i].z;
     vec3 glass = lensBody(i, px, t, sceneUpTo(refr, t, i).g, e, refr, dir, local, half_);
     col = mix(col, glass, inside);
+    if (float(i) == u_seekAfter) col = drawSeek(col, px);
   }
   fragColor = vec4(col, 1.0);
 }`;
@@ -245,17 +273,29 @@ const glassBScratch = new Float32Array(MAX_ISLANDS * 4);
 /** Per-scene GL state, filled in by the async warm-up below. */
 interface SceneGl {
   gl: WebGLRenderingContext;
-  prog: WebGLProgram;
   uTime: WebGLUniformLocation | null;
   uRes: WebGLUniformLocation | null;
+  uMode: WebGLUniformLocation | null;
+  uBlobs: WebGLUniformLocation | null;
   uCount: WebGLUniformLocation | null;
   uIslands: WebGLUniformLocation | null;
   uIglass: WebGLUniformLocation | null;
   uIglass2: WebGLUniformLocation | null;
-  dpr: number;
+  uAberration: WebGLUniformLocation | null;
+  uSpecular: WebGLUniformLocation | null;
+  uSeek: WebGLUniformLocation | null;
+  uSeekFrac: WebGLUniformLocation | null;
+  uSeekThumb: WebGLUniformLocation | null;
+  uSeekAfter: WebGLUniformLocation | null;
+  uSeekBg: WebGLUniformLocation | null;
+  uSeekFill: WebGLUniformLocation | null;
   animate: boolean;
+  dpr: () => number;
   resize: () => void;
 }
+const blobsScratch = new Float32Array(15);
+const seekBgScratch = new Float32Array(3);
+const seekFillScratch = new Float32Array(3);
 
 /**
  * The single WebGL scene behind the Liquid Glass theme: the procedural
@@ -274,6 +314,14 @@ export function GlassScene() {
   // makes that visible instead of a frozen screen.
   const [warmStage, setWarmStage] = useState<string | null>(null);
   const [warmVisible, setWarmVisible] = useState(false);
+  // Live settings: the scene mounts once and reads these per frame, so
+  // dragging the tuning sliders never recompiles the shaders.
+  const tuningRef = useRef(glassTuning);
+  tuningRef.current = glassTuning;
+  const backdropRef = useRef(glassBackdrop);
+  backdropRef.current = glassBackdrop;
+  const schemeRef = useRef(scheme);
+  schemeRef.current = scheme;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -292,26 +340,54 @@ export function GlassScene() {
     let raf = 0;
     let running = true;
     let scene: SceneGl | null = null;
-    const visTimer = window.setTimeout(() => setWarmVisible(true), 400);
+    setWarmVisible(true);
 
     const frame = (now: number) => {
       if (!running || !scene) return;
-      const { gl, uTime, uRes, uCount, uIslands, uIglass, uIglass2, dpr, animate } = scene;
+      const { gl, uTime, uRes, uMode, uBlobs, uCount, uIslands, uIglass, uIglass2, uAberration, uSpecular, uSeek, uSeekFrac, uSeekThumb, uSeekAfter, uSeekBg, uSeekFill, animate } = scene;
+      const tuning = tuningRef.current;
+      const tokens = schemeRef.current.tokens;
       gl.uniform1f(uTime, animate ? (now - t0) / 1000 : 1.0);
+      gl.uniform1f(uMode, MODE[backdropRef.current]);
+      blobsScratch.set([
+        tokens.primaryContainer, tokens.tertiaryContainer, tokens.secondaryContainer,
+        tokens.primary, tokens.tertiary,
+      ].flatMap(hexRgb));
+      gl.uniform3fv(uBlobs, blobsScratch);
+      gl.uniform1f(uAberration, tuning.aberration);
+      gl.uniform1f(uSpecular, tuning.specular);
       const entries = glassIslandEntries();
+      // The seek line drawn into the dock's glass (index of the wide lens).
+      let seekAfter = -1;
+      for (let i = 0; i < entries.length && i < MAX_ISLANDS; i++) {
+        if (entries[i].kind === "lens" && entries[i].el.getBoundingClientRect().width > 300) {
+          seekAfter = i;
+          break;
+        }
+      }
+      gl.uniform4f(uSeek, glassSeek.x, glassSeek.y, glassSeek.w, glassSeek.h);
+      gl.uniform1f(uSeekFrac, glassSeek.frac);
+      gl.uniform1f(uSeekThumb, glassSeek.thumb);
+      gl.uniform1f(uSeekAfter, seekAfter);
+      seekBgScratch.set(hexRgb(tokens.surfaceContainerHighest));
+      seekFillScratch.set(hexRgb(tokens.primary));
+      gl.uniform3fv(uSeekBg, seekBgScratch);
+      gl.uniform3fv(uSeekFill, seekFillScratch);
       const rects = rectsScratch;
       const glassA = glassAScratch;
       const glassB = glassBScratch;
+      const panelTint = hexRgb(tuning.panelTint);
+      const lensTint = hexRgb(tuning.lensTint);
       let n = 0;
-      for (const { el, radius, kind, tint, tintAlpha } of entries) {
+      for (const { el, radius, kind } of entries) {
         if (n >= MAX_ISLANDS) break;
         const r = el.getBoundingClientRect();
         if (r.width < 8 || r.height < 8) continue;
         rects.set([r.left, r.top, r.width, r.height], n * 4);
-        const [tr, tg, tb] = hexRgb(tint ?? scheme.tokens.surfaceContainerLow);
+        const [tr, tg, tb] = kind === "panel" ? panelTint : lensTint;
         glassA.set([radius, tr, tg, tb], n * 4);
         glassB.set(
-          [tintAlpha ?? glassTuning.scrim, glassTuning.bezel, glassTuning.maxDisp, kind === "panel" ? 0 : 1],
+          [kind === "panel" ? tuning.panelTintAlpha : tuning.lensTintAlpha, tuning.bezel, tuning.maxDisp, kind === "panel" ? 0 : 1],
           n * 4,
         );
         n++;
@@ -320,7 +396,7 @@ export function GlassScene() {
       rects.fill(0, n * 4);
       const w = window.innerWidth;
       const h = window.innerHeight;
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      if (canvas.width !== Math.round(w * scene.dpr()) || canvas.height !== Math.round(h * scene.dpr())) {
         scene.resize();
         gl.uniform2f(uRes, w, h);
       }
@@ -361,42 +437,35 @@ export function GlassScene() {
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const blobHex = [
-        scheme.tokens.primaryContainer,
-        scheme.tokens.tertiaryContainer,
-        scheme.tokens.secondaryContainer,
-        scheme.tokens.primary,
-        scheme.tokens.tertiary,
-      ];
-      const blobs = new Float32Array(blobHex.flatMap(hexRgb));
-
-      // Shader resolution: devicePixelRatio scaled by the user's renderScale
-      // slider (the shader works in CSS pixels, so it is resolution-free).
-      const dpr = Math.min((window.devicePixelRatio || 1) * glassTuning.renderScale, 3);
       const resize = () => {
+        const dpr = Math.min((window.devicePixelRatio || 1) * tuningRef.current.renderScale, 3);
         canvas.width = Math.round(window.innerWidth * dpr);
         canvas.height = Math.round(window.innerHeight * dpr);
         gl.viewport(0, 0, canvas.width, canvas.height);
       };
       resize();
-      gl.uniform2f(gl.getUniformLocation(prog, "u_res"), window.innerWidth, window.innerHeight);
-      gl.uniform1f(gl.getUniformLocation(prog, "u_mode"), MODE[glassBackdrop]);
-      gl.uniform3fv(gl.getUniformLocation(prog, "u_blobs"), blobs);
-      gl.uniform1f(gl.getUniformLocation(prog, "u_aberration"), glassTuning.aberration);
-      gl.uniform1f(gl.getUniformLocation(prog, "u_specular"), glassTuning.specular);
 
       scene = {
         gl,
-        prog,
         uTime: gl.getUniformLocation(prog, "u_time"),
         uRes: gl.getUniformLocation(prog, "u_res"),
+        uMode: gl.getUniformLocation(prog, "u_mode"),
+        uBlobs: gl.getUniformLocation(prog, "u_blobs"),
         uCount: gl.getUniformLocation(prog, "u_count"),
         uIslands: gl.getUniformLocation(prog, "u_islands"),
         uIglass: gl.getUniformLocation(prog, "u_iglass"),
         uIglass2: gl.getUniformLocation(prog, "u_iglass2"),
-        dpr,
+        uAberration: gl.getUniformLocation(prog, "u_aberration"),
+        uSpecular: gl.getUniformLocation(prog, "u_specular"),
+        uSeek: gl.getUniformLocation(prog, "u_seek"),
+        uSeekFrac: gl.getUniformLocation(prog, "u_seekFrac"),
+        uSeekThumb: gl.getUniformLocation(prog, "u_seekThumb"),
+        uSeekAfter: gl.getUniformLocation(prog, "u_seekAfter"),
+        uSeekBg: gl.getUniformLocation(prog, "u_seekBg"),
+        uSeekFill: gl.getUniformLocation(prog, "u_seekFill"),
         // Reduced motion freezes the animation clock; layout still redraws.
         animate: !reduced,
+        dpr: () => Math.min((window.devicePixelRatio || 1) * tuningRef.current.renderScale, 3),
         resize,
       };
 
@@ -417,6 +486,7 @@ export function GlassScene() {
     const onResize = () => {
       if (scene) {
         gl.uniform2f(scene.uRes, window.innerWidth, window.innerHeight);
+        scene.resize();
       }
     };
     const onVisibility = () => {
@@ -434,13 +504,12 @@ export function GlassScene() {
       cancelled = true;
       running = false;
       cancelAnimationFrame(raf);
-      clearTimeout(visTimer);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-    // Everything the scene reads at setup is intentionally captured once;
-    // tuning changes come back as a remount through the deps below.
-  }, [glassBackdrop, glassTuning, scheme]);
+    // The scene mounts once; settings and theme changes are read live
+    // through the refs above, so the shaders never recompile mid-session.
+  }, []);
 
   return (
     <>
@@ -470,10 +539,10 @@ export function GlassScene() {
             px: 2,
             py: 1.25,
             borderRadius: "999px",
-            bgcolor: alpha(scheme.tokens.surfaceContainerHigh, 0.8),
+            bgcolor: alpha(schemeRef.current.tokens.surfaceContainerHigh, 0.8),
             backdropFilter: "blur(10px)",
             border: "1px solid",
-            borderColor: alpha(scheme.tokens.outlineVariant, 0.5),
+            borderColor: alpha(schemeRef.current.tokens.outlineVariant, 0.5),
             boxShadow: "0 8px 24px rgba(0,0,0,.35)",
             pointerEvents: "none",
           }}
@@ -484,8 +553,8 @@ export function GlassScene() {
               height: 14,
               borderRadius: "50%",
               border: "2px solid",
-              borderColor: alpha(scheme.tokens.primary, 0.25),
-              borderTopColor: scheme.tokens.primary,
+              borderColor: alpha(schemeRef.current.tokens.primary, 0.25),
+              borderTopColor: schemeRef.current.tokens.primary,
               animation: "glass-warm-spin 0.8s linear infinite",
               "@keyframes glass-warm-spin": { to: { transform: "rotate(360deg)" } },
               "@media (prefers-reduced-motion: reduce)": { animation: "none" },
@@ -493,7 +562,7 @@ export function GlassScene() {
           />
           <Typography
             variant="caption"
-            sx={{ color: scheme.tokens.onSurface, whiteSpace: "nowrap" }}
+            sx={{ color: schemeRef.current.tokens.onSurface, whiteSpace: "nowrap" }}
           >
             {warmStage}
           </Typography>

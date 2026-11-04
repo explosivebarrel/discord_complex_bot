@@ -19,16 +19,11 @@ function guildIconUrl(guild: GuildBrief) {
     Liquid Glass theme the pill becomes a scene lens (the shader paints the
     glass beneath the transparent button). */
 function SectionButton({ label, icon, href, enabled, hint, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; hint?: string; primary?: boolean }) {
-  const { scheme, glassWebgl } = useAppTheme();
+  const { glassWebgl } = useAppTheme();
   const ref = useRef<HTMLAnchorElement | null>(null);
   useGlassIsland(
     ref,
-    {
-      radius: 999,
-      kind: "lens",
-      tint: primary ? scheme.tokens.primary : scheme.tokens.secondaryContainer,
-      tintAlpha: primary ? 0.8 : 0.5,
-    },
+    { radius: 999, kind: "lens" },
     glassWebgl && !!ref.current,
   );
   const button = (

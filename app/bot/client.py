@@ -39,7 +39,10 @@ class ComplexBot(commands.Bot):
             "app.bot.cogs.posts",
         )
         for ext in cogs:
-            await self.load_extension(ext)
+            # setup_hook runs again when _run_bot restarts a crashed bot —
+            # an already-loaded extension must not crash the restart.
+            if ext not in self.extensions:
+                await self.load_extension(ext)
         await self.tree.sync()
         logger.info("Slash commands synced")
         # Pool.connect retries until Lavalink is reachable. Run it as a background
@@ -61,6 +64,10 @@ class ComplexBot(commands.Bot):
 
 
 async def wavelink_connect(bot: ComplexBot) -> None:
+    # A bot restart keeps the node object alive — only a fresh connect.
+    if wavelink.Pool.nodes:
+        logger.info("Lavalink node already connected; skipping pool setup")
+        return
     # Wavelink needs the scheme in the URI. It appends /v4/websocket on its own.
     scheme = "https" if bot.config.lavalink_secure else "http"
     node = wavelink.Node(

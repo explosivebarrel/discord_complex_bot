@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, IconButton, LinearProgress, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
-import { useGlassIsland } from "./glass/glassRegistry";
+import { glassSeek, useGlassIsland } from "./glass/glassRegistry";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -15,10 +15,15 @@ function fmt(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** Thin draggable seek line along the top edge of the dock. */
-function SeekLine({ position, length, onSeek }: { position: number; length: number; onSeek: (ms: number) => void }) {
+/** Thin draggable seek line along the top edge of the dock. On the Liquid
+    Glass theme the line itself is drawn by the scene INTO the dock's glass
+    (glassSeek), so the FAB lens refracts it — this DOM box stays only as
+    the invisible hit-area for dragging; without WebGL it renders normally. */
+function SeekLine({ position, length, onSeek, canvas }: { position: number; length: number; onSeek: (ms: number) => void; canvas: boolean }) {
   const barRef = useRef<HTMLDivElement | null>(null);
+  const barInnerRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [hover, setHover] = useState(false);
   const [dragMs, setDragMs] = useState(0);
   const shown = dragging ? dragMs : Math.min(position, length);
   const pct = length > 0 ? Math.min((shown / length) * 100, 100) : 0;
@@ -27,6 +32,21 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
     if (!rect || rect.width === 0 || length <= 0) return 0;
     return Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1) * length;
   };
+  // Publish the bar's geometry + progress to the scene every render.
+  useLayoutEffect(() => {
+    const inner = barInnerRef.current;
+    if (!inner || !canvas) {
+      glassSeek.w = 0;
+      return;
+    }
+    const r = inner.getBoundingClientRect();
+    glassSeek.x = r.left;
+    glassSeek.y = r.top;
+    glassSeek.w = r.width;
+    glassSeek.h = r.height;
+    glassSeek.frac = length > 0 ? Math.min(shown / length, 1) : 0;
+    glassSeek.thumb = dragging || hover ? 1 : 0;
+  });
   return (
     <Box
       ref={barRef}
@@ -43,6 +63,8 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
         setDragging(false);
         onSeek(Math.round(msAt(e.clientX)));
       }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       sx={{
         position: "absolute",
         top: -9,
@@ -54,11 +76,13 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
         touchAction: "none",
         display: "flex",
         alignItems: "center",
+        opacity: canvas ? 0 : 1,
         "& .seek-thumb": { opacity: dragging ? 1 : 0 },
         "&:hover .seek-thumb": { opacity: 1 },
       }}
     >
       <Box
+        ref={barInnerRef}
         sx={(t) => ({
           position: "relative",
           height: 4,
@@ -149,7 +173,7 @@ export function PlayerDock({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const { scheme, glassWebgl, glassTuning } = useAppTheme();
+  const { glassWebgl, glassTuning } = useAppTheme();
   // Layout mode from the dock's own width: below ~680px (sidebars open on
   // a small screen) one row cannot fit cover + title + transport + actions,
   // so the content stacks into three short rows. The inline volume slider
@@ -162,12 +186,12 @@ export function PlayerDock({
   // the boxes (the ref callback fills them during that render's commit).
   useGlassIsland(
     dockRef,
-    { radius: 20, kind: "lens", tint: scheme.tokens.surfaceContainerLow, tintAlpha: glassTuning.scrim },
+    { radius: 20, kind: "lens" },
     glassWebgl && !!state,
   );
   useGlassIsland(
     fabRef,
-    { radius: 30, kind: "lens", tint: scheme.tokens.primary, tintAlpha: 0.42 },
+    { radius: 30, kind: "lens" },
     glassWebgl && !!state,
   );
 
@@ -233,8 +257,7 @@ export function PlayerDock({
           <LinearProgress sx={{ height: 4, borderRadius: 999 }} />
         </Box>
       ) : !isLive ? (
-        <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} />
-      ) : null)}
+        <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} canvas={glassWebgl} />      ) : null)}
 
       {/* Dock content rides above the warp layer, so text and controls
           never take the lens distortion. The row-vs-stack decision keys off
@@ -353,15 +376,15 @@ export function PlayerDock({
                   ? glassWebgl
                     ? {
                         // The scene paints the round lens beneath the
-                        // transparent button; a CSS frost mutes whatever
-                        // DOM crosses it (the seek line), and the button
-                        // stacks above that line.
-                        bgcolor: "transparent",
-                        backdropFilter: "blur(6px)",
+                        // transparent button; the tint mutes whatever DOM
+                        // sits behind (cards scrolled under the protruding
+                        // top, the seek line is masked away entirely), and
+                        // saturate() keeps the canvas lens crisp.
+                        bgcolor: alpha(glassTuning.lensTint, Math.max(glassTuning.lensTintAlpha, 0.35)),
                         zIndex: 2,
-                        color: t.palette.primary.contrastText,
-                        "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.18) },
-                        "&.Mui-disabled": { color: t.palette.primary.contrastText, opacity: 0.45 },
+                        color: t.palette.m3.onSurface,
+                        "&:hover": { bgcolor: alpha(glassTuning.lensTint, Math.max(glassTuning.lensTintAlpha + 0.15, 0.5)) },
+                        "&.Mui-disabled": { bgcolor: alpha(glassTuning.lensTint, Math.max(glassTuning.lensTintAlpha, 0.35) * 0.7), color: t.palette.m3.onSurface, opacity: 0.5 },
                       }
                     : {
                         // Liquid-glass FAB: translucent tint; the glyph

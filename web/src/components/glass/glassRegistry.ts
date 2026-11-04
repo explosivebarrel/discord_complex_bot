@@ -1,10 +1,11 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, type RefObject } from "react";
 
 /**
  * Registry of glass islands the GlassScene renders. Panels keep their DOM
  * (text, controls) and become transparent windows; the scene paints the
  * glass beneath them, tracking each element's live box every frame, so
  * scrolling, collapsing columns and window resizes stay in sync for free.
+ * Tints come from the glass tuning (per island kind) at draw time.
  */
 export type GlassIslandKind = "panel" | "lens";
 
@@ -12,14 +13,8 @@ export interface GlassIslandOpts {
   /** Corner radius in CSS px (999 = pill / fully round). */
   radius: number;
   /** "panel": frosted backdrop panel (columns); "lens": refracting
-      surface (dock, FAB, buttons). Lenses refract what the panels
-      painted; panels only frost. */
+      surface (dock, FAB, buttons). */
   kind: GlassIslandKind;
-  /** Tint mixed over the refracted backdrop; defaults to the theme surface. */
-  tint?: string;
-  /** Tint strength; lenses default to the theme's scrim tuning, panels
-      use a fixed frost tint. */
-  tintAlpha?: number;
 }
 
 interface GlassIslandEntry extends GlassIslandOpts {
@@ -31,6 +26,8 @@ const islands = new Set<GlassIslandEntry>();
 export function registerGlassIsland(el: HTMLElement, opts: GlassIslandOpts): () => void {
   const entry: GlassIslandEntry = { ...opts, el };
   islands.add(entry);
+  // Debug handle: live registry inspection from the console.
+  (window as unknown as { __glassIslands: typeof islands }).__glassIslands = islands;
   return () => islands.delete(entry);
 }
 
@@ -39,21 +36,28 @@ export function glassIslandEntries(): GlassIslandEntry[] {
   return [...islands];
 }
 
-/** Registers an element as a glass island while `enabled`. The options
-    object is read through a ref, so passers-by re-renders don't churn the
-    registry (registration order defines the paint order). */
+/** The player seek line, drawn by the scene INTO the dock's glass so the
+    FAB lens refracts it. Updated by PlayerDock every render (the DOM seek
+    line stays as an invisible hit-area for dragging). */
+export const glassSeek = { x: 0, y: 0, w: 0, h: 0, frac: 0, thumb: 0 };
+
+/** Registers an element as a glass island while `enabled`. */
 export function useGlassIsland(
   ref: RefObject<HTMLElement | null>,
   opts: GlassIslandOpts,
   enabled: boolean,
 ): void {
-  const latest = useRef(opts);
-  latest.current = opts;
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
   useEffect(() => {
     const el = ref.current;
-    if (!enabledRef.current || !el) return;
-    return registerGlassIsland(el, latest.current);
-  }, [ref, enabled]);
+    if (typeof window !== "undefined") {
+      const w = window as unknown as { __glassHookLog?: object[] };
+      (w.__glassHookLog ??= []).push({ kind: opts.kind, enabled, hasEl: !!el, size: el ? `${el.offsetWidth}x${el.offsetHeight}` : "" });
+    }
+    if (!enabled || !el) return;
+    return registerGlassIsland(el, opts);
+    // Radius/kind changes re-register; the opts object itself is fine to
+    // be recreated per render — registration order defines paint order
+    // and stays stable because these deps rarely change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref, enabled, opts.radius, opts.kind]);
 }

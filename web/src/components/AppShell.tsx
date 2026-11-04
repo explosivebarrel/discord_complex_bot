@@ -368,7 +368,7 @@ export function AppShell({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const islandsOn = !!theme.surface.islands;
-  const panelOpts = { radius: 18, kind: "panel" as const, tint: theme.palette.m3.surfaceContainerLow, tintAlpha: 0.45 };
+  const panelOpts = { radius: 18, kind: "panel" as const };
   useGlassIsland(navRef, panelOpts, islandsOn && isWide && glassWebgl);
   useGlassIsland(leftNavRef, panelOpts, islandsOn && !!leftNav && isWide && glassWebgl);
   useGlassIsland(contentRef, panelOpts, islandsOn && glassWebgl);
