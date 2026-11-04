@@ -264,28 +264,43 @@ class MusicService:
         states and this service's in-memory state survive — and a resumed
         Lavalink session can even keep the audio playing while the panel
         reads "not connected". Rejoin the channel and replay the
-        interrupted track so the audio and the panel agree again.
+        interrupted track; a guild whose current is gone but whose queue
+        still has tracks gets its player back too, and the queue head
+        starts (a track end that died with the old session must not
+        silence the queue).
         """
         if self.bot is None or not self.bot.is_ready():
             return
+        seen: set[int] = set()
         for guild_id, item in list(self.current_items.items()):
-            guild = self.get_guild(guild_id)
-            if guild is None or self.get_player(guild_id) is not None:
-                continue  # already healthy, or unknown guild
-            me = guild.me
-            if me is None or me.voice is None or me.voice.channel is None:
-                # The voice state is really gone (e.g. after a full app
-                # restart): drop the stale current so the panel does too.
-                self.current_items.pop(guild_id, None)
+            seen.add(guild_id)
+            await self._resync_one(guild_id, item)
+        # Queues without a current track: the track end landed inside the
+        # connection gap, so nothing will ever pull the queue head.
+        for guild_id, queue in list(self.queues.items()):
+            if guild_id in seen or not queue:
                 continue
-            try:
-                # A plain channel.connect, not connect(): the queue-driven
-                # play_next inside it would misinterpret the resync as a
-                # track end and advance the queue.
-                player: wavelink.Player = await me.voice.channel.connect(
-                    cls=wavelink.Player, self_deaf=True
-                )
-                await player.set_volume(100)
+            await self._resync_one(guild_id, None)
+
+    async def _resync_one(self, guild_id: int, item: QueueItem | None) -> None:
+        guild = self.get_guild(guild_id)
+        if guild is None or self.get_player(guild_id) is not None:
+            return  # already healthy, or unknown guild
+        me = guild.me
+        if me is None or me.voice is None or me.voice.channel is None:
+            # The voice state is really gone (e.g. after a full app
+            # restart): drop the stale current so the panel does too.
+            self.current_items.pop(guild_id, None)
+            return
+        try:
+            # A plain channel.connect, not connect(): the queue-driven
+            # play_next inside it would misinterpret the resync as a
+            # track end and advance the queue.
+            player: wavelink.Player = await me.voice.channel.connect(
+                cls=wavelink.Player, self_deaf=True
+            )
+            await player.set_volume(100)
+            if item is not None:
                 self.current_items[guild_id] = item
                 await self._play_item(guild_id, item)
                 logger.warning("Re-synced playback in guild %s after a Lavalink reconnect", guild_id)
@@ -295,8 +310,18 @@ class MusicService:
                     "Playback re-synced",
                     f'"{item.display_title}" restarted after a Lavalink reconnect.',
                 )
-            except Exception:  # noqa: BLE001 - never break the node event
-                logger.exception("Failed to resync playback for guild %s", guild_id)
+            else:
+                # The queue is intact: resume with its head.
+                logger.warning("Re-queued guild %s after a Lavalink reconnect", guild_id)
+                await self.notify(
+                    guild_id,
+                    "player",
+                    "Playback resumed",
+                    "The bot reconnected to Lavalink and picked the queue back up.",
+                )
+                await self.play_next(guild_id, "stopped")
+        except Exception:  # noqa: BLE001 - never break the node event
+            logger.exception("Failed to resync playback for guild %s", guild_id)
 
     # --- playback ---
 
@@ -941,7 +966,17 @@ class MusicService:
             self.record_error(str(exc), {"guild_id": guild_id, "title": item.display_title})
             return await self.play_next(guild_id, reason)
         item.track = track
-        await player.play(track)
+        try:
+            await player.play(track)
+        except wavelink.LavalinkException:
+            # The Lavalink session died mid-queue (a node reconnect): one
+            # resync attempt recovers, a second failure re-raises.
+            logger.warning("Player play failed for guild %s; resyncing once", guild_id)
+            await self.resync_players()
+            player = self.get_player(guild_id)
+            if player is None:
+                raise
+            await player.play(track)
         if not item.is_autoplay:
             self._push_played(guild_id, item)
         await self._record_history(guild_id, item)

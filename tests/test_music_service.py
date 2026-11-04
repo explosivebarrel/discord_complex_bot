@@ -1110,3 +1110,70 @@ async def test_ym_album_track_url_queues_the_single_track(
 
     assert result["now_playing"] is True
     assert music.current_items[GUILD_ID].track.title == "the right one"
+
+
+async def test_resync_starts_queue_head_when_current_is_gone(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guild whose current track ended inside a Lavalink connection gap
+    gets its player back and the queue head starts."""
+
+    class FakeChannel:
+        def __init__(self) -> None:
+            self.id = 42
+
+        async def connect(self, cls=None, self_deaf=False):
+            player = FakePlayer()
+            player.channel = self
+
+            async def _set_volume(_v: int) -> None:
+                return None
+
+            player.set_volume = _set_volume
+            guild.voice_client = player
+            return player
+
+    class FakeVoice:
+        channel = FakeChannel()
+
+    class FakeMe:
+        voice = FakeVoice()
+
+    class FakeGuild:
+        id = GUILD_ID
+        me = FakeMe()
+        voice_client = None
+
+    class FakeBot:
+        def __init__(self, g) -> None:
+            self._ready = True
+            self._guild = g
+
+        def is_ready(self) -> bool:
+            return self._ready
+
+        def get_guild(self, gid: int):
+            return self._guild
+
+    guild = FakeGuild()
+    music.bot = FakeBot(guild)  # type: ignore[assignment]
+    music.get_player = lambda gid: guild.voice_client  # type: ignore[method-assign]
+    fill_queue(music, ["queued head"])
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+    notified: list[str] = []
+
+    async def fake_notify(gid, category, title, body=""):
+        notified.append(title)
+
+    music.notify = fake_notify  # type: ignore[method-assign]
+
+    await music.resync_players()
+
+    # The queue head started and left the queue.
+    assert [i.track.title for i in music.played[GUILD_ID]] == ["queued head"]
+    assert music.queues[GUILD_ID] == deque()
+    assert "Playback resumed" in notified

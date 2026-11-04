@@ -9,9 +9,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.deps import cleanup_expired_sessions
@@ -33,6 +33,7 @@ from app.core.db import Database
 from app.core.db.models import utcnow
 from app.core.services.ws_hub import get_hub
 from app.core.services import availability
+import wavelink
 from app.core.services.music import MusicService
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,12 @@ def create_app() -> FastAPI:
             await db.dispose()
 
     app = FastAPI(title=config.bot_name, lifespan=lifespan)
+
+    @app.exception_handler(wavelink.LavalinkException)
+    async def _lavalink_unavailable(request: Request, exc: wavelink.LavalinkException) -> JSONResponse:
+        # A dead Lavalink node turns every player touch into this error;
+        # answer 503 instead of a bare 500.
+        return JSONResponse(status_code=503, detail="Lavalink is offline right now. Try again in a moment.")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[config.base_url, "http://localhost:5173"],
