@@ -6,12 +6,19 @@ import { useEffect, useRef, type RefObject } from "react";
  * glass beneath them, tracking each element's live box every frame, so
  * scrolling, collapsing columns and window resizes stay in sync for free.
  */
+export type GlassIslandKind = "panel" | "lens";
+
 export interface GlassIslandOpts {
-  /** Corner radius in CSS px (0 for the flush edge columns). */
+  /** Corner radius in CSS px (999 = pill / fully round). */
   radius: number;
+  /** "panel": frosted backdrop panel (columns); "lens": refracting
+      surface (dock, FAB, buttons). Lenses refract what the panels
+      painted; panels only frost. */
+  kind: GlassIslandKind;
   /** Tint mixed over the refracted backdrop; defaults to the theme surface. */
   tint?: string;
-  /** Tint strength; defaults to the theme's scrim tuning. */
+  /** Tint strength; lenses default to the theme's scrim tuning, panels
+      use a fixed frost tint. */
   tintAlpha?: number;
 }
 

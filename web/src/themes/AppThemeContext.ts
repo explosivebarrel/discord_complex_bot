@@ -20,15 +20,28 @@ export function getGlassBackdrop(v: string): GlassBackdrop {
 /**
  * Live-tunable lens parameters (sliders in the Liquid Glass settings):
  * maxDisp — peak rim refraction in px; bezel — rim band thickness in px;
- * scrim — glass tint opacity (0 = the clean sandbox look).
+ * scrim — lens tint opacity (0 = the clean sandbox look); aberration —
+ * chromatic pull in px; specular — fresnel rim highlight strength;
+ * renderScale — extra resolution multiplier on top of devicePixelRatio
+ * (raise it on a strong GPU for crisper glass).
  */
 export interface GlassTuning {
   maxDisp: number;
   bezel: number;
   scrim: number;
+  aberration: number;
+  specular: number;
+  renderScale: number;
 }
 
-export const DEFAULT_GLASS_TUNING: GlassTuning = { maxDisp: 20, bezel: 20, scrim: 0 };
+export const DEFAULT_GLASS_TUNING: GlassTuning = {
+  maxDisp: 20,
+  bezel: 20,
+  scrim: 0,
+  aberration: 2,
+  specular: 0.5,
+  renderScale: 1,
+};
 
 export function getGlassTuning(raw: string | null): GlassTuning {
   try {

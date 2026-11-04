@@ -358,18 +358,21 @@ export function AppShell({
     [isLarge, setSheetOpen],
   );
   const [modalOpen, setModalOpen] = useState(false);
-  // Full WebGL glass: the frame columns become transparent windows and the
-  // scene paints their lenses beneath; CSS island glass stays the fallback.
+  // Full WebGL glass: the layout columns are frosted panels painted by the
+  // scene (rounded, no rim lens), while the DOM stays a transparent window;
+  // lenses live only on the dock, the FAB and the pill buttons. Without
+  // WebGL the CSS island glass below is the fallback.
   const { glassWebgl } = useAppTheme();
   const navRef = useRef<HTMLDivElement | null>(null);
   const leftNavRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const islandsOn = !!theme.surface.islands;
-  useGlassIsland(navRef, { radius: 0 }, islandsOn && isWide && glassWebgl);
-  useGlassIsland(leftNavRef, { radius: 0 }, islandsOn && !!leftNav && isWide && glassWebgl);
-  useGlassIsland(contentRef, { radius: 0 }, islandsOn && glassWebgl);
-  useGlassIsland(sheetRef, { radius: 0 }, islandsOn && !!right && isLarge && glassWebgl);
+  const panelOpts = { radius: 18, kind: "panel" as const, tint: theme.palette.m3.surfaceContainerLow, tintAlpha: 0.45 };
+  useGlassIsland(navRef, panelOpts, islandsOn && isWide && glassWebgl);
+  useGlassIsland(leftNavRef, panelOpts, islandsOn && !!leftNav && isWide && glassWebgl);
+  useGlassIsland(contentRef, panelOpts, islandsOn && glassWebgl);
+  useGlassIsland(sheetRef, panelOpts, islandsOn && !!right && isLarge && glassWebgl);
   // Shared cache with GuildsPage: the drawer renders instantly on revisit.
   const guildsQuery = useGuilds();
   const guilds = guildsQuery.data ?? [];
@@ -454,15 +457,13 @@ export function AppShell({
       )}
 
       {/* The inset frame: nav | content | player sheet. Islands-glass
-          themes keep the frame a transparent layout shell: a backdrop
-          filter here would create a backdrop root, so every nested glass
-          panel would sample this frame's already-filtered paint instead
-          of the animated backdrop (double blur, dead lens). */}
+          themes keep the frame a transparent layout shell with floating
+          rounded glass panels inside (the gap shows the backdrop). */}
       <Box
         sx={(t) => ({
           height: "100%",
           ...(t.surface.islands
-            ? { bgcolor: "transparent" }
+            ? { bgcolor: "transparent", gap: { xs: 1, md: 1.5 } }
             : surfaceStyle(t, t.palette.m3.surface, "shell")),
           borderRadius: { xs: "16px", md: "24px" },
           overflow: "hidden",
@@ -480,19 +481,17 @@ export function AppShell({
               flexShrink: 0,
               position: "relative",
               overflow: "hidden",
-              // Islands glass: the nav is its own floating glass panel.
-              // With the WebGL scene the lens is painted beneath, so the
-              // box is a transparent window; otherwise CSS island glass.
+              // Islands glass: the nav is its own floating rounded glass
+              // panel (the scene paints it, or islandStyle below).
               ...(t.surface.islands
                 ? glassWebgl
                   ? { bgcolor: "transparent" }
                   : islandStyle(t, t.palette.m3.surface)
                 : { bgcolor: "transparent" }),
-              // Glass themes edge the frame with a neon hairline instead of
-              // the plain outline; the shader rim replaces it on WebGL.
-              borderRight: glassWebgl
-                ? "none"
-                : `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              borderRadius: t.surface.islands ? "18px" : 0,
+              ...(t.surface.islands
+                ? {}
+                : { borderRight: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}` }),
               transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
             })}
           >
@@ -569,9 +568,10 @@ export function AppShell({
                   ? { bgcolor: "transparent" }
                   : islandStyle(t, t.palette.m3.surface)
                 : {}),
-              borderRight: glassWebgl
-                ? "none"
-                : `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              borderRadius: t.surface.islands ? "18px" : 0,
+              ...(t.surface.islands
+                ? {}
+                : { borderRight: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}` }),
             })}
           >
             {leftNav}
@@ -585,14 +585,15 @@ export function AppShell({
             minWidth: 0,
             display: "flex",
             flexDirection: "column",
-            // Islands glass: the content column is a glass island styled
-            // exactly like the nav/sheet. With the WebGL scene the lens is
-            // painted beneath this transparent window.
+            // Islands glass: the content column is a floating rounded
+            // frosted panel; with the WebGL scene it is painted beneath
+            // this transparent window.
             ...(t.surface.islands
               ? glassWebgl
                 ? { bgcolor: "transparent" }
                 : islandStyle(t, t.palette.m3.surface)
               : {}),
+            borderRadius: t.surface.islands ? "18px" : 0,
           })}
         >
           {/* Page header: typography on the frame surface, no bar panel.
@@ -671,9 +672,10 @@ export function AppShell({
                   ? { bgcolor: "transparent" }
                   : islandStyle(t, t.palette.m3.surface)
                 : {}),
-              borderLeft: glassWebgl
-                ? "none"
-                : `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              borderRadius: t.surface.islands ? "18px" : 0,
+              ...(t.surface.islands
+                ? {}
+                : { borderLeft: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}` }),
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",

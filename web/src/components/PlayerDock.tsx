@@ -162,12 +162,12 @@ export function PlayerDock({
   // the boxes (the ref callback fills them during that render's commit).
   useGlassIsland(
     dockRef,
-    { radius: 20, tint: scheme.tokens.surfaceContainerLow, tintAlpha: glassTuning.scrim },
+    { radius: 20, kind: "lens", tint: scheme.tokens.surfaceContainerLow, tintAlpha: glassTuning.scrim },
     glassWebgl && !!state,
   );
   useGlassIsland(
     fabRef,
-    { radius: 30, tint: scheme.tokens.primary, tintAlpha: 0.42 },
+    { radius: 30, kind: "lens", tint: scheme.tokens.primary, tintAlpha: 0.42 },
     glassWebgl && !!state,
   );
 

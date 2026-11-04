@@ -45,7 +45,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
   const theme = useMemo(() => buildTheme(scheme), [scheme]);
   // Full WebGL glass: the procedural backdrop + shader lenses live in one
   // scene; without WebGL the CSS frosted glass over the 2D canvas remains.
-  const glassWebgl = scheme.id === "glass" && webglSupported();
+  const glassWebgl = !!scheme.surface.islands && webglSupported();
   // Native widgets (scrollbars, form controls) follow the color scheme.
   useEffect(() => {
     document.documentElement.style.colorScheme = scheme.mode;
@@ -66,7 +66,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
     >
       <ThemeProvider theme={theme}>
         {scheme.aurora && <AuroraBackground />}
-        {scheme.id === "glass" && (glassWebgl ? <GlassScene /> : <GlassBackground />)}
+        {scheme.surface.islands && (glassWebgl ? <GlassScene /> : <GlassBackground />)}
         <CssBaseline />
         {/* Local subset of Material Symbols Rounded (Google Material icons,
             https://fonts.google.com/icons): only the glyph names used by

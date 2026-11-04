@@ -49,7 +49,8 @@ export type ThemeId =
   | "peach"
   | "aurora-light"
   | "aurora-dark"
-  | "glass";
+  | "glass"
+  | "glass-light";
 
 export interface SurfaceTreatment {
   /** 1 = opaque surfaces; below 1 the animated backdrop shows through. */
@@ -490,7 +491,17 @@ const glass: AppThemeScheme = {
 };
 
 export const BASE_SCHEMES: AppThemeScheme[] = [dark, light, lightContrast, purple, peach];
-export const ADVANCED_SCHEMES: AppThemeScheme[] = [auroraLight, auroraDark, glass];
+// The light Liquid Glass: the same frosted islands treatment with the
+// bright Light tokens — dark text stays readable over bright backdrops
+// (checkerboard, stripes) where light-on-dark glass washes out.
+const glassLight: AppThemeScheme = {
+  ...glass,
+  id: "glass-light",
+  label: "Liquid Glass Light",
+  mode: "light",
+  tokens: light.tokens,
+};
+export const ADVANCED_SCHEMES: AppThemeScheme[] = [auroraLight, auroraDark, glass, glassLight];
 const BY_ID = new Map(BASE_SCHEMES.concat(ADVANCED_SCHEMES).map((s) => [s.id, s]));
 
 /** Resolves a stored theme id, falling back to Dark on unknown values. */

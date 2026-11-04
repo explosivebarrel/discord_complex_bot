@@ -120,6 +120,42 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
             onChange={(_, v) => tune({ scrim: v as number })}
             valueLabelDisplay="auto"
           />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Chromatic aberration, px
+          </Typography>
+          <Slider
+            size="small"
+            min={0}
+            max={6}
+            step={0.5}
+            value={glassTuning.aberration}
+            onChange={(_, v) => tune({ aberration: v as number })}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Specular highlight strength
+          </Typography>
+          <Slider
+            size="small"
+            min={0}
+            max={1}
+            step={0.05}
+            value={glassTuning.specular}
+            onChange={(_, v) => tune({ specular: v as number })}
+            valueLabelDisplay="auto"
+          />
+          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+            Shader resolution ×devicePixelRatio
+          </Typography>
+          <Slider
+            size="small"
+            min={0.5}
+            max={2}
+            step={0.25}
+            value={glassTuning.renderScale}
+            onChange={(_, v) => tune({ renderScale: v as number })}
+            valueLabelDisplay="auto"
+          />
         </Box>
       </DialogContent>
     </Dialog>
@@ -146,14 +182,14 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
           the menu width) and only its glyph shifts right 5px, cancelling
           the button's own side padding, so the glyph lands exactly on the
           check position without narrowing the menu. */}
-      {s.id === "glass" ? (
+      {s.id.startsWith("glass") ? (
         <Tooltip title="Liquid Glass settings">
           <IconButton
             size="small"
             aria-label="Liquid Glass settings"
             onClick={(e) => {
               e.stopPropagation();
-              setThemeId("glass");
+              setThemeId(s.id);
               onClose();
               onOpenGlassSettings();
             }}

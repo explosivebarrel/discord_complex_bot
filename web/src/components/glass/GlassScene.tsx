@@ -5,7 +5,7 @@ import type { GlassBackdrop } from "../../themes/AppThemeContext";
 import { BACKDROP_GLSL } from "./backdropGlsl";
 import { glassIslandEntries } from "./glassRegistry";
 
-const MAX_ISLANDS = 8;
+const MAX_ISLANDS = 14;
 
 const VERT = `
 attribute vec2 a_pos;
@@ -23,34 +23,62 @@ uniform float u_aberration;
 uniform float u_specular;
 uniform vec4 u_islands[${MAX_ISLANDS}];   // rect: x, y, w, h (CSS px)
 uniform vec4 u_iglass[${MAX_ISLANDS}];    // radius, tint rgb
-uniform vec4 u_iglass2[${MAX_ISLANDS}];   // tintAlpha, bezel, maxDisp, blur
+uniform vec4 u_iglass2[${MAX_ISLANDS}];   // tintAlpha, bezel, maxDisp, kind
 
 ${BACKDROP_GLSL}
+
+// The "draw everything first" layer: the raw backdrop with every frosted
+// panel composited over it (rounded, tinted interior, ambient shadow,
+// faint edge definition — no rim refraction). The lenses sample this, so
+// a dock inside the content column refracts the panel it actually sits
+// on, not the raw backdrop behind it. Kept to one backdrop evaluation per
+// panel on purpose: every call site of this function is inlined by the
+// shader compiler, and a multi-tap blur here explodes the HLSL size into
+// minute-long driver compiles.
+vec3 sceneColor(vec2 px, float t) {
+  vec3 col = backdropColor(px, t);
+  for (int i = 0; i < ${MAX_ISLANDS}; i++) {
+    vec4 rc = u_islands[i];
+    if (rc.z < 1.0 || u_iglass2[i].w != 0.0) continue;
+    float radius = min(u_iglass[i].x, min(rc.z, rc.w) * 0.5);
+    vec2 half_ = rc.zw * 0.5 - 1.0;
+    vec2 local = px - rc.xy - rc.zw * 0.5;
+    float d = sdRoundBox(local, half_, radius);
+    float inside = 1.0 - smoothstep(-1.0, 1.0, d);
+    if (inside <= 0.001) {
+      col *= 1.0 - exp(-max(d, 0.0) / 30.0) * 0.45;
+      continue;
+    }
+    vec3 glass = mix(backdropColor(px, t), u_iglass[i].yzw, u_iglass2[i].x);
+    float e = 1.0 - clamp(-d / 24.0, 0.0, 1.0);
+    float l = max(dot(normalize(local / half_ + vec2(0.0001, 0.0001)), normalize(vec2(0.6, -0.8))), 0.0);
+    glass += u_specular * 0.35 * e * e * (0.25 + 0.75 * l);
+    col = mix(col, glass, inside);
+  }
+  return col;
+}
 
 void main() {
   // v_uv is y-up (GL); the DOM and getBoundingClientRect are y-down.
   vec2 px = vec2(v_uv.x, 1.0 - v_uv.y) * u_res;
   float t = u_time;
-  vec3 col = backdropColor(px, t);
+  vec3 col = sceneColor(px, t);
 
   for (int i = 0; i < ${MAX_ISLANDS}; i++) {
     vec4 rc = u_islands[i];
-    if (rc.z < 1.0) continue;
+    if (rc.z < 1.0 || u_iglass2[i].w != 1.0) continue;
+    // The sandbox lens, ported 1:1: smoothstep-eased rim over the bezel
+    // band, radial refraction peaking at maxDisp on the edge, per-channel
+    // chromatic pull, a rim-weighted lift and a fresnel specular rim.
     float radius = min(u_iglass[i].x, min(rc.z, rc.w) * 0.5);
     vec2 half_ = rc.zw * 0.5 - 1.5;
     vec2 local = px - rc.xy - rc.zw * 0.5;
     float d = sdRoundBox(local, half_, radius);
     float inside = 1.0 - smoothstep(-0.5, 0.5, d);
     if (inside <= 0.001) {
-      // Soft ambient shadow fading out from the panel edge — drawn into
-      // the scene so it wraps the glass instead of a CSS rectangle.
       col *= 1.0 - exp(-max(d, 0.0) / 30.0) * 0.45;
       continue;
     }
-    // The sandbox lens, ported 1:1: smoothstep-eased rim over the bezel
-    // band, radial refraction peaking at maxDisp on the edge, per-channel
-    // chromatic pull, a slight lift instead of a heavy tint, and a
-    // fresnel-ish specular rim under a top-left light.
     float bezel = max(u_iglass2[i].y, 6.0);
     float depth = clamp(-d, 0.0, bezel);
     float e = 1.0 - depth / bezel;
@@ -58,13 +86,13 @@ void main() {
     vec2 dir = normalize(local + vec2(0.0001, 0.0001));
     vec2 refr = px - dir * e * u_iglass2[i].z;
     float ab = u_aberration * e;
-    vec3 glass;
+    // One full scene sample for the lens body; the chromatic pull reuses
+    // the cheap raw backdrop (the rim band is thin, the panel tint it
+    // misses there is imperceptible) — three sceneColor calls here would
+    // triple the shader the driver has to compile.
+    vec3 glass = sceneColor(refr, t);
     glass.r = backdropColor(refr + dir * ab, t).r;
-    glass.g = backdropColor(refr, t).g;
     glass.b = backdropColor(refr - dir * ab, t).b;
-    // The sandbox lift, rim-weighted: on a card-sized island it reads as
-    // glass, but constant across a near-fullscreen panel it would wash the
-    // whole interior out.
     glass = glass * mix(0.96, 1.0, e) + vec3(0.06, 0.05, 0.10) * e;
     glass = mix(glass, u_iglass[i].yzw, u_iglass2[i].x);
     float rim = pow(e, 3.0);
@@ -118,11 +146,11 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
 
 /**
  * The single WebGL scene behind the Liquid Glass theme: the procedural
- * backdrop (mesh gradient / star fields / stripes / checkerboard) plus
- * every registered glass island drawn by the same fragment shader — the
- * lens evaluates the backdrop at the refracted position, so the
- * refraction is float-exact with no textures and no CPU copies. One
- * context, one draw call, one rAF loop for the whole app.
+ * backdrop, the frosted layout panels and every refracting surface (dock,
+ * FAB, buttons) live in one fragment shader — the lens evaluates the
+ * composited scene at the refracted position, so the refraction is
+ * float-exact with no textures and no CPU copies. One context, one rAF
+ * loop, one draw call for the whole app.
  */
 export function GlassScene() {
   const { glassBackdrop, glassTuning, scheme } = useAppTheme();
@@ -174,7 +202,9 @@ export function GlassScene() {
     const uIglass = gl.getUniformLocation(prog, "u_iglass");
     const uIglass2 = gl.getUniformLocation(prog, "u_iglass2");
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Shader resolution: devicePixelRatio scaled by the user's renderScale
+    // slider (the shader works in CSS pixels, so it is resolution-free).
+    const dpr = Math.min((window.devicePixelRatio || 1) * glassTuning.renderScale, 3);
     const resize = () => {
       canvas.width = Math.round(window.innerWidth * dpr);
       canvas.height = Math.round(window.innerHeight * dpr);
@@ -184,8 +214,8 @@ export function GlassScene() {
     gl.uniform2f(uRes, window.innerWidth, window.innerHeight);
     gl.uniform1f(uMode, MODE[glassBackdrop]);
     gl.uniform3fv(uBlobs, blobs);
-    gl.uniform1f(uAberration, 2);
-    gl.uniform1f(uSpecular, 0.5);
+    gl.uniform1f(uAberration, glassTuning.aberration);
+    gl.uniform1f(uSpecular, glassTuning.specular);
     // Reduced motion freezes the animation clock; layout still redraws.
     const animate = !reduced;
     const t0 = performance.now();
@@ -197,14 +227,17 @@ export function GlassScene() {
       gl.uniform1f(uTime, animate ? (now - t0) / 1000 : 1.0);
       const entries = glassIslandEntries();
       let n = 0;
-      for (const { el, radius, tint, tintAlpha } of entries) {
+      for (const { el, radius, kind, tint, tintAlpha } of entries) {
         if (n >= MAX_ISLANDS) break;
         const r = el.getBoundingClientRect();
         if (r.width < 8 || r.height < 8) continue;
         rects.set([r.left, r.top, r.width, r.height], n * 4);
         const [tr, tg, tb] = hexRgb(tint ?? scheme.tokens.surfaceContainerLow);
         glassA.set([radius, tr, tg, tb], n * 4);
-        glassB.set([tintAlpha ?? glassTuning.scrim, glassTuning.bezel, glassTuning.maxDisp, 0], n * 4);
+        glassB.set(
+          [tintAlpha ?? glassTuning.scrim, glassTuning.bezel, glassTuning.maxDisp, kind === "panel" ? 0 : 1],
+          n * 4,
+        );
         n++;
       }
       // Zero out unused slots so the shader skips them.

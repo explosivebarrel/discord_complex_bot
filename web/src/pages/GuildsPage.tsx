@@ -1,21 +1,55 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Avatar, Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
 import { api, guildAllows, guildSectionHint, type AccessMockTier, type GuildBrief } from "../api";
 import { useGuilds, useMe, useSetAccessMock } from "../queries";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { MsIcon } from "../components/MsIcon";
+import { useAppTheme } from "../themes/AppThemeContext";
+import { useGlassIsland } from "../components/glass/glassRegistry";
 
 function guildIconUrl(guild: GuildBrief) {
   if (!guild.icon) return undefined;
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=64`;
 }
 
-/** Guild card section button: disabled with a hint when no access. */
+/** Guild card section button: disabled with a hint when no access. On the
+    Liquid Glass theme the pill becomes a scene lens (the shader paints the
+    glass beneath the transparent button). */
 function SectionButton({ label, icon, href, enabled, hint, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; hint?: string; primary?: boolean }) {
+  const { scheme, glassWebgl } = useAppTheme();
+  const ref = useRef<HTMLAnchorElement | null>(null);
+  useGlassIsland(
+    ref,
+    {
+      radius: 999,
+      kind: "lens",
+      tint: primary ? scheme.tokens.primary : scheme.tokens.secondaryContainer,
+      tintAlpha: primary ? 0.8 : 0.5,
+    },
+    glassWebgl && !!ref.current,
+  );
   const button = (
-    <Button href={href} variant={primary ? "contained" : "tonal"} size="small" startIcon={icon} disabled={!enabled} sx={{ flex: 1 }}>
+    <Button
+      href={href}
+      ref={ref}
+      variant={primary ? "contained" : "tonal"}
+      size="small"
+      startIcon={icon}
+      disabled={!enabled}
+      sx={(t) => ({
+        flex: 1,
+        ...(t.surface.islands && glassWebgl
+          ? {
+              bgcolor: "transparent",
+              "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.18) },
+              "&.Mui-disabled": { bgcolor: "transparent", color: t.palette.primary.contrastText, opacity: 0.4 },
+            }
+          : {}),
+      })}
+    >
       {label}
     </Button>
   );
