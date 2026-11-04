@@ -199,6 +199,24 @@ class SearchCache(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(), index=True, default=utcnow)
 
 
+class Notification(Base):
+    """A panel notification (bell in the sidebar).
+
+    guild_id=None means a global event (e.g. a source became unavailable);
+    otherwise the event is scoped to one guild's panel. Delivered live over
+    the guild websocket and kept here for the initial list after a reload.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    category: Mapped[str] = mapped_column(String(16), default="player")
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), index=True, default=utcnow)
+
+
 class AvailabilitySample(Base):
     """One probe pass of the availability monitor (every minute).
 

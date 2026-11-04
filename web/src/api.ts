@@ -67,6 +67,15 @@ export interface ModerationAction {
 /** Search endpoint reply with the stale-while-revalidate verdict: "fresh"
     results came from a ≤30-min cache (instant), "stale" from an older
     cached query (a forced re-search follows), "miss" from a live search. */
+export interface NotificationInfo {
+  id: number | null;
+  guild_id: number | null;
+  category: "player" | "availability";
+  title: string;
+  body: string;
+  created_at: string | null;
+}
+
 export interface SearchResponse {
   results: TrackInfo[];
   cache: "fresh" | "stale" | "miss";
@@ -327,6 +336,8 @@ export const api = {
 
   leave: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/leave`, { method: "POST" }).then((r) => handle<unknown>(r)),
+
+  notifications: () => fetch("/api/notifications?limit=40").then((r) => handle<NotificationInfo[]>(r)),
 
   search: (guildId: string, q: string, source: string = "yt", fresh = false) =>
     fetch(

@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import random
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, WebSocket
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import (
+    SESSION_COOKIE,
     CurrentUser,
+    get_current_user,
     get_bot,
     get_config,
     get_db,
@@ -38,6 +41,19 @@ if TYPE_CHECKING:
     from app.bot.client import ComplexBot
 
 router = APIRouter(prefix="/api/guilds/{guild_id}/player", tags=["player"])
+
+# App-level routes (no guild prefix) served from the same module.
+root_router = APIRouter(tags=["player"])
+
+
+@root_router.get("/api/notifications")
+async def list_notifications(
+    limit: int = 30,
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Recent panel notifications for the initial bell list after a reload."""
+    return await db.list_notifications(min(max(limit, 1), 100))
 
 
 class JoinBody(BaseModel):
@@ -149,6 +165,64 @@ async def leave(
 ) -> dict[str, Any]:
     await music.disconnect(guild_id)
     return {"connected": False}
+
+
+def _hash_state(state: dict[str, Any]) -> str:
+    """A change signature that ignores the playhead: the client interpolates
+    the position locally, so it must not force a push every tick."""
+    trimmed = {**state, "current": {**state["current"], "position": 0} if state.get("current") else None}
+    return hashlib.sha1(json.dumps(trimmed, sort_keys=True, default=str).encode()).hexdigest()
+
+
+@router.websocket("/ws")
+async def player_ws(websocket: WebSocket, guild_id: int) -> None:
+    """Live player state + notifications for the panel.
+
+    Auth: the session cookie from the handshake; membership via the bot's
+    own member cache (no Discord API calls per connection). State snapshots
+    are pushed by the background broadcaster only when something besides
+    the playhead changes.
+    """
+    import json as _json
+
+    from app.api.deps import hash_token
+    from app.core.db.models import WebSession
+    from app.core.db.models import utcnow as _utcnow
+    from app.core.services.ws_hub import get_hub
+
+    app = websocket.app
+    db: Database = app.state.db
+    music = app.state.music
+    bot = app.state.bot
+    token = websocket.cookies.get(SESSION_COOKIE)
+    user_id: int | None = None
+    is_superadmin = False
+    if token:
+        async with db.session_factory() as session:
+            row = await session.get(WebSession, hash_token(token))
+        if row is not None and not row.revoked and (row.expires_at is None or row.expires_at >= _utcnow()):
+            user_id = row.discord_id
+            is_superadmin = user_id in app.state.config.superadmin_ids
+    if user_id is None:
+        await websocket.close(code=4401)
+        return
+    guild = bot.get_guild(guild_id)
+    if guild is not None and guild.get_member(user_id) is None and not is_superadmin:
+        await websocket.close(code=4403)
+        return
+
+    await websocket.accept()
+    hub = get_hub(app)
+    await hub.connect(guild_id, websocket)
+    try:
+        await websocket.send_json({"type": "state", "state": await music.get_state(guild_id)})
+        while True:
+            # The client only pings; any text keeps the socket alive.
+            await websocket.receive_text()
+    except Exception:  # noqa: BLE001 - disconnects are the normal exit
+        pass
+    finally:
+        await hub.disconnect(guild_id, websocket)
 
 
 async def _run_search(

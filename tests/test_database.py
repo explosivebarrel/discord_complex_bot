@@ -195,3 +195,20 @@ async def test_search_cache_upsert_get_prune(db: Database) -> None:
     await db.prune_search_cache(utcnow() + timedelta(hours=1))
     assert await db.get_search_cache("k") is None
     assert await db.get_search_cache("old") is None
+
+
+async def test_notifications_add_list_prune(db: Database) -> None:
+    from datetime import timedelta
+
+    from app.core.db.models import utcnow
+
+    row = await db.add_notification(100, "player", "Track stuck", "It stalled")
+    assert row["guild_id"] == 100 and row["category"] == "player"
+    await db.add_notification(None, "availability", "YouTube went down")
+
+    items = await db.list_notifications()
+    assert [i["title"] for i in items] == ["YouTube went down", "Track stuck"]
+
+    # Prune removes only old rows.
+    await db.prune_notifications(utcnow() + timedelta(hours=1))
+    assert await db.list_notifications() == []

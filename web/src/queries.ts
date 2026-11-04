@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSocketOpen } from "./usePlayerSocket";
 import { api, type AccessMockTier } from "./api";
 
 /**
@@ -51,11 +52,14 @@ export function useSetAccessMock() {
 }
 
 export function usePlayerState(guildId: string) {
+  // The websocket pushes state on change; polling stays as the fallback and
+  // as a periodic correction, but slows right down while the socket is open.
+  const wsOpen = useSocketOpen(guildId);
   return useQuery({
     queryKey: ["player", guildId],
     queryFn: () => api.playerState(guildId),
     enabled: guildId !== "",
-    refetchInterval: 3000,
+    refetchInterval: wsOpen ? 30000 : 3000,
   });
 }
 

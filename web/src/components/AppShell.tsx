@@ -5,9 +5,11 @@ import { IconGraphicEq, IconInfo } from "./icons";
 import { MsIcon } from "./MsIcon";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { SystemStatusChip } from "./SystemStatusChip";
+import { NotificationBell } from "./NotificationBell";
+import { AccountMenu } from "./AccountMenu";
 import { islandStyle, surfaceStyle } from "../themes/buildTheme";
 import type { GuildBrief, Me } from "../api";
-import { api, guildAllows } from "../api";
+import { guildAllows } from "../api";
 import { useGuilds, useMe } from "../queries";
 import { useBotName } from "../useMeta";
 import { useLocalPref } from "../useLocalPref";
@@ -122,7 +124,7 @@ function DrawerContent({
 }) {
   const botName = useBotName();
   // Every page gets logout through the drawer; a page may override it.
-  const doLogout = onLogout ?? (() => api.logout().then(() => window.location.reload()));
+  // The button itself lives in the AccountMenu popup now.
   const active = guilds.find((g) => g.id === activeGuildId) ?? null;
   // Super-admin testing override for the current guild, if any.
   const meQuery = useMe();
@@ -291,33 +293,10 @@ function DrawerContent({
       <List component="nav" disablePadding sx={{ py: 1 }}>
         <SystemStatusChip collapsed={collapsed} />
         <ThemeSwitcher collapsed={collapsed} />
-        <GuildTab to="/about" icon={Ic.about} label="About" collapsed={collapsed} onClick={onNavigate} />
-        {me?.is_superadmin && (
-          <GuildTab to="/settings" icon={Ic.settings} label="Settings" collapsed={collapsed} onClick={onNavigate} />
-        )}
-        {me && !collapsed && (
-          <ListItemButton onClick={doLogout} sx={{ borderRadius: 999, mx: 1.25, mb: 0.5, px: 2, minHeight: 44 }}>
-            <ListItemIcon sx={{ minWidth: 40, justifyContent: "center" }}>
-              <Avatar src={me.avatar_url} sx={{ width: 26, height: 26, fontSize: 13 }} />
-            </ListItemIcon>
-            <ListItemText
-              primary={me.global_name}
-              secondary="Logout"
-              slotProps={{ primary: { noWrap: true, variant: "body1" }, secondary: { noWrap: true } }}
-            />
-            <Box sx={{ color: "text.secondary", mr: 1, display: "flex" }}>{Ic.logout}</Box>
-          </ListItemButton>
-        )}
-        {me && collapsed && (
-          <Tooltip title={`${me.global_name} — logout`} placement="right" disableInteractive>
-            <IconButton
-              onClick={doLogout}
-              sx={{ mx: "auto", display: "flex", mb: 0.5 }}
-              aria-label="Account"
-            >
-              <Avatar src={me.avatar_url} sx={{ width: 30, height: 30, fontSize: 13 }} />
-            </IconButton>
-          </Tooltip>
+        <NotificationBell collapsed={collapsed} />
+        {me && <AccountMenu me={me} collapsed={collapsed} onLogout={onLogout} />}
+        {!me && (
+          <GuildTab to="/about" icon={Ic.about} label="About" collapsed={collapsed} onClick={onNavigate} />
         )}
       </List>
     </Box>

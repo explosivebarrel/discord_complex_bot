@@ -135,10 +135,23 @@ class MusicCog(commands.Cog):
     async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload) -> None:
         guild_id = payload.player.guild.id if payload.player is not None and payload.player.guild else None
         self.bot.music.record_error(payload.exception or "Track exception", {"guild_id": guild_id})
+        await self.bot.music.notify(
+            guild_id,
+            "player",
+            "Track failed to play",
+            str(payload.exception or "The source raised an error")[:300],
+        )
 
     @commands.Cog.listener()
     async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload) -> None:
-        self.bot.music.record_error("Track stuck during playback")
+        guild_id = payload.player.guild.id if payload.player is not None and payload.player.guild else None
+        self.bot.music.record_error("Track stuck during playback", {"guild_id": guild_id})
+        await self.bot.music.notify(
+            guild_id,
+            "player",
+            "Track stuck",
+            "The source stalled mid-playback. Skip it if it does not recover.",
+        )
 
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload) -> None:

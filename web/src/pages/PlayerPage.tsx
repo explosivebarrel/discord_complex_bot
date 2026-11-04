@@ -60,6 +60,7 @@ import { HomeRail, MediaCard, SearchBar, SearchResults } from "../components/pla
 import { NowPlayingScreen } from "../components/player/NowPlayingScreen";
 import { CollectionTab } from "../components/player/CollectionTab";
 import { HistoryTab } from "../components/player/HistoryTab";
+import { usePlayerSocket } from "../usePlayerSocket";
 import { useLocalPref } from "../useLocalPref";
 
 const SOURCES: { id: string; label: string; icon: React.ReactElement }[] = [
@@ -99,6 +100,7 @@ export function PlayerPage() {
 
   // Server state lives in the query cache: revisits render instantly while
   // the refresh happens in the background; the player state polls every 3s.
+  usePlayerSocket(gid);
   const stateQuery = usePlayerState(gid);
   const state = stateQuery.data ?? null;
   const channelsQuery = useVoiceChannels(gid);

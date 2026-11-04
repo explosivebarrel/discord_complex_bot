@@ -7,6 +7,7 @@ import time
 from collections.abc import AsyncIterator
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +31,7 @@ from app.bot.client import ComplexBot
 from app.core.config import load_config, setup_logging, validate_config
 from app.core.db import Database
 from app.core.db.models import utcnow
+from app.core.services.ws_hub import get_hub
 from app.core.services import availability
 from app.core.services.music import MusicService
 
@@ -80,6 +82,9 @@ def create_app() -> FastAPI:
         bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
         cleanup_task = asyncio.create_task(_session_cleanup_loop(db), name="session-cleanup")
         search_cache_task = asyncio.create_task(_search_cache_cleanup_loop(db), name="search-cache-prune")
+        hub = get_hub(app)
+        music.hub = hub
+        state_task = asyncio.create_task(_player_state_loop(app, hub), name="player-state-push")
         availability_task = asyncio.create_task(
             availability.loop(config, db, bot, music), name="availability"
         )
@@ -89,6 +94,7 @@ def create_app() -> FastAPI:
             persist_task.cancel()
             cleanup_task.cancel()
             search_cache_task.cancel()
+            state_task.cancel()
             availability_task.cancel()
             await bot.close()
             bot_task.cancel()
@@ -120,6 +126,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(player.router)
+    app.include_router(player.root_router)
     app.include_router(admin.router)
     app.include_router(system.router)
     app.include_router(system.public_router)
@@ -159,13 +166,39 @@ async def _session_cleanup_loop(db: Database) -> None:
 
 
 async def _search_cache_cleanup_loop(db: Database) -> None:
-    # Search results live at most a day (stale-while-revalidate window).
+    # Search results live at most a day (stale-while-revalidate window),
+    # notifications a week.
     while True:
         await asyncio.sleep(600)
         try:
             await db.prune_search_cache(utcnow() - timedelta(hours=24))
+            await db.prune_notifications(utcnow() - timedelta(days=7))
         except Exception:  # noqa: BLE001 - an error here must not stop the loop
-            logger.exception("Search cache cleanup failed")
+            logger.exception("Cache cleanup failed")
+
+
+async def _player_state_loop(app: FastAPI, hub: Any) -> None:
+    """Push a player state snapshot to a guild's sockets when it changes.
+
+    The playhead is excluded from the change signature: the panel
+    interpolates the position locally between pushes.
+    """
+    from app.api.routers.player import _hash_state
+
+    last_hashes: dict[int, str] = {}
+    while True:
+        await asyncio.sleep(1.0)
+        music = app.state.music
+        for guild_id in list(hub._conns.keys()):
+            try:
+                state = await music.get_state(guild_id)
+            except Exception:  # noqa: BLE001
+                continue
+            digest = _hash_state(state)
+            if digest == last_hashes.get(guild_id):
+                continue
+            last_hashes[guild_id] = digest
+            await hub.broadcast({"type": "state", "state": state}, guild_id=guild_id)
 
 
 def main() -> None:

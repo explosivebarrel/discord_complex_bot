@@ -20,6 +20,7 @@ from app.core.db.models import (
     GuildSettings,
     ModWarning,
     MusicSnapshot,
+    Notification,
     PlayHistory,
     SearchCache,
     SystemSetting,
@@ -804,6 +805,44 @@ class Database:
     async def prune_search_cache(self, before: datetime) -> None:
         async with self.session_factory() as session:
             await session.execute(delete(SearchCache).where(SearchCache.created_at < before))
+            await session.commit()
+
+    async def add_notification(
+        self, guild_id: int | None, category: str, title: str, body: str = ""
+    ) -> dict[str, Any]:
+        async with self.session_factory() as session:
+            row = Notification(guild_id=guild_id, category=category, title=title, body=body)
+            session.add(row)
+            await session.commit()
+            return {
+                "id": row.id,
+                "guild_id": row.guild_id,
+                "category": row.category,
+                "title": row.title,
+                "body": row.body,
+                "created_at": row.created_at.isoformat(),
+            }
+
+    async def list_notifications(self, limit: int = 30) -> list[dict[str, Any]]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(Notification).order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit)
+            )
+            return [
+                {
+                    "id": r.id,
+                    "guild_id": r.guild_id,
+                    "category": r.category,
+                    "title": r.title,
+                    "body": r.body,
+                    "created_at": r.created_at.isoformat(),
+                }
+                for r in rows.scalars()
+            ]
+
+    async def prune_notifications(self, before: datetime) -> None:
+        async with self.session_factory() as session:
+            await session.execute(delete(Notification).where(Notification.created_at < before))
             await session.commit()
 
     async def load_music_snapshots(self) -> dict[int, dict[str, Any]]:

@@ -149,6 +149,8 @@ class MusicService:
         # Recently played autoplay items per guild (track ids/uris), so the
         # playlist autoplay shuffles without immediate repeats.
         self._autoplay_recent: dict[int, deque[str]] = {}
+        # Panel websocket hub, wired in create_app. None in tests.
+        self.hub: Any = None
 
     # --- helpers ---
 
@@ -286,6 +288,12 @@ class MusicService:
                 self.current_items[guild_id] = item
                 await self._play_item(guild_id, item)
                 logger.warning("Re-synced playback in guild %s after a Lavalink reconnect", guild_id)
+                await self.notify(
+                    guild_id,
+                    "player",
+                    "Playback re-synced",
+                    f'"{item.display_title}" restarted after a Lavalink reconnect.',
+                )
             except Exception:  # noqa: BLE001 - never break the node event
                 logger.exception("Failed to resync playback for guild %s", guild_id)
 
@@ -834,6 +842,16 @@ class MusicService:
             "context": context or {},
             "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         }
+
+    async def notify(self, guild_id: int | None, category: str, title: str, body: str = "") -> None:
+        """Store a panel notification and push it over the guild websocket(s)."""
+        try:
+            row = await self.db.add_notification(guild_id, category, title, body)
+        except Exception:  # noqa: BLE001 - a notification must never break playback
+            logger.exception("Failed to store a notification")
+            return
+        if self.hub is not None:
+            await self.hub.broadcast({"type": "notification", "notification": row}, guild_id=guild_id)
 
     async def play_next(self, guild_id: int, reason: str = "finished") -> wavelink.Playable | None:
         queue = self._queue(guild_id)

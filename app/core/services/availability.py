@@ -190,6 +190,63 @@ async def tick(config: Config, db: Database, bot: ComplexBot, music: MusicServic
     state["details"] = details
     await _catch_up_rollups(db, utcnow())
     await db.prune_availability(utcnow() - timedelta(days=2), utcnow() - timedelta(days=90))
+    await _notify_transitions(db, music, statuses)
+
+
+SERVICE_LABELS = {
+    "discord_api": "Discord API",
+    "discord_gateway": "Discord gateway",
+    "lavalink": "Lavalink",
+    "youtube": "YouTube",
+    "yandex": "Yandex Music",
+    "vk": "VK",
+    "radio": "Radio browser",
+    "archive": "Archive.org",
+}
+
+# Transition bookkeeping for the notification bell: a service must hold a
+# new state for two consecutive ticks before it is announced, so a flapping
+# source does not spam the panel.
+_prev_statuses: dict[str, int | None] = {}
+_pending_flips: dict[str, int | None] = {}
+
+
+def _status_word(status: int) -> str:
+    return "is back up" if status == UP else "is degraded" if status == DEGRADED else "went down"
+
+
+async def _notify_transitions(db: Database, music: MusicService, statuses: dict[str, int | None]) -> None:
+    global _prev_statuses, _pending_flips
+    for service, value in statuses.items():
+        if value is None:
+            continue  # not applicable (no token configured): never announce
+        prev = _prev_statuses.get(service, value)  # first pass announces nothing
+        if value != prev:
+            # Hold the new state for a second tick before announcing.
+            if _pending_flips.get(service) == value:
+                _prev_statuses[service] = value
+                _pending_flips[service] = None
+                label = SERVICE_LABELS.get(service, service)
+                await db.add_notification(None, "availability", f"{label} {_status_word(value)}")
+                if music.hub is not None:
+                    await music.hub.broadcast(
+                        {
+                            "type": "notification",
+                            "notification": {
+                                "id": None,
+                                "guild_id": None,
+                                "category": "availability",
+                                "title": f"{label} {_status_word(value)}",
+                                "body": "",
+                                "created_at": None,
+                            },
+                        },
+                        guild_id=None,
+                    )
+            else:
+                _pending_flips[service] = value
+        else:
+            _pending_flips[service] = None
 
 
 async def loop(config: Config, db: Database, bot: ComplexBot, music: MusicService) -> None:
