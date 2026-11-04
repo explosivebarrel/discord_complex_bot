@@ -8,6 +8,9 @@ import { glassIslandEntries, glassSeek } from "./glassRegistry";
 
 const MAX_ISLANDS = 14;
 
+/** Panel frost radius, CSS px (scaled to texels per frame). */
+const PANEL_BLUR_PX = 10;
+
 const VERT_ES3 = `#version 300 es
 in vec2 a_pos;
 out vec2 v_uv;
@@ -100,8 +103,24 @@ vec3 drawSeek(vec3 col, vec2 px) {
 
 
 
-// Panels: frosted rounded slabs over the backdrop texture (a 4-tap frost
-// is affordable now that sampling is a texture read, not an fbm re-eval).
+// Frosted glass: trilinear mip sampling of the backdrop texture — a real
+// continuous blur. The old 4-tap version showed every point-like backdrop
+// feature (stars) as 4 discrete ghosts.
+vec3 frost(vec2 px, float b) {
+  float lod = max(log2(b) - 1.0, 0.0);
+  vec2 uv = px / u_res;
+  vec3 acc = textureLod(u_backdrop, uv, lod).rgb * 4.0;
+  vec2 o = vec2(b * 0.7, 0.0);
+  acc += textureLod(u_backdrop, (px + o) / u_res, lod).rgb;
+  acc += textureLod(u_backdrop, (px - o) / u_res, lod).rgb;
+  acc += textureLod(u_backdrop, (px + o.yx) / u_res, lod).rgb;
+  acc += textureLod(u_backdrop, (px - o.yx) / u_res, lod).rgb;
+  return acc / 8.0;
+}
+
+// Panels: frosted rounded slabs over the backdrop texture. The blur radius
+// rides in u_iglass2[i].y (the bezel slot, unused for panels), pre-scaled
+// to texture texels so renderScale does not change the look.
 vec3 panelLayer(vec2 px, float t) {
   vec3 col = texture(u_backdrop, px / u_res).rgb;
   for (int i = 0; i < ${MAX_ISLANDS}; i++) {
@@ -116,14 +135,7 @@ vec3 panelLayer(vec2 px, float t) {
       col *= 1.0 - exp(-max(d, 0.0) / 30.0) * 0.45;
       continue;
     }
-    vec3 glass = col;
-    vec2 bo = vec2(4.0);
-    vec3 acc = glass * 2.0
-      + texture(u_backdrop, (px + vec2(bo.x, bo.y)) / u_res).rgb
-      + texture(u_backdrop, (px + vec2(-bo.x, bo.y)) / u_res).rgb
-      + texture(u_backdrop, (px + vec2(bo.x, -bo.y)) / u_res).rgb
-      + texture(u_backdrop, (px + vec2(-bo.x, -bo.y)) / u_res).rgb;
-    glass = acc / 6.0;
+    vec3 glass = frost(px, max(u_iglass2[i].y, 2.0));
     glass = mix(glass, u_iglass[i].yzw, u_iglass2[i].x);
     float e = 1.0 - clamp(-d / 24.0, 0.0, 1.0);
     float l = max(dot(normalize(local / half_ + vec2(0.0001, 0.0001)), normalize(vec2(0.6, -0.8))), 0.0);
@@ -271,13 +283,17 @@ vec3 panelLayer(vec2 px, float t) {
       continue;
     }
     vec3 glass = col;
-    vec2 bo = vec2(4.0);
-    vec3 acc = glass * 2.0
-      + texture2D(u_backdrop, (px + vec2(bo.x, bo.y)) / u_res).rgb
-      + texture2D(u_backdrop, (px + vec2(-bo.x, bo.y)) / u_res).rgb
-      + texture2D(u_backdrop, (px + vec2(bo.x, -bo.y)) / u_res).rgb
-      + texture2D(u_backdrop, (px + vec2(-bo.x, -bo.y)) / u_res).rgb;
-    glass = acc / 6.0;
+    // WebGL1 has no NPOT mipmaps: a 13-tap golden-angle disc stands in for
+    // the frost (u_iglass2[i].y = blur radius in texels, same as WebGL2).
+    vec3 acc = glass * 4.0;
+    float wgt = 4.0;
+    for (int k = 0; k < 12; k++) {
+      float a = 2.399963 * float(k);
+      float rr = sqrt((float(k) + 1.0) / 12.0) * u_iglass2[i].y * 0.7;
+      acc += texture2D(u_backdrop, (px + vec2(cos(a), sin(a)) * rr) / u_res).rgb;
+      wgt += 1.0;
+    }
+    glass = acc / wgt;
     glass = mix(glass, u_iglass[i].yzw, u_iglass2[i].x);
     float e = 1.0 - clamp(-d / 24.0, 0.0, 1.0);
     float l = max(dot(normalize(local / half_ + vec2(0.0001, 0.0001)), normalize(vec2(0.6, -0.8))), 0.0);
@@ -502,6 +518,9 @@ export function GlassScene() {
       ].flatMap(hexRgb));
       gl.uniform3fv(scene.blobsA, blobsScratch);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      // WebGL2: regenerate the mip pyramid for the frost sampling below
+      // (WebGL1 keeps LINEAR only — NPOT textures cannot be mipmapped).
+      if (es3) gl.generateMipmap(gl.TEXTURE_2D);
       // Pass B: panels + lenses + seek over the backdrop texture.
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, canvas.width, canvas.height);
@@ -541,7 +560,14 @@ export function GlassScene() {
         const [tr, tg, tb] = kind === "panel" ? panelTint : lensTint;
         glassA.set([radius, tr, tg, tb], n * 4);
         glassB.set(
-          [kind === "panel" ? tuning.panelTintAlpha : tuning.lensTintAlpha, tuning.bezel, tuning.maxDisp, kind === "panel" ? 0 : 1],
+          [
+            kind === "panel" ? tuning.panelTintAlpha : tuning.lensTintAlpha,
+            // For panels the y slot is the frost radius (texels): CSS px
+            // scaled by the render scale so the look is renderScale-invariant.
+            kind === "panel" ? PANEL_BLUR_PX * scene.dpr() : tuning.bezel,
+            tuning.maxDisp,
+            kind === "panel" ? 0 : 1,
+          ],
           n * 4,
         );
         n++;
@@ -609,7 +635,7 @@ export function GlassScene() {
       gl.bindTexture(gl.TEXTURE_2D, backdropTex);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, es3 ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       const fbo = gl.createFramebuffer();
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
