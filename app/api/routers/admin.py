@@ -140,6 +140,9 @@ async def guild_stats(
         "top_tracks": await db.top_tracks(guild_id, days=30, limit=10),
         # The discord id is not shown on the page; name and count are enough.
         "top_requesters": [{"name": r["name"], "plays": r["plays"]} for r in requesters],
+        "by_source": await db.plays_by_source(guild_id, days=30),
+        "top_authors": await db.top_authors(guild_id, days=30, limit=10),
+        "by_day": await db.plays_by_day(guild_id, days=30),
         "recent": await db.recent_history(guild_id, limit=50),
     }
 

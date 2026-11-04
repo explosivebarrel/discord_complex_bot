@@ -265,9 +265,18 @@ export interface GuildSettings {
 }
 
 export interface GuildStats {
-  totals: { plays_total: number; plays_30d: number; unique_tracks: number };
+  totals: {
+    plays_total: number;
+    plays_30d: number;
+    unique_tracks: number;
+    minutes_30d: number;
+    minutes_total: number;
+  };
   top_tracks: { title: string; author: string; source: string; plays: number }[];
   top_requesters: { name: string; plays: number }[];
+  by_source: { source: string; plays: number }[];
+  top_authors: { author: string; plays: number }[];
+  by_day: { day: string; plays: number }[];
   recent: { title: string; author: string; source: string; requested_by: string; played_at: string }[];
 }
 

@@ -59,7 +59,10 @@ async def test_play_history_tops_and_totals(db: Database) -> None:
     assert requesters[0]["name"] == "FEZEN" and requesters[0]["plays"] == 2
 
     totals = await db.history_totals(100)
-    assert totals == {"plays_total": 3, "plays_30d": 3, "unique_tracks": 2}
+    assert totals["plays_total"] == 3 and totals["plays_30d"] == 3
+    assert totals["unique_tracks"] == 2
+    # 3 plays x 3000 ms = 9 s -> 0 whole minutes.
+    assert totals["minutes_30d"] == 0 and totals["minutes_total"] == 0
 
     recent = await db.recent_history(100, limit=10)
     assert len(recent) == 3

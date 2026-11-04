@@ -225,19 +225,20 @@ class Database:
     async def top_requesters(self, guild_id: int, days: int = 30, limit: int = 10) -> list[dict[str, Any]]:
         since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         async with self.session_factory() as session:
+            # Group by name only: old rows carry requested_by_id=0, so
+            # grouping by (name, id) split every user in two.
             result = await session.execute(
                 select(
                     PlayHistory.requested_by_name,
-                    PlayHistory.requested_by_id,
                     func.count().label("plays"),
                 )
                 .where(PlayHistory.guild_id == guild_id, PlayHistory.played_at >= since)
-                .group_by(PlayHistory.requested_by_name, PlayHistory.requested_by_id)
+                .group_by(PlayHistory.requested_by_name)
                 .order_by(func.count().desc())
                 .limit(limit)
             )
             return [
-                {"name": r.requested_by_name or "unknown", "id": r.requested_by_id, "plays": r.plays}
+                {"name": r.requested_by_name or "unknown", "id": None, "plays": r.plays}
                 for r in result.all()
             ]
 
@@ -260,6 +261,45 @@ class Database:
                 for row in result.scalars()
             ]
 
+    async def plays_by_source(self, guild_id: int, days: int = 30, limit: int = 10) -> list[dict[str, Any]]:
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(PlayHistory.source, func.count().label("plays"))
+                .where(PlayHistory.guild_id == guild_id, PlayHistory.played_at >= since)
+                .group_by(PlayHistory.source)
+                .order_by(func.count().desc())
+                .limit(limit)
+            )
+            return [{"source": r.source or "unknown", "plays": r.plays} for r in result.all()]
+
+    async def top_authors(self, guild_id: int, days: int = 30, limit: int = 10) -> list[dict[str, Any]]:
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(PlayHistory.author, func.count().label("plays"))
+                .where(PlayHistory.guild_id == guild_id, PlayHistory.played_at >= since, PlayHistory.author != "")
+                .group_by(PlayHistory.author)
+                .order_by(func.count().desc())
+                .limit(limit)
+            )
+            return [{"author": r.author, "plays": r.plays} for r in result.all()]
+
+    async def plays_by_day(self, guild_id: int, days: int = 30) -> list[dict[str, Any]]:
+        """Per-day play counts for the activity chart, oldest day first."""
+        since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(
+                    func.date(PlayHistory.played_at).label("day"),
+                    func.count().label("plays"),
+                )
+                .where(PlayHistory.guild_id == guild_id, PlayHistory.played_at >= since)
+                .group_by(func.date(PlayHistory.played_at))
+                .order_by(func.date(PlayHistory.played_at))
+            )
+            return [{"day": str(r.day), "plays": r.plays} for r in result.all()]
+
     async def history_totals(self, guild_id: int, days: int = 30) -> dict[str, int]:
         since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         async with self.session_factory() as session:
@@ -274,10 +314,23 @@ class Database:
             unique = await session.scalar(
                 select(func.count(func.distinct(PlayHistory.title))).where(PlayHistory.guild_id == guild_id)
             )
+            # LIVE streams carry length_ms = int64max and overflow the sum;
+            # anything longer than a day is a stream, exclude it.
+            track_length = (PlayHistory.length_ms > 0) & (PlayHistory.length_ms < 86_400_000)
+            minutes_30d = await session.scalar(
+                select(func.sum(PlayHistory.length_ms)).where(
+                    PlayHistory.guild_id == guild_id, PlayHistory.played_at >= since, track_length
+                )
+            )
+            minutes_total = await session.scalar(
+                select(func.sum(PlayHistory.length_ms)).where(PlayHistory.guild_id == guild_id, track_length)
+            )
             return {
                 "plays_total": int(total_all or 0),
                 "plays_30d": int(recent or 0),
                 "unique_tracks": int(unique or 0),
+                "minutes_30d": int(minutes_30d or 0) // 60000,
+                "minutes_total": int(minutes_total or 0) // 60000,
             }
 
     # --- panel users ---
