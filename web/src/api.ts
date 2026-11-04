@@ -339,6 +339,13 @@ export const api = {
 
   notifications: () => fetch("/api/notifications?limit=40").then((r) => handle<NotificationInfo[]>(r)),
 
+  playlistPreview: (guildId: string, query: string, source = "all") =>
+    fetch(`/api/guilds/${guildId}/player/playlist/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, source }),
+    }).then((r) => handle<PlaylistPageInfo>(r)),
+
   search: (guildId: string, q: string, source: string = "yt", fresh = false) =>
     fetch(
       `/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}${fresh ? "&fresh=true" : ""}`,
@@ -488,13 +495,6 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ position }),
     }).then((r) => handle<{ queued: string }>(r)),
-
-  playlistPreview: (guildId: string, query: string, source: string) =>
-    fetch(`/api/guilds/${guildId}/player/playlist/preview`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, source }),
-    }).then((r) => handle<PlaylistPageInfo>(r)),
 
   playlistPage: (guildId: string, playlistId: number, page: number, q: string) =>
     fetch(

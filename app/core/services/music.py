@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -521,6 +522,29 @@ class MusicService:
         if cached is not None:
             items = [QueueItem(wavelink.Playable(data=cached), requester_id, requester_name, source=source)]
             title = items[0].display_title
+        elif source == "ym" and re.search(r"/track/\d+", query):
+            # A direct track link (/album/<id>/track/<id>). LavaSrc answers
+            # with loadType "track" but a LIST payload, which wavelink cannot
+            # parse into a Playable — load via REST and build it ourselves,
+            # picking the track the URL points at instead of the whole album.
+            entries = await self._lavalink_rest_load(query)
+            match = re.search(r"/track/(\d+)", query)
+            track_id = match.group(1) if match else None
+            picked_entry = None
+            for entry in entries:
+                info = entry.get("info") or {}
+                if track_id and (
+                    track_id == str(info.get("identifier")) or track_id in str(info.get("uri") or "")
+                ):
+                    picked_entry = entry
+                    break
+            if picked_entry is None and entries:
+                picked_entry = entries[0]
+            if picked_entry is None:
+                raise MusicServiceError("The track cannot be read.")
+            picked = wavelink.Playable(data=picked_entry)
+            items = [QueueItem(picked, requester_id, requester_name, source=source)]
+            title = items[0].display_title
         elif self._is_playlist_url(query) and source == "ym":
             # LavaSrc loads Yandex playlists and albums natively with ready
             # tracks; the yt-dlp extractor only knows single track URLs. The
@@ -703,7 +727,9 @@ class MusicService:
         if "soundcloud.com" in q:
             return "/sets/" in q
         if "music.yandex.ru" in q or "music.yandex.com" in q:
-            return "/playlists/" in q or "/album/" in q
+            # /album/<id>/track/<id> points at ONE track (Yandex itself plays
+            # just that track): treat it as a track, not a playlist.
+            return "/playlists/" in q or ("/album/" in q and "/track/" not in q)
         if any(host in q for host in vk_music.VK_HOSTS):
             return (
                 vk_music.parse_playlist_url(query) is not None
@@ -920,6 +946,28 @@ class MusicService:
             self._push_played(guild_id, item)
         await self._record_history(guild_id, item)
         return track
+
+    async def _lavalink_rest_load(self, url: str) -> list[dict[str, Any]]:
+        """Raw Lavalink loadtracks call returning the raw track dicts.
+
+        Used where LavaSrc's reply shape breaks wavelink's parser (the
+        Yandex /album/<id>/track/<id> URLs reply with loadType "track" and
+        a list payload)."""
+        import httpx
+
+        scheme = "https" if self.config.lavalink_secure else "http"
+        base = f"{scheme}://{self.config.lavalink_host}:{self.config.lavalink_port}"
+        headers = {"Authorization": self.config.lavalink_password}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(f"{base}/v4/loadtracks", params={"identifier": url}, headers=headers)
+        if resp.status_code != 200:
+            return []
+        data = resp.json().get("data")
+        # LavaSrc is inconsistent here: sometimes a single track dict,
+        # sometimes a list (the whole album).
+        if isinstance(data, dict):
+            return [data]
+        return data if isinstance(data, list) else []
 
     async def _lavalink_load_with_retry(self, query: str):
         """Load a URL through Lavalink without any search prefix, with

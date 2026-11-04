@@ -181,11 +181,14 @@ async def _player_state_loop(app: FastAPI, hub: Any) -> None:
     """Push a player state snapshot to a guild's sockets when it changes.
 
     The playhead is excluded from the change signature: the panel
-    interpolates the position locally between pushes.
+    interpolates the position locally between pushes. A big position jump
+    (a seek, a resumed track) still pushes at once — without it a seek
+    would visibly snap back until the slow polling corrected it.
     """
     from app.api.routers.player import _hash_state
 
-    last_hashes: dict[int, str] = {}
+    # guild_id -> (state hash, last pushed position ms)
+    last: dict[int, tuple[str, int]] = {}
     while True:
         await asyncio.sleep(1.0)
         music = app.state.music
@@ -195,9 +198,11 @@ async def _player_state_loop(app: FastAPI, hub: Any) -> None:
             except Exception:  # noqa: BLE001
                 continue
             digest = _hash_state(state)
-            if digest == last_hashes.get(guild_id):
+            position = int((state.get("current") or {}).get("position") or 0)
+            prev_digest, prev_pos = last.get(guild_id, ("", 0))
+            if digest == prev_digest and abs(position - prev_pos) <= 3000:
                 continue
-            last_hashes[guild_id] = digest
+            last[guild_id] = (digest, position)
             await hub.broadcast({"type": "state", "state": state}, guild_id=guild_id)
 
 

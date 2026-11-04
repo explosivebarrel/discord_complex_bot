@@ -98,6 +98,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/guild/:guildId/collection" element={<PlayerPage />} />
             <Route path="/guild/:guildId/collection/liked" element={<PlayerPage />} />
             <Route path="/guild/:guildId/collection/playlist/:plId" element={<PlayerPage />} />
+            <Route path="/guild/:guildId/collection/external" element={<PlayerPage />} />
             <Route path="/guild/:guildId/history" element={<PlayerPage />} />
             <Route path="/guild/:guildId/admin" element={<AdminPage />} />
             <Route path="/guild/:guildId/stats" element={<StatsPage />} />

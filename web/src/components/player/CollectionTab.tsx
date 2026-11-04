@@ -54,6 +54,7 @@ export interface CollectionTabProps {
   playlist: import("../../api").PlaylistPageInfo | null;
   playlistBusy: boolean;
   onCloseBrowser: () => void;
+  onBackFromExternal: () => void;
   onReloadBrowser: (page: number, q: string) => void;
   onBrowserPlay: (index: number) => void;
   onBrowserAdd: (indices: number[]) => void;
@@ -111,11 +112,12 @@ function TrackRow({
     page in the same style as our own playlist pages: a hero with the
     cover mosaic and the usual actions, then track rows with hover pills. */
 function ExternalPlaylistView({
-  playlist, busy, onClose, onReload, onPlay, onAdd, onAddAll, onMenu,
+  playlist, busy, onClose, onBack, onReload, onPlay, onAdd, onAddAll, onMenu,
 }: {
   playlist: import("../../api").PlaylistPageInfo;
   busy: boolean;
   onClose: () => void;
+  onBack: () => void;
   onReload: (page: number, q: string) => void;
   onPlay: (index: number) => void;
   onAdd: (indices: number[]) => void;
@@ -140,6 +142,11 @@ function ExternalPlaylistView({
               : `${playlist.matched} of ${playlist.total} tracks`}
           </Typography>
           <Stack direction="row" spacing={1}>
+            <Tooltip title="Back to the collection">
+              <IconButton onClick={onBack} aria-label="Back to the collection">
+                <MsIcon name="arrow_back" fontSize={22} />
+              </IconButton>
+            </Tooltip>
             <Button
               variant="contained"
               disabled={busy || playlist.tracks.length === 0}
@@ -188,6 +195,7 @@ function ExternalPlaylistView({
               cursor: "pointer",
               borderRadius: 1,
               alignItems: "center",
+              gap: 1.25,
               px: 1.5,
               py: 0.75,
               "& .MuiListItemText-root": { my: 0 },
@@ -291,7 +299,7 @@ function ExternalPlaylistView({
 export function CollectionTab(props: CollectionTabProps) {
   const {
     me, favorites, onQueueFavorite, onRemoveFavorite, onMenu, myPls, likedOpen, onOpenLiked,
-    openPl, plOpening, createPlaylist, plBusy, onShufflePlay, onPlayPlaylist, onOpenPlaylist, onDetailDelete,
+    openPl, plOpening, createPlaylist, plBusy, onShufflePlay, onPlayPlaylist, onOpenPlaylist, onDetailDelete, onBackFromExternal,
     onQueueAll, onPlayPlaylistTrack, onQueuePlaylistTrack, onRemovePlaylistTrack, onQueueFavorites,
     uploads, canModerateUploads, queueUpload, removeUpload, enqueueing, playlist, playlistBusy, onCloseBrowser,
     onReloadBrowser, onBrowserPlay, onBrowserAdd, onBrowserAddAll,
@@ -408,6 +416,7 @@ export function CollectionTab(props: CollectionTabProps) {
         playlist={playlist}
         busy={playlistBusy}
         onClose={onCloseBrowser}
+        onBack={onBackFromExternal}
         onReload={onReloadBrowser}
         onPlay={onBrowserPlay}
         onAdd={onBrowserAdd}

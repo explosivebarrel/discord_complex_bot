@@ -635,6 +635,10 @@ async def playlist_preview(
         session = await music.open_playlist(body.query, body.source)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        # A dead Lavalink node (e.g. the bot cannot reach Discord) must read
+        # as a temporary outage, not a 500.
+        raise HTTPException(status_code=503, detail="Lavalink is offline right now. Try again in a moment.") from exc
     await db.audit(
         "music.playlist_preview",
         guild_id=guild_id,

@@ -164,6 +164,10 @@ export function PlayerPage() {
   const setPlayerTab = (t: PlayerTab) =>
     navigate(t === "search" ? basePath : t === "collection" ? collectionPath : `${basePath}/history`);
   const openPlaylistRoute = (pid: number) => navigate(`${collectionPath}/playlist/${pid}`);
+  // External playlists live on /collection/external?url=..., so an opened
+  // link is shareable and reload-safe (the session re-opens from the URL).
+  const externalPath = `${collectionPath}/external`;
+  const externalUrl = new URLSearchParams(location.search).get("url");
   const [playerNavCollapsed, setPlayerNavCollapsed] = useLocalPref("ui.playerNavCollapsed", false);
 
   useEffect(() => {
@@ -178,6 +182,26 @@ export function PlayerPage() {
     void queryClient.invalidateQueries({ queryKey: ["player", gid] });
     void queryClient.invalidateQueries({ queryKey: ["myPlaylists"] });
   }, [gid, queryClient]);
+
+  useEffect(() => {
+    if (!location.pathname.endsWith("/external") || playlist || !externalUrl) return;
+    let alive = true;
+    api
+      .playlistPreview(gid, externalUrl)
+      .then((p) => {
+        if (alive) setPlaylist(p);
+      })
+      .catch((e) => {
+        if (alive) {
+          guard(e as Error);
+          navigate(collectionPath);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, externalUrl, playlist]);
 
   useEffect(() => {
     if (state && volume === null) setVolume(Math.min(state.volume, 200));
@@ -299,6 +323,7 @@ export function PlayerPage() {
         if (r.preview) {
           setPlaylist(r.preview);
           setPlayerTab("collection");
+          navigate(`${collectionPath}/external?url=${encodeURIComponent(body.query ?? "")}`);
           feedback.show("Playlist loaded. Pick the tracks you want.");
         } else {
           feedback.show(r.now_playing ? `Now playing: ${r.title}` : `Queued: ${r.title}`);
@@ -1054,7 +1079,14 @@ export function PlayerPage() {
               enqueueing={enqueueing}
               playlist={playlist}
               playlistBusy={playlistBusy}
-              onCloseBrowser={() => setPlaylist(null)}
+              onCloseBrowser={() => {
+                setPlaylist(null);
+                if (location.pathname === externalPath) navigate(collectionPath);
+              }}
+              onBackFromExternal={() => {
+                setPlaylist(null);
+                navigate(collectionPath);
+              }}
               onReloadBrowser={(page, q) => openPl || playlist ? openPlaylistPage((openPl ?? playlist)!.id, page, q) : undefined}
               onBrowserPlay={(index) => playlist && playlistAction(() => api.playlistPlay(gid, playlist.id, index), "Playing from playlist")}
               onBrowserAdd={(indices) =>

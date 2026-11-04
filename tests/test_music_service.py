@@ -264,7 +264,8 @@ async def test_ym_playlist_queues_through_lavalink(
 def test_album_url_counts_as_ym_playlist(music: MusicService) -> None:
     assert music._is_playlist_url("https://music.yandex.ru/album/10100") is True
     assert music._is_playlist_url("https://music.yandex.ru/users/x/playlists/41075") is True
-    assert music._is_playlist_url("https://music.yandex.ru/album/10100/track/10200") is True
+    # An album/track URL points at ONE track: it is not a playlist.
+    assert music._is_playlist_url("https://music.yandex.ru/album/10100/track/10200") is False
 
 
 async def test_resolve_playlist_null_guard(music: MusicService) -> None:
@@ -1083,3 +1084,29 @@ async def test_resync_players_rejoins_and_replays_after_node_reconnect(
     music.current_items[GUILD_ID] = item
     await music.resync_players()
     assert GUILD_ID not in music.current_items
+
+
+async def test_ym_album_track_url_queues_the_single_track(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A /album/<id>/track/<id> URL points at ONE track: it must play
+    directly (no playlist preview) with the URL's track picked."""
+
+    # Raw REST payload: loadType "track" but a list of track dicts.
+    async def fake_rest_load(_url: str):
+        return [
+            {"encoded": "e1", "pluginInfo": {}, "info": {"identifier": "111", "title": "other song", "author": "a", "uri": "ym/111", "length": 1000, "isSeekable": True, "isStream": False, "position": 0, "sourceName": "yandexmusic"}},
+            {"encoded": "e2", "pluginInfo": {}, "info": {"identifier": "157603586", "title": "the right one", "author": "a", "uri": "ym/157603586", "length": 2000, "isSeekable": True, "isStream": False, "position": 0, "sourceName": "yandexmusic"}},
+        ]
+
+    music._lavalink_rest_load = fake_rest_load  # type: ignore[method-assign]
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+
+    url = "https://music.yandex.ru/album/44677180/track/157603586?utm_source=desktop"
+    assert music.looks_like_playlist(url, "ym") is False
+
+    result = await music.enqueue(GUILD_ID, url, 1, "fezen", source="ym")
+
+    assert result["now_playing"] is True
+    assert music.current_items[GUILD_ID].track.title == "the right one"
