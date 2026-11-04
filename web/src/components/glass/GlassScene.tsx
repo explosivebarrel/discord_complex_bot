@@ -442,6 +442,9 @@ export function GlassScene() {
         canvas.width = Math.round(window.innerWidth * dpr);
         canvas.height = Math.round(window.innerHeight * dpr);
         gl.viewport(0, 0, canvas.width, canvas.height);
+        // u_res has no default: without this the first frames render the
+        // whole screen from one pixel until the first window resize.
+        gl.uniform2f(gl.getUniformLocation(prog, "u_res"), window.innerWidth, window.innerHeight);
       };
       resize();
 

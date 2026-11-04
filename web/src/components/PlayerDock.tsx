@@ -6,6 +6,7 @@ import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
 import { glassSeek, useGlassIsland } from "./glass/glassRegistry";
+import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -189,10 +190,15 @@ export function PlayerDock({
     { radius: 20, kind: "lens" },
     glassWebgl && !!state,
   );
+  // The FAB protrudes over DOM content (scrolled cards), which the canvas
+  // shader cannot read. Chromium's SVG backdrop filter refracts that DOM
+  // too, so when it is available the FAB's glass lives entirely in CSS and
+  // the canvas island is dropped; otherwise the canvas lens takes over.
+  const svgFab = glassWebgl && svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
   useGlassIsland(
     fabRef,
     { radius: 30, kind: "lens" },
-    glassWebgl && !!state,
+    glassWebgl && !svgFab && !!state,
   );
 
   // Advance the progress line locally between 3-second polls.
@@ -405,6 +411,29 @@ export function PlayerDock({
                     }),
               })}
             >
+              {svgFab && (
+                <>
+                  <LiquidGlassFilter
+                    id="liquid-glass-fab"
+                    width={60}
+                    height={60}
+                    radius={30}
+                    bezel={Math.max(8, Math.round(glassTuning.bezel * 0.6))}
+                    maxDisp={Math.round(glassTuning.maxDisp * 0.7)}
+                  />
+                  <Box
+                    aria-hidden
+                    sx={{
+                      position: "absolute",
+                      inset: 0,
+                      borderRadius: "50%",
+                      pointerEvents: "none",
+                      backdropFilter: "blur(2px) saturate(1.4)",
+                      filter: "url(#liquid-glass-fab) contrast(1.12)",
+                    }}
+                  />
+                </>
+              )}
               <Box component="span" sx={{ position: "relative", zIndex: 1, display: "flex" }}>
                 {paused || !current ? <PlayArrow /> : <Pause />}
               </Box>
