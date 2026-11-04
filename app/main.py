@@ -89,6 +89,7 @@ def create_app() -> FastAPI:
         availability_task = asyncio.create_task(
             availability.loop(config, db, bot, music), name="availability"
         )
+        watchdog_task = asyncio.create_task(_lavalink_watchdog(app), name="lavalink-watchdog")
         try:
             yield
         finally:
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
             search_cache_task.cancel()
             state_task.cancel()
             availability_task.cancel()
+            watchdog_task.cancel()
             await bot.close()
             bot_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -109,7 +111,9 @@ def create_app() -> FastAPI:
     async def _lavalink_unavailable(request: Request, exc: wavelink.LavalinkException) -> JSONResponse:
         # A dead Lavalink node turns every player touch into this error;
         # answer 503 instead of a bare 500.
-        return JSONResponse(status_code=503, detail="Lavalink is offline right now. Try again in a moment.")
+        return JSONResponse(
+            status_code=503, content={"detail": "Lavalink is offline right now. Try again in a moment."}
+        )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[config.base_url, "http://localhost:5173"],
@@ -182,6 +186,70 @@ async def _search_cache_cleanup_loop(db: Database) -> None:
             await db.prune_notifications(utcnow() - timedelta(days=7))
         except Exception:  # noqa: BLE001 - an error here must not stop the loop
             logger.exception("Cache cleanup failed")
+
+
+async def _lavalink_watchdog(app: FastAPI) -> None:
+    """Reconnect the Lavalink websocket when its REST session has gone stale.
+
+    wavelink's own reconnect only starts when the receive loop sees a close
+    frame; a hard connection failure kills that task silently, leaving a node
+    that looks connected but answers REST with 404 (session unknown). Probe
+    the session endpoint and kick a websocket reconnect when Lavalink no
+    longer knows it; the node_ready handler rebuilds playback afterwards.
+    """
+    import wavelink
+
+    last_kick = 0.0
+    while True:
+        await asyncio.sleep(30)
+        try:
+            node = wavelink.Pool.get_node()
+        except Exception:  # noqa: BLE001 - no node connected yet
+            continue
+        if node.status != wavelink.NodeStatus.CONNECTED or not node.session_id:
+            continue
+        try:
+            # There is no GET for a single session; the players list under
+            # it 404s exactly when the session is gone from the server.
+            # node.send prepends the slash itself.
+            await node.send("GET", path=f"v4/sessions/{node.session_id}/players")
+            continue  # The session is alive, nothing to do.
+        except wavelink.LavalinkException as exc:
+            if exc.status != 404:
+                continue  # Auth trouble etc. — reconnecting will not help.
+        except Exception:  # noqa: BLE001 - the node is unreachable, wait it out
+            continue
+        if node.status == wavelink.NodeStatus.CONNECTING or time.monotonic() - last_kick < 60:
+            continue
+        last_kick = time.monotonic()
+        logger.warning("Lavalink session %s is stale; reconnecting the websocket", node.session_id)
+        asyncio.create_task(_reconnect_websocket(node), name="lavalink-watchdog-reconnect")
+
+
+async def _reconnect_websocket(node: Any) -> None:
+    """Take over the node websocket unconditionally.
+
+    By the time the session probe 404s, wavelink's keep-alive loop is
+    dead (it crashes on the close frame instead of reconnecting) and the
+    stale aiohttp socket still reports itself open, so politeness checks
+    like is_connected cannot be trusted: cancel the loop, drop the old
+    socket and connect anew. connect() retries with backoff until the
+    node answers.
+    """
+    import wavelink
+
+    websocket = node._websocket
+    if websocket.keep_alive_task:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            websocket.keep_alive_task.cancel()
+    if websocket.socket is not None:
+        with contextlib.suppress(Exception):
+            websocket.socket._response.close()  # type: ignore[attr-defined]
+    websocket.socket = None
+    try:
+        await websocket.connect()
+    except Exception:  # noqa: BLE001 - logged; the next tick retries
+        logger.exception("Watchdog websocket reconnect failed")
 
 
 async def _player_state_loop(app: FastAPI, hub: Any) -> None:

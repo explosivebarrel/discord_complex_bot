@@ -257,7 +257,7 @@ class MusicService:
         if player is not None:
             await player.disconnect()
 
-    async def resync_players(self) -> None:
+    async def resync_players(self, force: bool = False) -> None:
         """Recreate players after a Lavalink reconnect.
 
         The node rebuilds its players from scratch, but the bot's voice
@@ -268,38 +268,83 @@ class MusicService:
         still has tracks gets its player back too, and the queue head
         starts (a track end that died with the old session must not
         silence the queue).
+
+        With ``force`` (the node came back WITHOUT resuming, so every
+        player object is stale) an existing voice client is kept and its
+        voice state is re-sent to the new session instead of skipped.
         """
         if self.bot is None or not self.bot.is_ready():
             return
         seen: set[int] = set()
         for guild_id, item in list(self.current_items.items()):
             seen.add(guild_id)
-            await self._resync_one(guild_id, item)
+            await self._resync_one(guild_id, item, force)
         # Queues without a current track: the track end landed inside the
         # connection gap, so nothing will ever pull the queue head.
         for guild_id, queue in list(self.queues.items()):
             if guild_id in seen or not queue:
                 continue
-            await self._resync_one(guild_id, None)
+            await self._resync_one(guild_id, None, force)
 
-    async def _resync_one(self, guild_id: int, item: QueueItem | None) -> None:
+    async def _rehandshake_player(self, guild_id: int) -> wavelink.Player | None:
+        """Re-register an existing player's voice with the (re)started node.
+
+        A Lavalink restart wipes its sessions while the Discord-side voice
+        client survives, so a fresh channel.connect is impossible ("already
+        connected"). Re-sending the same voice state makes Discord hand the
+        voice server payload over again and the player joins the new
+        session. Returns None when the Discord voice state is gone too.
+        """
+        player = self.get_player(guild_id)
+        if player is None:
+            return None
+        channel = player.channel
+        if channel is None or channel is discord.utils.MISSING:
+            guild = self.get_guild(guild_id)
+            me = guild.me if guild else None
+            channel = me.voice.channel if me is not None and me.voice is not None else None
+        if channel is None:
+            return None
+        await player.connect(reconnect=True, self_deaf=True)
+        return player
+
+    async def _resync_one(self, guild_id: int, item: QueueItem | None, force: bool = False) -> None:
         guild = self.get_guild(guild_id)
-        if guild is None or self.get_player(guild_id) is not None:
-            return  # already healthy, or unknown guild
-        me = guild.me
-        if me is None or me.voice is None or me.voice.channel is None:
-            # The voice state is really gone (e.g. after a full app
-            # restart): drop the stale current so the panel does too.
-            self.current_items.pop(guild_id, None)
-            return
+        if guild is None:
+            return  # unknown guild
+        player = self.get_player(guild_id)
+        if player is None:
+            me = guild.me
+            if me is None or me.voice is None or me.voice.channel is None:
+                # The voice state is really gone (e.g. after a full app
+                # restart): drop the stale current so the panel does too.
+                self.current_items.pop(guild_id, None)
+                return
+            try:
+                # A plain channel.connect, not connect(): the queue-driven
+                # play_next inside it would misinterpret the resync as a
+                # track end and advance the queue.
+                player = await me.voice.channel.connect(cls=wavelink.Player, self_deaf=True)
+                await player.set_volume(100)
+            except Exception:  # noqa: BLE001 - never break the node event
+                logger.exception("Failed to resync playback for guild %s", guild_id)
+                return
+        elif force:
+            # The voice client survived a Lavalink restart; re-register its
+            # voice with the fresh session.
+            try:
+                player = await self._rehandshake_player(guild_id)
+            except Exception:  # noqa: BLE001 - never break the node event
+                logger.exception("Failed to re-handshake voice for guild %s", guild_id)
+                return
+            if player is None:
+                # The voice state is really gone: drop the stale current so
+                # the panel does too.
+                self.current_items.pop(guild_id, None)
+                return
+        else:
+            return  # already healthy
         try:
-            # A plain channel.connect, not connect(): the queue-driven
-            # play_next inside it would misinterpret the resync as a
-            # track end and advance the queue.
-            player: wavelink.Player = await me.voice.channel.connect(
-                cls=wavelink.Player, self_deaf=True
-            )
-            await player.set_volume(100)
             if item is not None:
                 self.current_items[guild_id] = item
                 await self._play_item(guild_id, item)
@@ -969,10 +1014,11 @@ class MusicService:
         try:
             await player.play(track)
         except wavelink.LavalinkException:
-            # The Lavalink session died mid-queue (a node reconnect): one
-            # resync attempt recovers, a second failure re-raises.
-            logger.warning("Player play failed for guild %s; resyncing once", guild_id)
-            await self.resync_players()
+            # The Lavalink session died mid-queue (a node restart): one
+            # re-handshake + retry recovers, a second failure re-raises.
+            logger.warning("Player play failed for guild %s; re-handshaking once", guild_id)
+            with contextlib.suppress(Exception):
+                await self._rehandshake_player(guild_id)
             player = self.get_player(guild_id)
             if player is None:
                 raise
@@ -1459,7 +1505,15 @@ class MusicService:
         player = self._require_player(guild_id)
         if not player.playing:
             return False
-        await player.stop()  # The TrackEnd listener starts the next queued item.
+        try:
+            await player.stop()  # The TrackEnd listener starts the next queued item.
+        except wavelink.LavalinkException:
+            # A node restart wiped the session; re-register voice and retry once.
+            logger.warning("Skip failed for guild %s; re-handshaking once", guild_id)
+            player = await self._rehandshake_player(guild_id)
+            if player is None:
+                raise
+            await player.stop()
         await self.db.audit("music.skip", guild_id=guild_id, actor_id=requester_id)
         return True
 
