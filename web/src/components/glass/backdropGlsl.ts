@@ -11,7 +11,8 @@
  * (sparse/medium/dense), 4 vertical stripes, 5 checkerboard.
  */
 export const BACKDROP_GLSL = `
-uniform vec2 u_res;    // viewport size in CSS px
+// u_res (viewport size in CSS px), u_mode and u_blobs are declared by the
+// host shader that includes this body.
 uniform float u_mode;
 uniform vec3 u_blobs[5]; // mesh gradient colors from the theme palette
 

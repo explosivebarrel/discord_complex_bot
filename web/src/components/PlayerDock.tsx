@@ -353,8 +353,12 @@ export function PlayerDock({
                   ? glassWebgl
                     ? {
                         // The scene paints the round lens beneath the
-                        // transparent button; hover adds a soft veil.
+                        // transparent button; a CSS frost mutes whatever
+                        // DOM crosses it (the seek line), and the button
+                        // stacks above that line.
                         bgcolor: "transparent",
+                        backdropFilter: "blur(6px)",
+                        zIndex: 2,
                         color: t.palette.primary.contrastText,
                         "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.18) },
                         "&.Mui-disabled": { color: t.palette.primary.contrastText, opacity: 0.45 },
