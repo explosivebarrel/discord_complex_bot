@@ -40,6 +40,7 @@ function Swatch({ scheme }: { scheme: AppThemeScheme }) {
 
 /** Miniature backdrop previews for the Liquid Glass settings dialog. */
 const BACKDROP_PREVIEWS: Record<GlassBackdrop, object> = {
+  mesh: { background: "radial-gradient(circle at 25% 30%, #6a4fb0 0%, transparent 55%), radial-gradient(circle at 75% 70%, #a06a8c 0%, transparent 55%), #14101f" },
   "stars-sparse": { background: "radial-gradient(circle, #efeaff 1px, transparent 1.6px) 0 0 / 20px 20px, #14101f" },
   "stars-medium": { background: "radial-gradient(circle, #efeaff 1px, transparent 1.6px) 0 0 / 12px 12px, #14101f" },
   "stars-dense": { background: "radial-gradient(circle, #efeaff 0.8px, transparent 1.3px) 0 0 / 7px 7px, #14101f" },
@@ -56,7 +57,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
       <DialogContent dividers sx={{ pt: 1 }}>
         <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
           Backdrop the glass refracts. Stripes and the checkerboard make the
-          lens effect the most visible.
+          lens effect the most visible; the mesh gradient is the moodiest.
         </Typography>
         <List disablePadding>
           {GLASS_BACKDROPS.map((o) => (
@@ -108,19 +109,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
             valueLabelDisplay="auto"
           />
           <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Dock blur, px
-          </Typography>
-          <Slider
-            size="small"
-            min={0}
-            max={10}
-            step={0.5}
-            value={glassTuning.dockBlur}
-            onChange={(_, v) => tune({ dockBlur: v as number })}
-            valueLabelDisplay="auto"
-          />
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Content tint opacity
+            Glass tint opacity
           </Typography>
           <Slider
             size="small"

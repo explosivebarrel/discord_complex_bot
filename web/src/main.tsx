@@ -9,6 +9,7 @@ import { getScheme } from "./themes/palettes";
 import { useLocalPrefValue } from "./useLocalPrefValue";
 import { AuroraBackground } from "./components/AuroraBackground";
 import { GlassBackground } from "./components/GlassBackground";
+import { GlassScene, webglSupported } from "./components/glass/GlassScene";
 import "@fontsource/roboto/400.css";
 import "@fontsource/roboto/500.css";
 import "@fontsource/roboto/700.css";
@@ -36,12 +37,15 @@ const queryClient = new QueryClient({
 /** Theme provider + persisted theme choice + animated backdrops. */
 function ThemedApp({ children }: { children: React.ReactNode }) {
   const [themeId, setThemeId] = useLocalPrefValue("ui.theme", "dark");
-  const [glassBg, setGlassBg] = useLocalPrefValue("ui.glassBg", "stars-sparse");
+  const [glassBg, setGlassBg] = useLocalPrefValue("ui.glassBg", "stars-dense");
   const [glassTuningRaw, setGlassTuningRaw] = useLocalPrefValue("ui.glassTuning", "");
   const [cbRaw, setCbRaw] = useLocalPrefValue("ui.cbPalette", "");
   const glassTuning = getGlassTuning(glassTuningRaw);
   const scheme = getScheme(themeId);
   const theme = useMemo(() => buildTheme(scheme), [scheme]);
+  // Full WebGL glass: the procedural backdrop + shader lenses live in one
+  // scene; without WebGL the CSS frosted glass over the 2D canvas remains.
+  const glassWebgl = scheme.id === "glass" && webglSupported();
   // Native widgets (scrollbars, form controls) follow the color scheme.
   useEffect(() => {
     document.documentElement.style.colorScheme = scheme.mode;
@@ -55,13 +59,14 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
         setGlassBackdrop: setGlassBg,
         glassTuning,
         setGlassTuning: (t) => setGlassTuningRaw(JSON.stringify(t)),
+        glassWebgl,
         cbPalette: cbRaw === "1",
         setCbPalette: (v) => setCbRaw(v ? "1" : "0"),
       }}
     >
       <ThemeProvider theme={theme}>
         {scheme.aurora && <AuroraBackground />}
-        {scheme.id === "glass" && <GlassBackground />}
+        {scheme.id === "glass" && (glassWebgl ? <GlassScene /> : <GlassBackground />)}
         <CssBaseline />
         {/* Local subset of Material Symbols Rounded (Google Material icons,
             https://fonts.google.com/icons): only the glyph names used by

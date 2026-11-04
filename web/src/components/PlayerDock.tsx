@@ -5,9 +5,7 @@ import { IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Paus
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
-import { useGlassCanvas } from "./GlassBackground";
-import { WebGLGlass } from "./WebGLGlass";
-import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
+import { useGlassIsland } from "./glass/glassRegistry";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -136,15 +134,14 @@ export function PlayerDock({
   const [livePos, setLivePos] = useState(0);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
-  // Liquid Glass refraction tracks the dock's live box (its map is built
-  // for an exact W×H, so it must rebuild on resize). The ref callback
-  // seeds the size synchronously, so the first paint is already glass.
+  // The dock's measured width also drives the row-vs-stack layout decision.
   const dockRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const attachDock = (el: HTMLDivElement | null) => {
     dockRef.current = el;
     if (el) setSize((p) => (p && p.w === el.offsetWidth && p.h === el.offsetHeight ? p : { w: el.offsetWidth, h: el.offsetHeight }));
   };
+  const fabRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     const el = dockRef.current;
     if (!el) return;
@@ -152,21 +149,27 @@ export function PlayerDock({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const { glassTuning, scheme } = useAppTheme();
+  const { scheme, glassWebgl, glassTuning } = useAppTheme();
   // Layout mode from the dock's own width: below ~680px (sidebars open on
   // a small screen) one row cannot fit cover + title + transport + actions,
   // so the content stacks into three short rows. The inline volume slider
   // appears only when there is room for it next to the five icons.
   const singleRow = (size?.w ?? 0) >= 680;
   const showSliderBox = singleRow && (size?.w ?? 0) >= 980;
-  // The SVG lens only makes sense on liquid-glass themes: elsewhere the
-  // button is an opaque disc with nothing to refract.
-  const refract =
-    !!scheme.surface.islands && svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
-  // True WebGL glass: available on islands themes whose backdrop canvas
-  // (GlassBackground) is mounted — it is the texture the lens samples.
-  const bgCanvas = useGlassCanvas();
-  const webgl = !!scheme.surface.islands && !!bgCanvas;
+  // Full WebGL glass: the dock and the FAB are scene islands — the lens is
+  // painted beneath their transparent DOM; CSS glass stays the fallback.
+  // `!!state` also re-runs the registration after the early-return mounts
+  // the boxes (the ref callback fills them during that render's commit).
+  useGlassIsland(
+    dockRef,
+    { radius: 20, tint: scheme.tokens.surfaceContainerLow, tintAlpha: glassTuning.scrim },
+    glassWebgl && !!state,
+  );
+  useGlassIsland(
+    fabRef,
+    { radius: 30, tint: scheme.tokens.primary, tintAlpha: 0.42 },
+    glassWebgl && !!state,
+  );
 
   // Advance the progress line locally between 3-second polls.
   useEffect(() => {
@@ -195,31 +198,16 @@ export function PlayerDock({
         px: { xs: 1.5, md: 3 },
         pt: { xs: 1.5, md: 2 },
         pb: 1.5,
-        boxShadow: "0 12px 32px rgba(0,0,0,.30)",
-        ...(webgl
-          ? { bgcolor: alpha(t.palette.m3.surfaceContainerLow, 0.25) }
+        // The scene paints the dock's shadow with the lens; the CSS
+        // shadow only exists on the fallback path.
+        boxShadow: glassWebgl ? "none" : "0 12px 32px rgba(0,0,0,.30)",
+        ...(glassWebgl
+          ? { bgcolor: "transparent" }
           : surfaceStyle(t, t.palette.m3.surfaceContainerLow, "card")),
       })}
     >
-      {/* True WebGL liquid glass: the lens samples our own backdrop canvas
-          (stars/stripes/checker), so the refraction is real shader work —
-          no DOM sampling involved. Non-WebGL browsers fall back to the
-          frosted CSS surface. */}
-      {webgl && (
-        <WebGLGlass
-          radius={20}
-          bezel={glassTuning.bezel}
-          refraction={glassTuning.maxDisp}
-          aberration={2}
-          blur={glassTuning.dockBlur}
-          tint="#181226"
-          tintAlpha={0.42}
-          specular={0.5}
-          alpha={0.94}
-        />
-      )}
-      {/* Specular sheen sweeping across the glass; clipped here so it never
-          paints outside the dock, and compositor-only (transform). */}
+      {/* The scene paints the lens beneath this transparent window; the
+          sheen sweep rides on top of either path. */}
       <Box sx={{ position: "absolute", inset: 0, borderRadius: "inherit", overflow: "hidden", pointerEvents: "none", zIndex: 1 }}>
         <Box
           sx={{
@@ -352,6 +340,7 @@ export function PlayerDock({
         <Tooltip title={paused ? "Resume" : "Pause"}>
           <span>
             <IconButton
+              ref={fabRef}
               disabled={isLoading || !current}
               onClick={onPauseToggle}
               sx={(t) => ({
@@ -361,15 +350,24 @@ export function PlayerDock({
                 mt: -4.5,
                 position: "relative",
                 ...(t.surface.islands
-                  ? {
-                      // Liquid-glass FAB: translucent tint; the round lens
-                      // lives on a warp layer inside, the glyph stays sharp.
-                      bgcolor: alpha(t.palette.primary.main, 0.42),
-                      color: t.palette.primary.contrastText,
-                      boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", 0.3)}, 0 6px 20px rgba(0,0,0,.45)`,
-                      "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.55) },
-                      "&.Mui-disabled": { bgcolor: alpha(t.palette.primary.main, 0.42), color: t.palette.primary.contrastText, opacity: 0.45 },
-                    }
+                  ? glassWebgl
+                    ? {
+                        // The scene paints the round lens beneath the
+                        // transparent button; hover adds a soft veil.
+                        bgcolor: "transparent",
+                        color: t.palette.primary.contrastText,
+                        "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.18) },
+                        "&.Mui-disabled": { color: t.palette.primary.contrastText, opacity: 0.45 },
+                      }
+                    : {
+                        // Liquid-glass FAB: translucent tint; the glyph
+                        // stays sharp above the frosted disc.
+                        bgcolor: alpha(t.palette.primary.main, 0.42),
+                        color: t.palette.primary.contrastText,
+                        boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", 0.3)}, 0 6px 20px rgba(0,0,0,.45)`,
+                        "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.55) },
+                        "&.Mui-disabled": { bgcolor: alpha(t.palette.primary.main, 0.42), color: t.palette.primary.contrastText, opacity: 0.45 },
+                      }
                   : {
                       bgcolor: "primary.main",
                       color: "primary.contrastText",
@@ -380,29 +378,6 @@ export function PlayerDock({
                     }),
               })}
             >
-              {refract && (
-                <>
-                  <LiquidGlassFilter
-                    id="liquid-glass-fab"
-                    width={60}
-                    height={60}
-                    radius={30}
-                    bezel={Math.max(8, Math.round(glassTuning.bezel * 0.6))}
-                    maxDisp={Math.round(glassTuning.maxDisp * 0.7)}
-                  />
-                  <Box
-                    aria-hidden
-                    sx={{
-                      position: "absolute",
-                      inset: 0,
-                      borderRadius: "50%",
-                      pointerEvents: "none",
-                      backdropFilter: "blur(2px) saturate(1.4)",
-                      filter: "url(#liquid-glass-fab) contrast(1.12)",
-                    }}
-                  />
-                </>
-              )}
               <Box component="span" sx={{ position: "relative", zIndex: 1, display: "flex" }}>
                 {paused || !current ? <PlayArrow /> : <Pause />}
               </Box>

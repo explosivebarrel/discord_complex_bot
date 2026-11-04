@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useState } from "react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
 import { Avatar, Badge, Box, Collapse, Divider, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Stack, Toolbar, Tooltip, Typography, useMediaQuery, useTheme, type Theme } from "@mui/material";
 import { Link as RouterLink, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { IconGraphicEq, IconInfo } from "./icons";
@@ -8,6 +8,8 @@ import { SystemStatusChip } from "./SystemStatusChip";
 import { NotificationBell } from "./NotificationBell";
 import { AccountMenu } from "./AccountMenu";
 import { islandStyle, surfaceStyle } from "../themes/buildTheme";
+import { useAppTheme } from "../themes/AppThemeContext";
+import { useGlassIsland } from "./glass/glassRegistry";
 import type { GuildBrief, Me } from "../api";
 import { guildAllows } from "../api";
 import { useGuilds, useMe } from "../queries";
@@ -356,6 +358,18 @@ export function AppShell({
     [isLarge, setSheetOpen],
   );
   const [modalOpen, setModalOpen] = useState(false);
+  // Full WebGL glass: the frame columns become transparent windows and the
+  // scene paints their lenses beneath; CSS island glass stays the fallback.
+  const { glassWebgl } = useAppTheme();
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const leftNavRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const islandsOn = !!theme.surface.islands;
+  useGlassIsland(navRef, { radius: 0 }, islandsOn && isWide && glassWebgl);
+  useGlassIsland(leftNavRef, { radius: 0 }, islandsOn && !!leftNav && isWide && glassWebgl);
+  useGlassIsland(contentRef, { radius: 0 }, islandsOn && glassWebgl);
+  useGlassIsland(sheetRef, { radius: 0 }, islandsOn && !!right && isLarge && glassWebgl);
   // Shared cache with GuildsPage: the drawer renders instantly on revisit.
   const guildsQuery = useGuilds();
   const guilds = guildsQuery.data ?? [];
@@ -457,6 +471,7 @@ export function AppShell({
       >
         {isWide && (
           <Box
+            ref={navRef}
             sx={(t) => ({
               // One column animating between the drawer and the rail; the
               // expanded content and the rail crossfade instead of
@@ -465,14 +480,19 @@ export function AppShell({
               flexShrink: 0,
               position: "relative",
               overflow: "hidden",
-              // Islands glass: the nav is its own floating glass panel
-              // sampling the raw backdrop; plain themes sit on the frame.
+              // Islands glass: the nav is its own floating glass panel.
+              // With the WebGL scene the lens is painted beneath, so the
+              // box is a transparent window; otherwise CSS island glass.
               ...(t.surface.islands
-                ? islandStyle(t, t.palette.m3.surface)
+                ? glassWebgl
+                  ? { bgcolor: "transparent" }
+                  : islandStyle(t, t.palette.m3.surface)
                 : { bgcolor: "transparent" }),
               // Glass themes edge the frame with a neon hairline instead of
-              // the plain outline.
-              borderRight: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              // the plain outline; the shader rim replaces it on WebGL.
+              borderRight: glassWebgl
+                ? "none"
+                : `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
               transition: theme.transitions.create("width", { duration: theme.transitions.duration.standard }),
             })}
           >
@@ -539,12 +559,19 @@ export function AppShell({
 
         {leftNav && isWide && (
           <Box
+            ref={leftNavRef}
             sx={(t) => ({
               flexShrink: 0,
               position: "relative",
               overflow: "hidden",
-              ...(t.surface.islands ? islandStyle(t, t.palette.m3.surface) : {}),
-              borderRight: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              ...(t.surface.islands
+                ? glassWebgl
+                  ? { bgcolor: "transparent" }
+                  : islandStyle(t, t.palette.m3.surface)
+                : {}),
+              borderRight: glassWebgl
+                ? "none"
+                : `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
             })}
           >
             {leftNav}
@@ -552,16 +579,20 @@ export function AppShell({
         )}
 
         <Box
+          ref={contentRef}
           sx={(t) => ({
             flex: 1,
             minWidth: 0,
             display: "flex",
             flexDirection: "column",
             // Islands glass: the content column is a glass island styled
-            // exactly like the nav/sheet (blur + saturate + contrast +
-            // specular). A CSS blur here does not disturb the dock's WebGL
-            // lens — it samples the fixed backdrop canvas, not the DOM.
-            ...(t.surface.islands ? islandStyle(t, t.palette.m3.surface) : {}),
+            // exactly like the nav/sheet. With the WebGL scene the lens is
+            // painted beneath this transparent window.
+            ...(t.surface.islands
+              ? glassWebgl
+                ? { bgcolor: "transparent" }
+                : islandStyle(t, t.palette.m3.surface)
+              : {}),
           })}
         >
           {/* Page header: typography on the frame surface, no bar panel.
@@ -628,6 +659,7 @@ export function AppShell({
 
         {right && isLarge && (
           <Box
+            ref={sheetRef}
             sx={(t) => ({
               // One column that animates its width between the sheet and
               // the rail; content crossfades, the toggle stays put.
@@ -635,9 +667,13 @@ export function AppShell({
               flexShrink: 0,
               position: "relative",
               ...(t.surface.islands
-                ? islandStyle(t, t.palette.m3.surface)
+                ? glassWebgl
+                  ? { bgcolor: "transparent" }
+                  : islandStyle(t, t.palette.m3.surface)
                 : {}),
-              borderLeft: `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
+              borderLeft: glassWebgl
+                ? "none"
+                : `1px solid ${t.surface.neonBorder ?? t.palette.m3.outlineVariant}`,
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
