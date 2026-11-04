@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Box, Button, Card, CardContent, CircularProgress, IconButton, List, ListItem, ListItemAvatar, ListItemText,
+  Box, Button, CircularProgress, IconButton, List, ListItem, ListItemAvatar, ListItemText,
   Stack, TextField, Tooltip, Typography,
 } from "@mui/material";
 import {
@@ -15,7 +15,6 @@ import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { MosaicCover } from "../MosaicCover";
 import type { TrackMenuSpec } from "../TrackMenu";
-import { PlaylistBrowser } from "../PlaylistBrowser";
 import { CoverImg } from "./CoverImg";
 import { RowActions, rowActionsRowSx } from "./RowActions";
 import { fmt, SOURCE_LABELS } from "./labels";
@@ -105,6 +104,182 @@ function TrackRow({
         </Typography>
       )}
     </ListItem>
+  );
+}
+
+/** An external playlist (opened via a URL from search) shown as a full
+    page in the same style as our own playlist pages: a hero with the
+    cover mosaic and the usual actions, then track rows with hover pills. */
+function ExternalPlaylistView({
+  playlist, busy, onClose, onReload, onPlay, onAdd, onAddAll, onMenu,
+}: {
+  playlist: import("../../api").PlaylistPageInfo;
+  busy: boolean;
+  onClose: () => void;
+  onReload: (page: number, q: string) => void;
+  onPlay: (index: number) => void;
+  onAdd: (indices: number[]) => void;
+  onAddAll: () => void;
+  onMenu: (e: React.MouseEvent, spec: TrackMenuSpec) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const heroCovers = [...new Set(playlist.tracks.map((t) => t.artwork).filter((x): x is string => !!x))].slice(0, 4);
+
+  return (
+    <Box sx={{ px: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 }, maxWidth: 1000 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2, alignItems: { sm: "center" } }}>
+        <MosaicCover images={heroCovers} size={120} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="overline" sx={{ color: "text.secondary" }}>
+            Playlist · {SOURCE_LABELS[playlist.source] ?? playlist.source}
+          </Typography>
+          <Typography variant="h4" noWrap>{playlist.title}</Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary", mb: 1.5 }}>
+            {playlist.matched === playlist.total
+              ? `${playlist.total} track(s)`
+              : `${playlist.matched} of ${playlist.total} tracks`}
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="contained"
+              disabled={busy || playlist.tracks.length === 0}
+              startIcon={<PlayArrow />}
+              onClick={() => onPlay(playlist.tracks[0]?.index ?? 0)}
+            >
+              Play
+            </Button>
+            <Tooltip title="Queue the whole playlist (lazy: pages load as the queue advances)">
+              <IconButton disabled={busy || playlist.tracks.length === 0} onClick={onAddAll}>
+                <PlaylistAdd />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Close">
+              <IconButton size="small" onClick={onClose} aria-label="Close external playlist">
+                <DeleteOutlined fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        </Box>
+      </Stack>
+
+      <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Search inside the playlist"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onReload(0, filter)}
+        />
+        <Button variant="tonal" disabled={busy} onClick={() => onReload(0, filter)}>
+          Find
+        </Button>
+      </Stack>
+
+      <List disablePadding>
+        {playlist.tracks.map((t) => (
+          <ListItem
+            key={t.index}
+            disableGutters
+            dense
+            // Row click adds to the queue, like everywhere else.
+            onClick={() => onAdd([t.index])}
+            sx={{
+              cursor: "pointer",
+              borderRadius: 1,
+              alignItems: "center",
+              px: 1.5,
+              py: 0.75,
+              "& .MuiListItemText-root": { my: 0 },
+              "&:hover": { bgcolor: "action.hover" },
+              ...rowActionsRowSx,
+            }}
+            onContextMenu={(e) =>
+              onMenu(e, {
+                track: {
+                  title: t.title,
+                  author: t.author,
+                  uri: t.uri ?? "",
+                  source: playlist.source,
+                  length_ms: t.length,
+                  artwork: t.artwork,
+                },
+                onPlay: () => onPlay(t.index),
+                onQueue: () => onAdd([t.index]),
+              })
+            }
+            secondaryAction={
+              <RowActions>
+                <Tooltip title="Play now">
+                  <IconButton
+                    size="small"
+                    disabled={busy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlay(t.index);
+                    }}
+                    aria-label="Play now"
+                  >
+                    <PlayArrow fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Add to queue">
+                  <IconButton
+                    size="small"
+                    disabled={busy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAdd([t.index]);
+                    }}
+                    aria-label="Add to queue"
+                  >
+                    <QueueMusic fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <PlaylistAddMenu
+                  track={{
+                    title: t.title,
+                    author: t.author,
+                    uri: t.uri ?? "",
+                    source: playlist.source,
+                    length_ms: t.length,
+                    artwork: t.artwork,
+                  }}
+                />
+              </RowActions>
+            }
+          >
+            <ListItemAvatar sx={{ minWidth: 0, width: 40, height: 40, display: "grid", placeItems: "center" }}>
+              <CoverImg src={t.artwork} size={40} />
+            </ListItemAvatar>
+            <ListItemText
+              primary={t.title}
+              secondary={[t.author || "", t.length > 0 ? fmt(t.length) : "LIVE"].filter(Boolean).join(" · ")}
+              slotProps={{ primary: { noWrap: true, sx: { pr: 2 } }, secondary: { noWrap: true, sx: { pr: 2 } } }}
+            />
+          </ListItem>
+        ))}
+        {playlist.tracks.length === 0 && (
+          <Typography variant="body2" sx={{ color: "text.secondary", py: 2, textAlign: "center" }}>
+            Nothing matches the filter.
+          </Typography>
+        )}
+      </List>
+
+      {playlist.pages > 1 && (
+        <Stack direction="row" spacing={1} sx={{ mt: 1.5, alignItems: "center", justifyContent: "center" }}>
+          <Button size="small" variant="tonal" disabled={playlist.page <= 0 || busy} onClick={() => onReload(playlist.page - 1, filter)}>
+            Prev
+          </Button>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            {playlist.page + 1} / {playlist.pages}
+          </Typography>
+          <Button size="small" variant="tonal" disabled={playlist.page >= playlist.pages - 1 || busy} onClick={() => onReload(playlist.page + 1, filter)}>
+            Next
+          </Button>
+        </Stack>
+      )}
+    </Box>
   );
 }
 
@@ -226,6 +401,22 @@ export function CollectionTab(props: CollectionTabProps) {
     );
   }
 
+  // ---- External playlist page (opened via a URL; full-page style) ----
+  if (playlist) {
+    return (
+      <ExternalPlaylistView
+        playlist={playlist}
+        busy={playlistBusy}
+        onClose={onCloseBrowser}
+        onReload={onReloadBrowser}
+        onPlay={onBrowserPlay}
+        onAdd={onBrowserAdd}
+        onAddAll={onBrowserAddAll}
+        onMenu={onMenu}
+      />
+    );
+  }
+
   // ---- Full playlist page (its own route) ----
   if (openPl) {
     // Hero mosaic: first 4 track covers, duplicates skipped.
@@ -234,21 +425,6 @@ export function CollectionTab(props: CollectionTabProps) {
       !plFilter.trim() || t.title.toLowerCase().includes(plFilter.trim().toLowerCase()));
     return (
       <Box sx={{ px: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 }, maxWidth: 1000 }}>
-        {playlist && (
-          <Card sx={{ mb: 2 }}>
-            <CardContent>
-              <PlaylistBrowser
-                playlist={playlist}
-                busy={playlistBusy}
-                onClose={onCloseBrowser}
-                onReload={onReloadBrowser}
-                onPlay={onBrowserPlay}
-                onAdd={onBrowserAdd}
-                onAddAll={onBrowserAddAll}
-              />
-            </CardContent>
-          </Card>
-        )}
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2, alignItems: { sm: "center" } }}>
           <MosaicCover images={heroCovers} size={120} />
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -377,22 +553,6 @@ export function CollectionTab(props: CollectionTabProps) {
 
   return (
     <Box sx={{ px: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 }, maxWidth: 1000 }}>
-      {playlist && (
-        <Card sx={{ mb: 2 }}>
-          <CardContent>
-            <PlaylistBrowser
-              playlist={playlist}
-              busy={playlistBusy}
-              onClose={onCloseBrowser}
-              onReload={onReloadBrowser}
-              onPlay={onBrowserPlay}
-              onAdd={onBrowserAdd}
-              onAddAll={onBrowserAddAll}
-            />
-          </CardContent>
-        </Card>
-      )}
-
       <Typography variant="h4" sx={{ fontWeight: 500, mb: 2 }}>Collection</Typography>
 
       {/* Liked tracks: hero + two-column preview of the first tracks. */}
