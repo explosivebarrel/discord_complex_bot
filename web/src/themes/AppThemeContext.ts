@@ -32,6 +32,8 @@ export interface GlassTuning {
   aberration: number;
   specular: number;
   renderScale: number;
+  /** Play button shading: panel frost (true) or the refraction lens. */
+  fabFrost: boolean;
   lensTint: string;
   lensTintAlpha: number;
   panelTint: string;
@@ -44,6 +46,7 @@ export const DEFAULT_GLASS_TUNING: GlassTuning = {
   aberration: 2,
   specular: 0.5,
   renderScale: 1,
+  fabFrost: true,
   lensTint: "#161028",
   lensTintAlpha: 0.25,
   panelTint: "#161028",

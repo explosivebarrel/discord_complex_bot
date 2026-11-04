@@ -4,7 +4,7 @@ import { alpha } from "@mui/material/styles";
 import { useAppTheme } from "../../themes/AppThemeContext";
 import type { GlassBackdrop } from "../../themes/AppThemeContext";
 import { BACKDROP_GLSL } from "./backdropGlsl";
-import { glassIslandEntries, glassSeek } from "./glassRegistry";
+import { glassIslandEntries } from "./glassRegistry";
 
 const MAX_ISLANDS = 14;
 
@@ -71,51 +71,20 @@ uniform float u_specular;
 uniform vec4 u_islands[${MAX_ISLANDS}];
 uniform vec4 u_iglass[${MAX_ISLANDS}];
 uniform vec4 u_iglass2[${MAX_ISLANDS}];
-uniform vec4 u_seek;
-uniform float u_seekFrac;
-uniform float u_seekThumb;
-uniform float u_seekAfter;
-uniform vec3 u_seekBg;
-uniform vec3 u_seekFill;
 vec3 sceneUpTo(vec2 px, float t, int top);
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + r;
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
-vec3 drawSeek(vec3 col, vec2 px) {
-  if (u_seek.z < 4.0) return col;
-  vec2 half_ = vec2(u_seek.z * 0.5 - 1.0, 1.0);
-  vec2 local = px - u_seek.xy - u_seek.zw * 0.5;
-  float d = sdRoundBox(local, half_, 2.0);
-  float inbar = 1.0 - smoothstep(-0.7, 0.7, d);
-  vec3 bar = u_seekBg;
-  float fillW = max(u_seek.z * u_seekFrac, 4.0);
-  vec2 fh = vec2(fillW * 0.5 - 1.0, 1.0);
-  vec2 fl = px - vec2(u_seek.x + fillW * 0.5, u_seek.y + 2.0);
-  float inFill = 1.0 - smoothstep(-0.7, 0.7, sdRoundBox(fl, fh, 2.0));
-  bar = mix(bar, u_seekFill, inFill);
-  float dt = length(px - vec2(u_seek.x + u_seek.z * u_seekFrac, u_seek.y + 2.0));
-  float thumb = u_seekThumb * (1.0 - smoothstep(5.0, 6.5, dt));
-  bar = mix(bar, u_seekFill * 1.2 + vec3(0.06), thumb);
-  return mix(col, bar, inbar);
-}
 
 
-
-// Frosted glass: trilinear mip sampling of the backdrop texture — a real
-// continuous blur. The old 4-tap version showed every point-like backdrop
-// feature (stars) as 4 discrete ghosts.
+// Frosted glass: one trilinear mip sample of the backdrop texture — a real
+// continuous blur. Offset taps at this scale sample the already-blurred
+// pyramid shifted, which reads as several overlapping copies of the image
+// ("tripled"), so the pyramid alone does the filtering.
 vec3 frost(vec2 px, float b) {
-  float lod = max(log2(b) - 1.0, 0.0);
-  vec2 uv = px / u_res;
-  vec3 acc = textureLod(u_backdrop, uv, lod).rgb * 4.0;
-  vec2 o = vec2(b * 0.7, 0.0);
-  acc += textureLod(u_backdrop, (px + o) / u_res, lod).rgb;
-  acc += textureLod(u_backdrop, (px - o) / u_res, lod).rgb;
-  acc += textureLod(u_backdrop, (px + o.yx) / u_res, lod).rgb;
-  acc += textureLod(u_backdrop, (px - o.yx) / u_res, lod).rgb;
-  return acc / 8.0;
+  return textureLod(u_backdrop, px / u_res, max(log2(b) - 1.0, 0.0)).rgb;
 }
 
 // Panels: frosted rounded slabs over the backdrop texture. The blur radius
@@ -192,13 +161,10 @@ vec3 sceneUpTo(vec2 px, float t, int top) {
       continue;
     }
     col = mix(col, lensGlassBase(i, px, t), inside);
-    if (float(i) == u_seekAfter) col = drawSeek(col, px);
   }
   return col;
 }
 
-// The player seek line drawn into the dock's glass (the FAB lens
-// refracts it). u_seek.xywh is the 4px bar in CSS px, w<=0 disables it.
 void main() {
   vec2 px = vec2(v_uv.x, 1.0 - v_uv.y) * u_res;
   float t = u_time;
@@ -223,7 +189,6 @@ void main() {
     vec2 refr = px - dir * e * u_iglass2[i].z;
     vec3 glass = lensBody(i, px, t, sceneUpTo(refr, t, i).g, e, refr, dir, local, half_);
     col = mix(col, glass, inside);
-    if (float(i) == u_seekAfter) col = drawSeek(col, px);
   }
   fragColor = vec4(col, 1.0);
 }`;
@@ -239,32 +204,9 @@ uniform float u_specular;
 uniform vec4 u_islands[${MAX_ISLANDS}];
 uniform vec4 u_iglass[${MAX_ISLANDS}];
 uniform vec4 u_iglass2[${MAX_ISLANDS}];
-uniform vec4 u_seek;
-uniform float u_seekFrac;
-uniform float u_seekThumb;
-uniform float u_seekAfter;
-uniform vec3 u_seekBg;
-uniform vec3 u_seekFill;
 float sdRoundBox(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + r;
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
-}
-vec3 drawSeek(vec3 col, vec2 px) {
-  if (u_seek.z < 4.0) return col;
-  vec2 half_ = vec2(u_seek.z * 0.5 - 1.0, 1.0);
-  vec2 local = px - u_seek.xy - u_seek.zw * 0.5;
-  float d = sdRoundBox(local, half_, 2.0);
-  float inbar = 1.0 - smoothstep(-0.7, 0.7, d);
-  vec3 bar = u_seekBg;
-  float fillW = max(u_seek.z * u_seekFrac, 4.0);
-  vec2 fh = vec2(fillW * 0.5 - 1.0, 1.0);
-  vec2 fl = px - vec2(u_seek.x + fillW * 0.5, u_seek.y + 2.0);
-  float inFill = 1.0 - smoothstep(-0.7, 0.7, sdRoundBox(fl, fh, 2.0));
-  bar = mix(bar, u_seekFill, inFill);
-  float dt = length(px - vec2(u_seek.x + u_seek.z * u_seekFrac, u_seek.y + 2.0));
-  float thumb = u_seekThumb * (1.0 - smoothstep(5.0, 6.5, dt));
-  bar = mix(bar, u_seekFill * 1.2 + vec3(0.06), thumb);
-  return mix(col, bar, inbar);
 }
 
 
@@ -353,7 +295,6 @@ void main() {
     vec2 refr = px - dir * e * u_iglass2[i].z;
     vec3 glass = lensBody(i, px, t, panelLayer(refr, t).g, e, refr, dir, local, half_);
     col = mix(col, glass, inside);
-    if (float(i) == u_seekAfter) col = drawSeek(col, px);
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -404,8 +345,6 @@ const rectsScratch = new Float32Array(MAX_ISLANDS * 4);
 const glassAScratch = new Float32Array(MAX_ISLANDS * 4);
 const glassBScratch = new Float32Array(MAX_ISLANDS * 4);
 const blobsScratch = new Float32Array(15);
-const seekBgScratch = new Float32Array(3);
-const seekFillScratch = new Float32Array(3);
 
 /** Per-scene GL state, filled in by the async warm-up below. */
 interface SceneGl {
@@ -426,12 +365,6 @@ interface SceneGl {
   iglass2B: WebGLUniformLocation | null;
   aberrationB: WebGLUniformLocation | null;
   specularB: WebGLUniformLocation | null;
-  seekB: WebGLUniformLocation | null;
-  seekFracB: WebGLUniformLocation | null;
-  seekThumbB: WebGLUniformLocation | null;
-  seekAfterB: WebGLUniformLocation | null;
-  seekBgB: WebGLUniformLocation | null;
-  seekFillB: WebGLUniformLocation | null;
   backdropLocB: WebGLUniformLocation | null;
   animate: boolean;
   dpr: () => number;
@@ -530,22 +463,6 @@ export function GlassScene() {
       gl.uniform1f(scene.aberrationB, tuning.aberration);
       gl.uniform1f(scene.specularB, tuning.specular);
       const entries = glassIslandEntries();
-      // The seek line drawn into the dock's glass (index of the wide lens).
-      let seekAfter = -1;
-      for (let i = 0; i < entries.length && i < MAX_ISLANDS; i++) {
-        if (entries[i].kind === "lens" && entries[i].el.getBoundingClientRect().width > 300) {
-          seekAfter = i;
-          break;
-        }
-      }
-      gl.uniform4f(scene.seekB, glassSeek.x, glassSeek.y, glassSeek.w, glassSeek.h);
-      gl.uniform1f(scene.seekFracB, glassSeek.frac);
-      gl.uniform1f(scene.seekThumbB, glassSeek.thumb);
-      gl.uniform1f(scene.seekAfterB, seekAfter);
-      seekBgScratch.set(hexRgb(tokens.surfaceContainerHighest));
-      seekFillScratch.set(hexRgb(tokens.primary));
-      gl.uniform3fv(scene.seekBgB, seekBgScratch);
-      gl.uniform3fv(scene.seekFillB, seekFillScratch);
       const rects = rectsScratch;
       const glassA = glassAScratch;
       const glassB = glassBScratch;
@@ -663,12 +580,6 @@ export function GlassScene() {
         iglass2B: gl.getUniformLocation(progB, "u_iglass2"),
         aberrationB: gl.getUniformLocation(progB, "u_aberration"),
         specularB: gl.getUniformLocation(progB, "u_specular"),
-        seekB: gl.getUniformLocation(progB, "u_seek"),
-        seekFracB: gl.getUniformLocation(progB, "u_seekFrac"),
-        seekThumbB: gl.getUniformLocation(progB, "u_seekThumb"),
-        seekAfterB: gl.getUniformLocation(progB, "u_seekAfter"),
-        seekBgB: gl.getUniformLocation(progB, "u_seekBg"),
-        seekFillB: gl.getUniformLocation(progB, "u_seekFill"),
         backdropLocB: gl.getUniformLocation(progB, "u_backdrop"),
         // Reduced motion freezes the animation clock; layout still redraws.
         animate: !reduced,

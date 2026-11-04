@@ -36,11 +36,6 @@ export function glassIslandEntries(): GlassIslandEntry[] {
   return [...islands];
 }
 
-/** The player seek line, drawn by the scene INTO the dock's glass so the
-    FAB lens refracts it. Updated by PlayerDock every render (the DOM seek
-    line stays as an invisible hit-area for dragging). */
-export const glassSeek = { x: 0, y: 0, w: 0, h: 0, frac: 0, thumb: 0 };
-
 /** Registers an element as a glass island while `enabled`. */
 export function useGlassIsland(
   ref: RefObject<HTMLElement | null>,

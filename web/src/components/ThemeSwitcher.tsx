@@ -209,6 +209,17 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
             Lens tuning
           </Typography>
           <Box sx={{ px: 1 }}>
+            {row("fab", (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={glassTuning.fabFrost}
+                    onChange={(_, v) => tune({ fabFrost: v })}
+                  />
+                }
+                label="Frosted play button (panel frost instead of the lens)"
+              />
+            ))}
             {slider("Lens strength — peak rim refraction, px", "maxDisp", 0, 36, 1)}
             {slider("Lens band — rim thickness, px", "bezel", 6, 40, 1)}
             {slider("Chromatic aberration, px", "aberration", 0, 6, 0.5)}
