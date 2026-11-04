@@ -19,7 +19,7 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useAppTheme, GLASS_BACKDROPS, type GlassBackdrop, type GlassTuning } from "../themes/AppThemeContext";
+import { useAppTheme, GLASS_BACKDROPS, type GlassBackdrop, type GlassTuning, type AuroraTuning } from "../themes/AppThemeContext";
 import { ADVANCED_SCHEMES, BASE_SCHEMES, type AppThemeScheme } from "../themes/palettes";
 import { IconCheck, IconPalette, IconTune, IconVisibility } from "./icons";
 
@@ -96,7 +96,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
       </Box>
     ));
 
-  const tintRow = (label: string, colorKey: "lensTint" | "panelTint", alphaKey: "lensTintAlpha" | "panelTintAlpha") =>
+  const tintRow = (label: string, colorKey: "lensTint" | "panelTint" | "fabTint", alphaKey: "lensTintAlpha" | "panelTintAlpha" | "fabTintAlpha") =>
     row(`t-${colorKey}`, (
       <Box>
         <Typography variant="caption" sx={{ color: "text.secondary", display: solo === `t-${colorKey}` ? "none" : "block" }}>
@@ -220,6 +220,8 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
                 label="Frosted play button (panel frost instead of the lens)"
               />
             ))}
+            {slider("Play button blur, px", "fabBlur", 6, 44, 1)}
+            {tintRow("Play button tint", "fabTint", "fabTintAlpha")}
             {slider("Lens strength — peak rim refraction, px", "maxDisp", 0, 36, 1)}
             {slider("Lens band — rim thickness, px", "bezel", 6, 40, 1)}
             {slider("Chromatic aberration, px", "aberration", 0, 6, 0.5)}
@@ -234,7 +236,52 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
   );
 }
 
-function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLElement | null; onClose: () => void; onOpenGlassSettings: () => void }) {
+/** Aurora backdrop settings: the classic canvas torus blobs or the WebGL
+    mesh built from the aurora gradients, with mesh intensity/speed. */
+function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { auroraTuning, setAuroraTuning } = useAppTheme();
+  const tune = (patch: Partial<AuroraTuning>) => setAuroraTuning({ ...auroraTuning, ...patch });
+  const slider = (label: string, key: "intensity" | "speed", min: number, max: number, step: number) => (
+    <Box sx={{ px: 1 }}>
+      <Typography variant="caption" sx={{ color: "text.secondary" }}>
+        {label}
+      </Typography>
+      <Slider
+        size="small"
+        min={min}
+        max={max}
+        step={step}
+        value={auroraTuning[key]}
+        onChange={(_, v) => tune({ [key]: v as number } as Partial<AuroraTuning>)}
+        valueLabelDisplay="auto"
+      />
+    </Box>
+  );
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Aurora settings</DialogTitle>
+      <DialogContent dividers sx={{ pt: 1 }}>
+        <FormControlLabel
+          control={<Switch checked={auroraTuning.mesh} onChange={(_, v) => tune({ mesh: v })} />}
+          label="Mesh gradient backdrop (WebGL)"
+        />
+        <Typography variant="body2" sx={{ color: "text.secondary", mb: auroraTuning.mesh ? 1 : 0 }}>
+          Off: the classic canvas torus blobs. On: a liquid-warped WebGL mesh —
+          each torus's gradient stops become drifting color blobs over the
+          theme's base background.
+        </Typography>
+        {auroraTuning.mesh && (
+          <>
+            {slider("Blob intensity", "intensity", 0.4, 1.4, 0.05)}
+            {slider("Drift speed", "speed", 0.4, 2, 0.1)}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ThemeMenu({ anchor, onClose, onOpenGlassSettings, onOpenAuroraSettings }: { anchor: HTMLElement | null; onClose: () => void; onOpenGlassSettings: () => void; onOpenAuroraSettings: () => void }) {
   const { scheme, setThemeId, cbPalette, setCbPalette } = useAppTheme();
   const item = (s: AppThemeScheme) => (
     <MenuItem
@@ -264,6 +311,22 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings }: { anchor: HTMLEleme
               setThemeId(s.id);
               onClose();
               onOpenGlassSettings();
+            }}
+            sx={{ "& > span": { transform: "translateX(5px)" } }}
+          >
+            <IconTune fontSize={18} />
+          </IconButton>
+        </Tooltip>
+      ) : s.id.startsWith("aurora") ? (
+        <Tooltip title="Aurora settings">
+          <IconButton
+            size="small"
+            aria-label="Aurora settings"
+            onClick={(e) => {
+              e.stopPropagation();
+              setThemeId(s.id);
+              onClose();
+              onOpenAuroraSettings();
             }}
             sx={{ "& > span": { transform: "translateX(5px)" } }}
           >
@@ -309,10 +372,17 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
   const { scheme } = useAppTheme();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [glassSettings, setGlassSettings] = useState(false);
+  const [auroraSettings, setAuroraSettings] = useState(false);
   const menu = (
-    <ThemeMenu anchor={anchor} onClose={() => setAnchor(null)} onOpenGlassSettings={() => setGlassSettings(true)} />
+    <ThemeMenu
+      anchor={anchor}
+      onClose={() => setAnchor(null)}
+      onOpenGlassSettings={() => setGlassSettings(true)}
+      onOpenAuroraSettings={() => setAuroraSettings(true)}
+    />
   );
   const glassDialog = <GlassSettingsDialog open={glassSettings} onClose={() => setGlassSettings(false)} />;
+  const auroraDialog = <AuroraSettingsDialog open={auroraSettings} onClose={() => setAuroraSettings(false)} />;
   if (collapsed) {
     // Same 48px round ListItemButton as the other rail rows: a plain
     // IconButton is 40px, so its hover/selected halo reads smaller.
@@ -340,6 +410,7 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
         </Tooltip>
         {menu}
         {glassDialog}
+        {auroraDialog}
       </>
     );
   }
@@ -360,6 +431,7 @@ export function ThemeSwitcher({ collapsed }: { collapsed: boolean }) {
       </ListItemButton>
       {menu}
       {glassDialog}
+      {auroraDialog}
     </>
   );
 }

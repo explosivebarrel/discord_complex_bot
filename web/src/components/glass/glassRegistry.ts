@@ -15,6 +15,9 @@ export interface GlassIslandOpts {
   /** "panel": frosted backdrop panel (columns); "lens": refracting
       surface (dock, FAB, buttons). */
   kind: GlassIslandKind;
+  /** Panel frost radius override, CSS px (default: the scene's
+      PANEL_BLUR_PX). Used by the play button for a heavier blur. */
+  blur?: number;
 }
 
 interface GlassIslandEntry extends GlassIslandOpts {
@@ -54,5 +57,5 @@ export function useGlassIsland(
     // be recreated per render — registration order defines paint order
     // and stays stable because these deps rarely change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, enabled, opts.radius, opts.kind]);
+  }, [ref, enabled, opts.radius, opts.kind, opts.blur]);
 }

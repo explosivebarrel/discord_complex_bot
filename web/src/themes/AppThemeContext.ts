@@ -34,6 +34,10 @@ export interface GlassTuning {
   renderScale: number;
   /** Play button shading: panel frost (true) or the refraction lens. */
   fabFrost: boolean;
+  /** Play button frost tuning (used when fabFrost is on). */
+  fabBlur: number;
+  fabTint: string;
+  fabTintAlpha: number;
   lensTint: string;
   lensTintAlpha: number;
   panelTint: string;
@@ -47,6 +51,9 @@ export const DEFAULT_GLASS_TUNING: GlassTuning = {
   specular: 0.5,
   renderScale: 1,
   fabFrost: true,
+  fabBlur: 22,
+  fabTint: "#161028",
+  fabTintAlpha: 0.45,
   lensTint: "#161028",
   lensTintAlpha: 0.25,
   panelTint: "#161028",
@@ -61,6 +68,24 @@ export function getGlassTuning(raw: string | null): GlassTuning {
   }
 }
 
+/** Aurora backdrop settings: canvas torus blobs (css) or the WebGL mesh
+    built from the aurora gradients (mesh), with mesh intensity/speed. */
+export interface AuroraTuning {
+  mesh: boolean;
+  intensity: number;
+  speed: number;
+}
+
+export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1 };
+
+export function getAuroraTuning(raw: string | null): AuroraTuning {
+  try {
+    return { ...DEFAULT_AURORA_TUNING, ...JSON.parse(raw || "") };
+  } catch {
+    return DEFAULT_AURORA_TUNING;
+  }
+}
+
 interface AppThemeState {
   scheme: AppThemeScheme;
   setThemeId: (id: ThemeId) => void;
@@ -68,6 +93,8 @@ interface AppThemeState {
   setGlassBackdrop: (b: GlassBackdrop) => void;
   glassTuning: GlassTuning;
   setGlassTuning: (t: GlassTuning) => void;
+  auroraTuning: AuroraTuning;
+  setAuroraTuning: (t: AuroraTuning) => void;
   /** True when the Liquid Glass theme runs the full WebGL scene (procedural
       backdrop + shader lenses under every island); false falls back to the
       CSS frosted glass over the 2D canvas backdrop. */
@@ -86,6 +113,8 @@ export const AppThemeContext = createContext<AppThemeState>({
   setGlassBackdrop: () => {},
   glassTuning: DEFAULT_GLASS_TUNING,
   setGlassTuning: () => {},
+  auroraTuning: DEFAULT_AURORA_TUNING,
+  setAuroraTuning: () => {},
   glassWebgl: false,
   cbPalette: false,
   setCbPalette: () => {},

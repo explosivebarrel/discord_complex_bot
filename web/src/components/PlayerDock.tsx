@@ -159,8 +159,8 @@ export function PlayerDock({
   // 60px disc); the lens is a settings toggle.
   const { glassWebgl, glassTuning } = useAppTheme();
   const fabKind = glassTuning.fabFrost ? "panel" : "lens";
-  const fabTint = glassTuning.fabFrost ? glassTuning.panelTint : glassTuning.lensTint;
-  const fabTintAlpha = glassTuning.fabFrost ? glassTuning.panelTintAlpha : glassTuning.lensTintAlpha;
+  const fabTint = glassTuning.fabFrost ? glassTuning.fabTint : glassTuning.lensTint;
+  const fabTintAlpha = glassTuning.fabFrost ? glassTuning.fabTintAlpha : glassTuning.lensTintAlpha;
   useGlassIsland(
     dockRef,
     { radius: 20, kind: "lens" },
@@ -168,7 +168,7 @@ export function PlayerDock({
   );
   useGlassIsland(
     fabRef,
-    { radius: 30, kind: fabKind },
+    { radius: 30, kind: fabKind, blur: glassTuning.fabBlur },
     glassWebgl && !!state,
   );
   // Layout mode from the dock's own width: below ~680px (sidebars open on

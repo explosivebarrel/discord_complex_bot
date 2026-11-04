@@ -3,11 +3,12 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { CssBaseline, GlobalStyles, ThemeProvider } from "@mui/material";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppThemeContext, getGlassBackdrop, getGlassTuning } from "./themes/AppThemeContext";
+import { AppThemeContext, getAuroraTuning, getGlassBackdrop, getGlassTuning } from "./themes/AppThemeContext";
 import { buildTheme } from "./themes/buildTheme";
 import { getScheme } from "./themes/palettes";
 import { useLocalPrefValue } from "./useLocalPrefValue";
 import { AuroraBackground } from "./components/AuroraBackground";
+import { AuroraMeshBackground } from "./components/AuroraMeshBackground";
 import { GlassBackground } from "./components/GlassBackground";
 import { GlassScene, webglSupported } from "./components/glass/GlassScene";
 import "@fontsource/roboto/400.css";
@@ -40,7 +41,9 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
   const [glassBg, setGlassBg] = useLocalPrefValue("ui.glassBg", "stars-dense");
   const [glassTuningRaw, setGlassTuningRaw] = useLocalPrefValue("ui.glassTuning", "");
   const [cbRaw, setCbRaw] = useLocalPrefValue("ui.cbPalette", "");
+  const [auroraTuningRaw, setAuroraTuningRaw] = useLocalPrefValue("ui.auroraTuning", "");
   const glassTuning = getGlassTuning(glassTuningRaw);
+  const auroraTuning = getAuroraTuning(auroraTuningRaw);
   const scheme = getScheme(themeId);
   const theme = useMemo(() => buildTheme(scheme), [scheme]);
   // Full WebGL glass: the procedural backdrop + shader lenses live in one
@@ -59,13 +62,16 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
         setGlassBackdrop: setGlassBg,
         glassTuning,
         setGlassTuning: (t) => setGlassTuningRaw(JSON.stringify(t)),
+        auroraTuning,
+        setAuroraTuning: (t) => setAuroraTuningRaw(JSON.stringify(t)),
         glassWebgl,
         cbPalette: cbRaw === "1",
         setCbPalette: (v) => setCbRaw(v ? "1" : "0"),
       }}
     >
       <ThemeProvider theme={theme}>
-        {scheme.aurora && <AuroraBackground />}
+        {scheme.aurora &&
+          (auroraTuning.mesh && webglSupported() ? <AuroraMeshBackground /> : <AuroraBackground />)}
         {scheme.surface.islands && (glassWebgl ? <GlassScene /> : <GlassBackground />)}
         <CssBaseline />
         {/* Local subset of Material Symbols Rounded (Google Material icons,

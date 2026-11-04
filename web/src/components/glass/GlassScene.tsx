@@ -468,20 +468,21 @@ export function GlassScene() {
       const glassB = glassBScratch;
       const panelTint = hexRgb(tuning.panelTint);
       const lensTint = hexRgb(tuning.lensTint);
+      const fabTint = hexRgb(tuning.fabTint);
       let n = 0;
-      for (const { el, radius, kind } of entries) {
+      for (const { el, radius, kind, blur } of entries) {
         if (n >= MAX_ISLANDS) break;
         const r = el.getBoundingClientRect();
         if (r.width < 8 || r.height < 8) continue;
         rects.set([r.left, r.top, r.width, r.height], n * 4);
-        const [tr, tg, tb] = kind === "panel" ? panelTint : lensTint;
+        const [tr, tg, tb] = kind === "panel" ? (blur != null ? fabTint : panelTint) : lensTint;
         glassA.set([radius, tr, tg, tb], n * 4);
         glassB.set(
           [
-            kind === "panel" ? tuning.panelTintAlpha : tuning.lensTintAlpha,
+            kind === "panel" ? (blur != null ? tuning.fabTintAlpha : tuning.panelTintAlpha) : tuning.lensTintAlpha,
             // For panels the y slot is the frost radius (texels): CSS px
             // scaled by the render scale so the look is renderScale-invariant.
-            kind === "panel" ? PANEL_BLUR_PX * scene.dpr() : tuning.bezel,
+            kind === "panel" ? (blur ?? PANEL_BLUR_PX) * scene.dpr() : tuning.bezel,
             tuning.maxDisp,
             kind === "panel" ? 0 : 1,
           ],
