@@ -98,28 +98,42 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   const tintRow = (label: string, colorKey: "lensTint" | "panelTint", alphaKey: "lensTintAlpha" | "panelTintAlpha") =>
     row(`t-${colorKey}`, (
-      <Box onPointerDown={() => setSolo(`t-${colorKey}`)} sx={{ cursor: "pointer" }}>
+      <Box>
         <Typography variant="caption" sx={{ color: "text.secondary", display: solo === `t-${colorKey}` ? "none" : "block" }}>
           {label}
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          {/* The color swatch itself never triggers solo — only the alpha
+              slider hides the dialog around it. */}
           <Box
             component="input"
             type="color"
             value={glassTuning[colorKey]}
             onChange={(e) => tune({ [colorKey]: (e.target as HTMLInputElement).value } as Partial<GlassTuning>)}
-            sx={{ width: 34, height: 26, p: 0, border: "1px solid", borderColor: "divider", borderRadius: 1.5, bgcolor: "transparent", cursor: "pointer" }}
+            sx={{
+              width: 40,
+              height: 30,
+              p: "3px",
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: "6px",
+              bgcolor: "transparent",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
           />
-          <Slider
-            size="small"
-            min={0}
-            max={1}
-            step={0.05}
-            value={glassTuning[alphaKey] as number}
-            onChange={(_, v) => tune({ [alphaKey]: v as number } as Partial<GlassTuning>)}
-            valueLabelDisplay={solo === `t-${colorKey}` ? "on" : "auto"}
-            sx={{ flex: 1 }}
-          />
+          <Box onPointerDown={() => setSolo(`t-${colorKey}`)} sx={{ flex: 1, cursor: "pointer" }}>
+            <Slider
+              size="small"
+              min={0}
+              max={1}
+              step={0.05}
+              value={glassTuning[alphaKey] as number}
+              onChange={(_, v) => tune({ [alphaKey]: v as number } as Partial<GlassTuning>)}
+              valueLabelDisplay={solo === `t-${colorKey}` ? "on" : "auto"}
+              sx={{ display: "block" }}
+            />
+          </Box>
         </Box>
       </Box>
     ));

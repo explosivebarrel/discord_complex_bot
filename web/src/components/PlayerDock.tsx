@@ -6,7 +6,6 @@ import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
 import { glassSeek, useGlassIsland } from "./glass/glassRegistry";
-import { LiquidGlassFilter, svgBackdropSupported } from "./LiquidGlassFilter";
 
 const LIVE_LENGTH = 9223372036854775807;
 
@@ -190,15 +189,10 @@ export function PlayerDock({
     { radius: 20, kind: "lens" },
     glassWebgl && !!state,
   );
-  // The FAB protrudes over DOM content (scrolled cards), which the canvas
-  // shader cannot read. Chromium's SVG backdrop filter refracts that DOM
-  // too, so when it is available the FAB's glass lives entirely in CSS and
-  // the canvas island is dropped; otherwise the canvas lens takes over.
-  const svgFab = glassWebgl && svgBackdropSupported() && !!size && size.w > 120 && size.h > 40;
   useGlassIsland(
     fabRef,
     { radius: 30, kind: "lens" },
-    glassWebgl && !svgFab && !!state,
+    glassWebgl && !!state,
   );
 
   // Advance the progress line locally between 3-second polls.
@@ -386,11 +380,11 @@ export function PlayerDock({
                         // sits behind (cards scrolled under the protruding
                         // top, the seek line is masked away entirely), and
                         // saturate() keeps the canvas lens crisp.
-                        bgcolor: alpha(glassTuning.lensTint, Math.max(glassTuning.lensTintAlpha, 0.35)),
+                        bgcolor: alpha(glassTuning.lensTint, glassTuning.lensTintAlpha),
                         zIndex: 2,
                         color: t.palette.m3.onSurface,
-                        "&:hover": { bgcolor: alpha(glassTuning.lensTint, Math.max(glassTuning.lensTintAlpha + 0.15, 0.5)) },
-                        "&.Mui-disabled": { bgcolor: alpha(glassTuning.lensTint, Math.max(glassTuning.lensTintAlpha, 0.35) * 0.7), color: t.palette.m3.onSurface, opacity: 0.5 },
+                        "&:hover": { bgcolor: alpha(glassTuning.lensTint, Math.min(glassTuning.lensTintAlpha + 0.15, 1)) },
+                        "&.Mui-disabled": { bgcolor: alpha(glassTuning.lensTint, glassTuning.lensTintAlpha * 0.7), color: t.palette.m3.onSurface, opacity: 0.5 },
                       }
                     : {
                         // Liquid-glass FAB: translucent tint; the glyph
@@ -411,29 +405,6 @@ export function PlayerDock({
                     }),
               })}
             >
-              {svgFab && (
-                <>
-                  <LiquidGlassFilter
-                    id="liquid-glass-fab"
-                    width={60}
-                    height={60}
-                    radius={30}
-                    bezel={Math.max(8, Math.round(glassTuning.bezel * 0.6))}
-                    maxDisp={Math.round(glassTuning.maxDisp * 0.7)}
-                  />
-                  <Box
-                    aria-hidden
-                    sx={{
-                      position: "absolute",
-                      inset: 0,
-                      borderRadius: "50%",
-                      pointerEvents: "none",
-                      backdropFilter: "blur(2px) saturate(1.4)",
-                      filter: "url(#liquid-glass-fab) contrast(1.12)",
-                    }}
-                  />
-                </>
-              )}
               <Box component="span" sx={{ position: "relative", zIndex: 1, display: "flex" }}>
                 {paused || !current ? <PlayArrow /> : <Pause />}
               </Box>
