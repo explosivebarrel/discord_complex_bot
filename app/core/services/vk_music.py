@@ -9,6 +9,7 @@ token applies without a restart.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
@@ -19,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 VK_API_URL = "https://api.vk.com/method/"
 VK_API_VERSION = "5.199"
+# One serialized call per second: bursts of audio.search look bot-like and
+# are exactly what trips VK antifraud into freezing the token's account.
+_VK_MIN_INTERVAL = 1.0
+_vk_lock = asyncio.Lock()
+_vk_last_call = 0.0
 # Kate Mobile Android client id: its implicit-flow tokens still carry the
 # audio scope that web OAuth tokens no longer get.
 KATE_CLIENT_ID = "2685278"
@@ -74,8 +80,14 @@ def is_vk_host(url: str) -> bool:
 
 
 async def vk_call(token: str, method: str, **params: Any) -> Any:
+    global _vk_last_call
     params["access_token"] = token
     params["v"] = VK_API_VERSION
+    async with _vk_lock:
+        wait = _VK_MIN_INTERVAL - (asyncio.get_running_loop().time() - _vk_last_call)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _vk_last_call = asyncio.get_running_loop().time()
     try:
         async with httpx.AsyncClient(timeout=12.0) as client:
             resp = await client.get(VK_API_URL + method, params=params)
@@ -88,9 +100,22 @@ async def vk_call(token: str, method: str, **params: Any) -> Any:
         err = data["error"]
         msg = err.get("error_msg") or "unknown error"
         if err.get("error_code") in (5, 7, 15, 28):
-            raise VkMusicError(
-                f"VK rejected the request: {msg}. The token may be expired or lacks the audio scope."
-            )
+            # 5 has three distinct real-world causes; the hint names the fix.
+            low = msg.lower()
+            if "blocked" in low:
+                hint = (
+                    " The VK account that issued this token is blocked/frozen:"
+                    " open vk.com with it to see the unblock steps (usually a"
+                    " phone confirmation), then issue a fresh token."
+                )
+            elif "invalid access_token" in low:
+                hint = (
+                    " The token is expired or was copied incompletely:"
+                    " issue a fresh one via the OAuth link in Settings."
+                )
+            else:
+                hint = " The token may be expired or lacks the audio scope."
+            raise VkMusicError(f"VK rejected the request: {msg}.{hint}")
         raise VkMusicError(f"VK API: {msg}")
     return data.get("response")
 
