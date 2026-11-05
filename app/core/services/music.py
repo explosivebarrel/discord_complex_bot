@@ -986,16 +986,23 @@ class MusicService:
                 return track
             # The userscript queues metadata-only VK rows when the page's
             # player never yields a stream link (paywall accounts, A/B UI).
-            # They must play even without a working VK token: search a
-            # substitute by the captured name.
+            # They must play even without a working VK token: resolve a
+            # substitute by the captured name via yt-dlp — Lavalink's own
+            # YouTube clients are login-walled from this network (see the
+            # yt-dlp section comment), the plain search there dies at play.
             query = " - ".join(x for x in (item.author, item.title) if x) or item.pending_url
-            result = await self._search_with_retry(query, "yt")
-            found = list(result.tracks) if isinstance(result, wavelink.Playlist) else list(result or [])
-            if not found:
+            try:
+                rows = await self._ytdlp_search(query, 1, "ytsearch", "yt")
+            except MusicServiceError:
+                rows = []
+            if not rows or not rows[0].get("uri"):
                 raise MusicServiceError("Could not load the VK track. Try adding it again.")
-            sub = found[0]
-            sub._title = item.title or sub.title  # noqa: SLF001
-            sub._author = item.author or sub.author  # noqa: SLF001
+            info = await self._resolve_stream(rows[0]["uri"], "YouTube")
+            sub = await self._load_stream(info["url"])
+            if sub is None:
+                raise MusicServiceError("Could not load the VK track. Try adding it again.")
+            sub._title = item.title or str(info.get("title") or sub.title)  # noqa: SLF001
+            sub._author = item.author or str(info.get("uploader") or sub.author)  # noqa: SLF001
             if item.artwork:
                 sub._artwork = item.artwork  # noqa: SLF001
             return sub

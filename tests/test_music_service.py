@@ -870,12 +870,22 @@ async def test_vk_resolve_hls_falls_back_to_search(
 
     monkeypatch.setattr(vk_music, "stream_url", hls_stream)
 
-    async def fake_search(query: str, source: str):
+    async def fake_search(query: str, limit: int, prefix: str, source: str):
         assert query == "Artist - Song"
-        assert source == "yt"
-        return [_StubPlayable()]
+        assert prefix == "ytsearch"
+        return [{"uri": "https://www.youtube.com/watch?v=abc"}]
 
-    monkeypatch.setattr(music, "_search_with_retry", fake_search)  # noqa: SLF001
+    monkeypatch.setattr(music, "_ytdlp_search", fake_search)  # noqa: SLF001
+
+    async def fake_stream(url: str, label: str):
+        return {"url": "https://googlevideo.com/x", "title": "raw", "uploader": "raw"}
+
+    monkeypatch.setattr(music, "_resolve_stream", fake_stream)  # noqa: SLF001
+
+    async def fake_load(url: str):
+        return _StubPlayable()
+
+    monkeypatch.setattr(music, "_load_stream", fake_load)  # noqa: SLF001
 
     track = await music._resolve_item(item)  # noqa: SLF001
     assert track._title == "Song"  # noqa: SLF001
@@ -896,11 +906,20 @@ async def test_vk_resolve_without_token_falls_back_to_search(
 
     music._vk_token = no_token  # type: ignore[method-assign]
 
-    async def fake_search(query: str, source: str):
-        assert query == "Artist - Song"
-        return [_StubPlayable()]
+    async def fake_search(query: str, limit: int, prefix: str, source: str):
+        return [{"uri": "https://www.youtube.com/watch?v=abc"}]
 
-    monkeypatch.setattr(music, "_search_with_retry", fake_search)  # noqa: SLF001
+    monkeypatch.setattr(music, "_ytdlp_search", fake_search)  # noqa: SLF001
+
+    async def fake_stream(url: str, label: str):
+        return {"url": "https://googlevideo.com/x"}
+
+    monkeypatch.setattr(music, "_resolve_stream", fake_stream)  # noqa: SLF001
+
+    async def fake_load(url: str):
+        return _StubPlayable()
+
+    monkeypatch.setattr(music, "_load_stream", fake_load)  # noqa: SLF001
 
     track = await music._resolve_item(item)  # noqa: SLF001
     assert track._title == "Song"  # noqa: SLF001
@@ -962,10 +981,20 @@ async def test_vk_resolve_sidecar_failure_falls_back_to_search(
 
     monkeypatch.setattr(music, "_resolve_via_browser", dead_sidecar)  # noqa: SLF001
 
-    async def fake_search(query: str, source: str):
-        return [_StubPlayable()]
+    async def fake_search(query: str, limit: int, prefix: str, source: str):
+        return [{"uri": "https://www.youtube.com/watch?v=abc"}]
 
-    monkeypatch.setattr(music, "_search_with_retry", fake_search)  # noqa: SLF001
+    monkeypatch.setattr(music, "_ytdlp_search", fake_search)  # noqa: SLF001
+
+    async def fake_stream(url: str, label: str):
+        return {"url": "https://googlevideo.com/x"}
+
+    monkeypatch.setattr(music, "_resolve_stream", fake_stream)  # noqa: SLF001
+
+    async def fake_load(url: str):
+        return _StubPlayable()
+
+    monkeypatch.setattr(music, "_load_stream", fake_load)  # noqa: SLF001
 
     track = await music._resolve_item(item)  # noqa: SLF001
     assert track._title == "Song"  # noqa: SLF001
