@@ -8,6 +8,7 @@ Tampermonkey polls @updateURL and reinstalls on version bumps.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +78,23 @@ async def my_guilds_keyed(
     return items
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _skip_autoplay_radio(guild_id: int, music: MusicService) -> None:
+    """When the autoplay radio occupies the queue, everything queued behind
+    its endless stream waits for hours. The userscript has no visible queue,
+    so a queued playlist would look lost — skip the radio instead. A plain
+    single track already replaces the radio on its own (idle start)."""
+    current = music.current_items.get(guild_id)
+    if current is None or not current.is_autoplay:
+        return
+    try:
+        await music.play_next(guild_id, reason="extension-queued")
+    except Exception:  # noqa: BLE001 - the skip is cosmetic, never fail the enqueue
+        logger.exception("Failed to skip the autoplay radio for guild %s", guild_id)
+
+
 @router.post("/api/extension/queue/{guild_id}")
 async def extension_queue(
     guild_id: int,
@@ -108,6 +126,7 @@ async def extension_queue(
             actor_kind="web",
             details={"query": body.query, "via": "extension", "add_all": True},
         )
+        await _skip_autoplay_radio(guild_id, music)
         return result
     try:
         result = await music.enqueue(
@@ -134,4 +153,5 @@ async def extension_queue(
         actor_kind="web",
         details={"query": body.query, "via": "extension"},
     )
+    await _skip_autoplay_radio(guild_id, music)
     return result
