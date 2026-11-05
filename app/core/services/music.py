@@ -964,12 +964,20 @@ class MusicService:
                         await asyncio.sleep(1.0)
             if track is None and self.config.vk_resolver_url:
                 # The sidecar's logged-in browser plays the track and hands
-                # out the signed stream URL — no VK API involved.
-                stream = await self._resolve_via_browser(*parsed)
+                # out the signed stream URL — no VK API involved. The name
+                # hints power its search phase for tracks the sidecar
+                # account cannot see (foreign library entries).
+                stream = await self._resolve_via_browser(
+                    *parsed, title=str(item.title or ""), author=str(item.author or "")
+                )
                 if stream:
                     track = await self._load_stream(stream)
                     if track is not None:
-                        logger.info("VK resolve via browser sidecar (%s s)", parsed)
+                        logger.info("VK resolve via browser sidecar: %s_%s", *parsed)
+                    else:
+                        logger.warning(
+                            "VK sidecar URL failed to load: %s", stream[:120]
+                        )
             if track is not None:
                 track._title = item.title or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
                 track._author = item.author or track.author  # noqa: SLF001
@@ -1011,7 +1019,9 @@ class MusicService:
                 track._length = item.length  # noqa: SLF001
         return track
 
-    async def _resolve_via_browser(self, owner_id: int, audio_id: int) -> str | None:
+    async def _resolve_via_browser(
+        self, owner_id: int, audio_id: int, title: str = "", author: str = ""
+    ) -> str | None:
         """Ask the vkresolver sidecar for a signed CDN URL (vkresolver/server.py).
         Returns None on any failure — the search fallback plays instead."""
         import httpx
@@ -1021,7 +1031,12 @@ class MusicService:
             async with httpx.AsyncClient(timeout=90.0) as client:
                 resp = await client.post(
                     f"{base}/resolve",
-                    json={"owner_id": owner_id, "audio_id": audio_id},
+                    json={
+                        "owner_id": owner_id,
+                        "audio_id": audio_id,
+                        "title": title,
+                        "author": author,
+                    },
                 )
             if resp.status_code == 200:
                 return resp.json().get("url")

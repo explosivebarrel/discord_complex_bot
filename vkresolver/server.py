@@ -17,7 +17,7 @@ import random
 import re
 import time
 from collections import deque
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, HTTPException
 from playwright.async_api import async_playwright
@@ -31,10 +31,20 @@ MIN_INTERVAL = float(os.environ.get("MIN_INTERVAL", "3.0"))
 # A human does not "listen" to 1200 tracks an hour; the ceiling keeps a
 # runaway queue from painting a bot-shaped pattern in VK's logs.
 HOURLY_LIMIT = int(os.environ.get("HOURLY_LIMIT", "40"))
-RESOLVE_TIMEOUT = float(os.environ.get("RESOLVE_TIMEOUT", "20"))
+# Phase budgets: the deep link answers (or fast-fails) in ~2s; a foreign
+# library track the sidecar account cannot see returns {"response":[]},
+# and the search-by-name phase finds the same song in the open catalog.
+DEEP_LINK_TIMEOUT = float(os.environ.get("DEEP_LINK_TIMEOUT", "8"))
+SEARCH_TIMEOUT = float(os.environ.get("SEARCH_TIMEOUT", "15"))
 
 CDN_HOST_RE = re.compile(r"(?:vkuseraudio|vkuser)\.net$|okcdn\.ru$", re.I)
 METHOD_RE = re.compile(r"method/audio\.(?:getById|get)\b|al_audio\.php", re.I)
+# Any signed stream URL inside JSON bodies (search results carry them).
+VK_CDN_URL_RE = re.compile(
+    r"https://[a-z0-9.-]*(?:vkuseraudio|vkuser)\.net/\?[^\"'\\\s<>]+"
+    r"|https://[a-z0-9.-]*okcdn\.ru/\?[^\"'\\\s<>]+",
+    re.I,
+)
 PLAY_SELECTORS = (
     '[data-testid="audiorow-tappable"]',
     ".audio_row__play",
@@ -64,11 +74,21 @@ def _looks_like_stream(url: str) -> bool:
     if "okcdn.ru" not in host and "vkuser" not in host:
         return False
     q = urlsplit(url).query
-    return "expires=" in q and "sig=" in q
+    if "expires=" not in q or "sig=" not in q:
+        return False
+    # Ad streams share the shape (pct/ct=0/clientType=28) but lavaplayer
+    # cannot play them; real track streams carry ct=2/12, clientType=58.
+    if "pct=" in q:
+        return False
+    m = re.search(r"[?&]ct=(\d+)", url)
+    return (m.group(1) if m else "2") != "0"
 
 
 def _stream_from_json(body: str, owner_id: int, audio_id: int) -> str | None:
-    """audio.getById answers {"response": [{...,"url": "https://..."}]}."""
+    """audio.getById answers {"response": [{...,"url": "https://..."}]}.
+    Only the exact requested track counts: `{"response":[]}` means the
+    sidecar account has no access (foreign/private library tracks), and
+    grabbing another row's URL would play the wrong song."""
     try:
         data = json.loads(body.replace("\\/", "/").replace("\\u0026", "&"))
     except Exception:  # noqa: BLE001 - non-JSON bodies
@@ -76,18 +96,13 @@ def _stream_from_json(body: str, owner_id: int, audio_id: int) -> str | None:
     rows = data.get("response") if isinstance(data, dict) else None
     if not isinstance(rows, list):
         return None
-    match = fallback = None
     for row in rows:
-        if not isinstance(row, dict) or not isinstance(row.get("url"), str):
+        if not isinstance(row, dict) or row.get("owner_id") != owner_id or row.get("id") != audio_id:
             continue
-        url = row["url"]
-        if not _looks_like_stream(url):
-            continue
-        if row.get("owner_id") == owner_id and row.get("id") == audio_id:
-            match = url
-            break
-        fallback = fallback or url
-    return match or fallback
+        url = row.get("url")
+        if isinstance(url, str) and _looks_like_stream(url):
+            return url
+    return None
 
 
 def _cache_ttl(url: str) -> float:
@@ -115,7 +130,7 @@ async def _ride_redirects(page, owner_id: int, audio_id: int) -> None:
     raise RuntimeError(f"navigation never settled: {page.url[:120]}")
 
 
-async def _resolve_once(owner_id: int, audio_id: int) -> str:
+async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, str]:
     page = await state.browser_ctx.new_page()
     responses: list = []
     streams: list[tuple[float, str]] = []
@@ -131,12 +146,11 @@ async def _resolve_once(owner_id: int, audio_id: int) -> str:
 
     page.on("response", on_response)
     page.on("request", on_request)
-    t0 = time.time()
-    try:
-        await _ride_redirects(page, owner_id, audio_id)
-        if "login" in page.url:
-            raise RuntimeError("login_required")
-        deadline = time.time() + RESOLVE_TIMEOUT
+
+    async def wait_for_url(deadline_s: float, exact: bool) -> str | None:
+        """exact=True: only the deep link's own audio.getById row counts.
+        exact=False (search): the first track stream of the results page."""
+        deadline = time.time() + deadline_s
         while time.time() < deadline:
             while responses:
                 resp = responses.pop(0)
@@ -144,20 +158,51 @@ async def _resolve_once(owner_id: int, audio_id: int) -> str:
                     body = await resp.text()
                 except Exception:  # noqa: BLE001 - navigated away / streamed
                     continue
-                url = _stream_from_json(body, owner_id, audio_id)
+                if exact:
+                    url = _stream_from_json(body, owner_id, audio_id)
+                else:
+                    url = next(
+                        (u for u in VK_CDN_URL_RE.findall(body.replace("\\/", "/").replace("\\u0026", "&"))
+                         if _looks_like_stream(u)),
+                        None,
+                    )
                 if url:
                     return url
             if streams:
-                return streams[0][1]
-            for sel in PLAY_SELECTORS:
-                el = await page.query_selector(sel)
-                if el:
-                    try:
-                        await el.click(timeout=1000)
-                    except Exception:  # noqa: BLE001 - best effort
-                        pass
-                    break
+                return streams.pop(0)[1]
+            if exact:
+                for sel in PLAY_SELECTORS:
+                    el = await page.query_selector(sel)
+                    if el:
+                        try:
+                            await el.click(timeout=1000)
+                        except Exception:  # noqa: BLE001 - best effort
+                            pass
+                        break
             await page.wait_for_timeout(500)
+        return None
+
+    try:
+        # Phase 1: the deep link (exact track; foreign/private tracks fast-
+        # fail with an empty audio.getById).
+        try:
+            await _ride_redirects(page, owner_id, audio_id)
+            if "login" in page.url:
+                raise RuntimeError("login_required")
+            url = await wait_for_url(DEEP_LINK_TIMEOUT, exact=True)
+            if url:
+                return url, "page"
+        except RuntimeError as exc:
+            if "login" in str(exc):
+                raise
+        # Phase 2: search by name — the same song from the open catalog.
+        if not query:
+            raise RuntimeError("no_stream")
+        await page.goto("https://vk.ru/audio?q=" + quote(query), wait_until="commit")
+        await page.wait_for_load_state("load")
+        url = await wait_for_url(SEARCH_TIMEOUT, exact=False)
+        if url:
+            return url, "search"
         raise RuntimeError("no_stream")
     finally:
         stop.set()
@@ -168,7 +213,7 @@ async def _resolve_once(owner_id: int, audio_id: int) -> str:
         )
 
 
-async def resolve(owner_id: int, audio_id: int) -> dict:
+async def resolve(owner_id: int, audio_id: int, query: str) -> dict:
     key = (owner_id, audio_id)
     hit = state.cache.get(key)
     now = time.time()
@@ -191,7 +236,7 @@ async def resolve(owner_id: int, audio_id: int) -> dict:
         state.hourly.append(time.time())
         t0 = time.time()
         try:
-            url = await _resolve_once(owner_id, audio_id)
+            url, via = await _resolve_once(owner_id, audio_id, query)
         except Exception as exc:  # noqa: BLE001 - reported to the caller
             state.last_error = str(exc)
             raise
@@ -201,7 +246,7 @@ async def resolve(owner_id: int, audio_id: int) -> dict:
         state.cache[key] = (url, time.time() + ttl)
         if len(state.cache) > 500:
             state.cache.pop(next(iter(state.cache)))
-        return {"url": url, "ms": int((time.time() - t0) * 1000), "via": "page"}
+        return {"url": url, "ms": int((time.time() - t0) * 1000), "via": via}
 
 
 @app.on_event("startup")
@@ -250,8 +295,15 @@ async def resolve_ep(body: dict) -> dict:
         audio_id = int(body["audio_id"])
     except (KeyError, TypeError, ValueError):
         raise HTTPException(status_code=422, detail="owner_id and audio_id required")
+    # Name hints for the search phase (tracks the account cannot see).
+    author = str(body.get("author") or "").strip()
+    title = str(body.get("title") or "").strip()
+    if author and title.startswith(author + " — "):
+        query = title
+    else:
+        query = " - ".join(x for x in (author, title) if x)
     try:
-        return await asyncio.wait_for(resolve(owner_id, audio_id), timeout=90)
+        return await asyncio.wait_for(resolve(owner_id, audio_id, query), timeout=90)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="resolve timed out")
     except RuntimeError as exc:
