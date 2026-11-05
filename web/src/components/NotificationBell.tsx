@@ -43,13 +43,16 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
 
   if (collapsed) {
     return (
-      <Tooltip title={badge ? `Notifications — ${unread} unread` : "Notifications"} placement="right" disableInteractive>
-        <IconButton onClick={open} aria-label="Notifications" sx={{ mx: "auto", display: "flex", mb: 0.5 }}>
-          <Badge badgeContent={badge} color="primary">
-            <MsIcon name="notifications" fontSize={22} />
-          </Badge>
-        </IconButton>
-      </Tooltip>
+      <>
+        <Tooltip title={badge ? `Notifications — ${unread} unread` : "Notifications"} placement="right" disableInteractive>
+          <IconButton onClick={open} aria-label="Notifications" sx={{ mx: "auto", display: "flex", mb: 0.5 }}>
+            <Badge badgeContent={badge} color="primary">
+              <MsIcon name="notifications" fontSize={22} />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+        <NotificationsPopover anchor={anchor} onClose={close} items={items} loaded={loaded} />
+      </>
     );
   }
 
