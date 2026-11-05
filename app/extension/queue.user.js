@@ -858,12 +858,17 @@
       try { target.dispatchEvent(new MouseEvent(type, opts)); } catch (e2) { /* older engines */ }
     }
     target.click(); // the click itself, last
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 20; i++) {
       await sleep(250);
+      // Prefer the exact track; otherwise ANY capture fetched after the
+      // click is the stream the player just requested (HLS manifests
+      // carry no ids — the row's DOM meta fills title/artist).
       const pm = row.query.match(/audio(-?\d+)_(\d+)/);
-      const cap = pm
+      const exact = pm
         ? findCapture(Number(pm[1]), Number(pm[2]))
         : vkCaptured.find((x) => x.key === row.key);
+      const fresh = [...vkCaptured].reverse().find((x) => x.ms >= startedAt && x.url);
+      const cap = (exact && exact.url ? exact : null) || fresh;
       if (cap && cap.url) {
         log("VK: ссылка получена за " + Math.round((Date.now() - startedAt) / 100) / 10 + " с");
         return sendQueue({
