@@ -428,55 +428,71 @@
   // back to regex when the shape is unknown. The row's own .audio_row__*
   // nodes carry the visible title/artist.
   function parseAudioRow(el) {
-    const raw = el.getAttribute("data-audio") || "";
     let owner = null;
     let id = null;
     let title = "";
     let artist = "";
     let duration = 0;
     let artwork = null;
-    try {
-      const j = JSON.parse(raw);
-      if (Array.isArray(j)) {
-        // Observed VK layout (m.vk.ru sample):
-        // [audioId, ownerId, "", title, artist, duration, ...]
-        id = Number(j[0]);
-        owner = Number(j[1]);
-        title = typeof j[3] === "string" ? decodeHtml(j[3]) : "";
-        artist = typeof j[4] === "string" ? decodeHtml(j[4]) : "";
-        duration = Number(j[5]) || 0;
-        if (!title || !artist) {
-          const strs = j.filter((x) => typeof x === "string").map(trim).filter(Boolean);
-          title = title || strs.find((s) => !/^https?:/.test(s) && !/^\d{1,2}:\d{2}/.test(s)) || "";
-          artist = artist || strs.filter((s) => s !== title)[0] || "";
+    const raw = el.getAttribute("data-audio") || "";
+    if (raw) {
+      try {
+        const j = JSON.parse(raw);
+        if (Array.isArray(j)) {
+          // Observed VK layout (m.vk.ru sample):
+          // [audioId, ownerId, "", title, artist, duration, ...]
+          id = Number(j[0]);
+          owner = Number(j[1]);
+          title = typeof j[3] === "string" ? decodeHtml(j[3]) : "";
+          artist = typeof j[4] === "string" ? decodeHtml(j[4]) : "";
+          duration = Number(j[5]) || 0;
+          if (!title || !artist) {
+            const strs = j.filter((x) => typeof x === "string").map(trim).filter(Boolean);
+            title = title || strs.find((s) => !/^https?:/.test(s) && !/^\d{1,2}:\d{2}/.test(s)) || "";
+            artist = artist || strs.filter((s) => s !== title)[0] || "";
+          }
+        } else if (j && typeof j === "object") {
+          owner = Number(j.owner_id);
+          id = Number(j.id);
+          title = decodeHtml(trim(j.title));
+          artist = decodeHtml(trim(j.artist || j.performer));
+          duration = Number(j.duration) || 0;
         }
-      } else if (j && typeof j === "object") {
-        owner = Number(j.owner_id);
-        id = Number(j.id);
-        title = decodeHtml(trim(j.title));
-        artist = decodeHtml(trim(j.artist || j.performer));
-        duration = Number(j.duration) || 0;
+      } catch {
+        const mo = raw.match(/"owner_id"\s*:\s*(-?\d+)/) || raw.match(/\[\s*(-?\d+)\s*,\s*(\d+)/);
+        const mi = raw.match(/"id"\s*:\s*(\d+)/) || raw.match(/,\s*(\d{4,})\s*,/);
+        if (mo) owner = Number(mo[1]);
+        if (mi) id = Number(mi[1]);
       }
-    } catch {
-      const mo = raw.match(/"owner_id"\s*:\s*(-?\d+)/) || raw.match(/\[\s*(-?\d+)\s*,\s*(\d+)/);
-      const mi = raw.match(/"id"\s*:\s*(\d+)/) || raw.match(/,\s*(\d{4,})\s*,/);
-      if (mo) owner = Number(mo[1]);
-      if (mi) id = Number(mi[1]);
     }
-    if (!title) {
-      const tn = el.querySelector(".audio_row__title");
-      title = trim(tn && tn.textContent);
+    if (owner == null || id == null || isNaN(owner) || isNaN(id)) {
+      // Desktop vk.ru rows (data-testid="audio-row") carry no data-audio:
+      // the id pair lives in data-audio-id ("-owner_audioId").
+      const m = (el.getAttribute("data-audio-id") || "").match(/^(-?\d+)_(\d+)$/);
+      if (!m) return null;
+      owner = Number(m[1]);
+      id = Number(m[2]);
     }
-    if (!artist) {
-      const an = el.querySelector(".audio_row__performers, .audio_row__performer");
-      artist = trim(an && an.textContent);
+    const tn = el.querySelector(".audio_row__title");
+    if (tn) title = decodeHtml(trim(tn.textContent)) || title;
+    const an = el.querySelector(".audio_row__performers, .audio_row__performer");
+    if (an) artist = decodeHtml(trim(an.textContent)) || artist;
+    if (!title || !artist) {
+      // New vkui rows have hashed classes: the visible text is the title
+      // and artist lines (plus the duration, filtered out).
+      const lines = (el.innerText || el.textContent || "")
+        .split("\n")
+        .map(trim)
+        .filter(Boolean)
+        .filter((s) => !/^([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}$/.test(s));
+      if (!lines.length) return null;
+      title = title || lines[0];
+      artist = artist || lines[1] || "";
     }
-    if (owner == null || id == null || isNaN(owner) || isNaN(id)) return null;
     return { owner_id: owner, id, title, artist, duration, artwork };
   }
-
   function findAudioRowEl(key) {
-    for (const el of document.querySelectorAll("[data-audio]")) {
+    for (const el of document.querySelectorAll('[data-audio], [data-audio-id], [id^="audio_row"]')) {
       const p = parseAudioRow(el);
       if (p && p.owner_id + "_" + p.id === key) return el;
     }
@@ -493,7 +509,7 @@
     let failSample = "";
     let firstParsed = null;
     let firstRaw = "";
-    for (const el of document.querySelectorAll("[data-audio]")) {
+    for (const el of document.querySelectorAll('[data-audio], [data-audio-id], [id^="audio_row"]')) {
       // Hidden rows (player next-up templates, other sections) would
       // otherwise show "from nowhere". getClientRects, NOT offsetParent:
       // offsetParent is null for position:fixed ancestors too, which hid
@@ -792,7 +808,8 @@
     log("VK: запрашиваю ссылку проигрыванием трека " + row.title.slice(0, 50));
     toast("Запрашиваю ссылку: трек заиграет на странице");
     const startedAt = Date.now();
-    el.click(); // native click: VK's own handlers fetch the stream
+    const target = el.querySelector('[data-testid="audiorow-tappable"], [role="button"]') || el;
+    target.click(); // native click: VK's own handlers fetch the stream
     for (let i = 0; i < 16; i++) {
       await sleep(250);
       const cap = vkCaptured.find((x) => x.key === row.key);
