@@ -924,8 +924,9 @@ async def test_vk_resolve_via_browser_sidecar(
     music._vk_token = no_token  # type: ignore[method-assign]
     object.__setattr__(music.config, "vk_resolver_url", "http://vk-resolver:8100")
 
-    async def fake_browser(owner_id: int, audio_id: int) -> str:
+    async def fake_browser(owner_id: int, audio_id: int, title: str = "", author: str = "") -> str:
         assert (owner_id, audio_id) == (1, 2)
+        assert title == "Song" and author == "Artist"
         return "https://ok108-2.vkuser.net/?expires=9999999999999&sig=x"
 
     monkeypatch.setattr(music, "_resolve_via_browser", fake_browser)  # noqa: SLF001
@@ -956,7 +957,7 @@ async def test_vk_resolve_sidecar_failure_falls_back_to_search(
     music._vk_token = no_token  # type: ignore[method-assign]
     object.__setattr__(music.config, "vk_resolver_url", "http://vk-resolver:8100")
 
-    async def dead_sidecar(owner_id: int, audio_id: int) -> None:
+    async def dead_sidecar(owner_id: int, audio_id: int, title: str = "", author: str = "") -> None:
         return None
 
     monkeypatch.setattr(music, "_resolve_via_browser", dead_sidecar)  # noqa: SLF001
