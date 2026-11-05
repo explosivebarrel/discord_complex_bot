@@ -312,7 +312,7 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings, onOpenAuroraSettings 
               onClose();
               onOpenGlassSettings();
             }}
-            sx={{ "& > span": { transform: "translateX(5px)" } }}
+            sx={{ transform: "translateX(5px)" }}
           >
             <IconTune fontSize={18} />
           </IconButton>
@@ -328,7 +328,7 @@ function ThemeMenu({ anchor, onClose, onOpenGlassSettings, onOpenAuroraSettings 
               onClose();
               onOpenAuroraSettings();
             }}
-            sx={{ "& > span": { transform: "translateX(5px)" } }}
+            sx={{ transform: "translateX(5px)" }}
           >
             <IconTune fontSize={18} />
           </IconButton>
