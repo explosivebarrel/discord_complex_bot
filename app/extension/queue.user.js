@@ -509,6 +509,7 @@
     if (tn) title = decodeHtml(trim(tn.textContent)) || title;
     const an = el.querySelector(".audio_row__performers, .audio_row__performer");
     if (an) artist = decodeHtml(trim(an.textContent)) || artist;
+    const attr = raw || el.getAttribute("data-audio-id") || "";
     if (!title || !artist) {
       // New vkui rows have hashed classes: the visible text is the title
       // and artist lines (plus the duration, filtered out).
@@ -521,7 +522,7 @@
       title = title || lines[0];
       artist = artist || lines[1] || "";
     }
-    return { owner_id: owner, id, title, artist, duration, artwork };
+    return { owner_id: owner, id, title, artist, duration, artwork, attr };
   }
   function findAudioRowEl(key) {
     for (const el of document.querySelectorAll('[data-audio], [data-audio-id], [id^="audio_row"]')) {
@@ -579,6 +580,7 @@
         length_ms: ((cap && cap.duration) || p.duration || 0) * 1000 || undefined,
         artwork: (cap && cap.artwork) || p.artwork || undefined,
         stream_url: cap ? cap.url : undefined,
+        attr: p.attr,
       });
     }
     if (parseFails) log(`VK: ${parseFails} строк не разобрано, пример: ${failSample}`, "warn");
@@ -840,8 +842,18 @@
     log("VK: запрашиваю ссылку проигрыванием трека " + row.title.slice(0, 50));
     toast("Запрашиваю ссылку: трек заиграет на странице");
     const startedAt = Date.now();
+    // VK's player may listen on the tappable, the row, or via pointer
+    // events — poke all of the above with a realistic event sequence.
     const target = el.querySelector('[data-testid="audiorow-tappable"], [role="button"]') || el;
-    target.click(); // native click: VK's own handlers fetch the stream
+    const r2 = target.getBoundingClientRect();
+    const opts = {
+      bubbles: true, cancelable: true,
+      clientX: Math.round(r2.left + r2.width / 2), clientY: Math.round(r2.top + r2.height / 2),
+    };
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+      try { target.dispatchEvent(new MouseEvent(type, opts)); } catch (e2) { /* older engines */ }
+    }
+    target.click(); // the click itself, last
     for (let i = 0; i < 16; i++) {
       await sleep(250);
       const pm = row.query.match(/audio(-?\d+)_(\d+)/);
@@ -861,10 +873,17 @@
         });
       }
     }
+    // Diagnostics for the "no capture matched" case: the row's raw id
+    // attribute and every capture key, so the mismatch is visible.
+    log(
+      "VK: capture не совпал — row.attr=" + JSON.stringify(row.attr || "") +
+        " | capture keys: " + vkCaptured.map((x) => x.key).slice(0, 10).join(", "),
+      "warn",
+    );
     const mobile = /m\.vk\.(ru|com)/.test(location.hostname);
     const m = mobile
       ? "VK не отдал ссылку: мобильный VK часто отдаёт HLS (бот его не играет) — добавь трек с десктопной vk.ru"
-      : "VK не отдал ссылку — включи трек вручную и попробуй ещё раз";
+      : "VK не отдал ссылку — включи трек вручную и попробуй ещё раз (лог: вкладка Лог)";
     log(m, "warn");
     toast(m, true);
     return false;
@@ -1001,6 +1020,7 @@
             undefined,
           artwork: (cap && cap.artwork) || p.artwork || undefined,
           stream_url: cap ? cap.url : undefined,
+          attr: p.attr,
         };
       },
     },
