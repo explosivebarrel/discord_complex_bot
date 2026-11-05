@@ -14,7 +14,9 @@ session the future server sidecar will reuse; never commit it.
 import re
 import sys
 import time
+from collections import Counter
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from playwright.sync_api import Page, sync_playwright
 
@@ -52,9 +54,41 @@ def goto_track(page: Page, owner: str, aid: str, timeout_s: float = 30.0) -> Non
     print(f"    (навигация не устоялась, текущий URL: {page.url})")
 
 
-def capture_one(page: Page, captured: list[tuple[float, str]], owner: str, aid: str,
+def dump_media_state(page: Page) -> None:
+    """Audio elements say where the bytes flow: a blob: src means MSE (the
+    real URL was fetched somewhere we must observe)."""
+    try:
+        media = page.evaluate(
+            """() => [...document.querySelectorAll('audio,video')].map((a) => ({
+                tag: a.tagName.toLowerCase(),
+                src: (a.src || a.currentSrc || '').slice(0, 140),
+                t: a.currentTime, paused: a.paused,
+            }))"""
+        )
+        workers = page.workers
+        print(f"    media elements: {media or 'нет'}")
+        print(f"    web workers на странице: {len(workers)}")
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never kill the run
+        print(f"    (не удалось опросить media: {exc})")
+
+
+def dump_traffic(all_reqs: list[tuple[float, str]]) -> None:
+    hosts = Counter(urlsplit(u).netloc for _, u in all_reqs)
+    print(f"    всего запросов за окно: {len(all_reqs)}")
+    for host, n in hosts.most_common(12):
+        print(f"      {n:4d}  {host}")
+    hits = [u for _, u in all_reqs if re.search(r"audio|m3u8|mp3|stream|media|extra", u, re.I)]
+    for u in hits[:10]:
+        print(f"      >>> {u[:170]}")
+    if not hits:
+        print("      >>> ни одного URL с аудио-подсказками")
+
+
+def capture_one(page: Page, captured: list[tuple[float, str]],
+                all_reqs: list[tuple[float, str]], owner: str, aid: str,
                 wait_s: float) -> None:
     before = len(captured)
+    traffic_before = len(all_reqs)
     t0 = time.time()
     goto_track(page, owner, aid)
     print(f"    страница: {page.url[:80]}")
@@ -79,11 +113,14 @@ def capture_one(page: Page, captured: list[tuple[float, str]], owner: str, aid: 
         print(f"    ПОЙМАНО за {got[0] - t0:.1f} с: {got[1][:160]}")
         if ".m3u8" in got[1].lower():
             print("    (HLS-манифест — lavaplayer играет его нативно)")
-    else:
-        print(f"    НЕ ПЕРЕХВАЧЕНО за {wait_s} с (CDN-запросов всего: {len(captured)})")
-        shot = Path(__file__).parent / "spike_fail.png"
-        page.screenshot(path=str(shot), full_page=False)
-        print(f"    скриншот состояния: {shot}")
+        return
+
+    print(f"    НЕ ПЕРЕХВАЧЕНО за {wait_s} с — трафик за окно:")
+    dump_traffic(all_reqs[traffic_before:])
+    dump_media_state(page)
+    shot = Path(__file__).parent / "spike_fail.png"
+    page.screenshot(path=str(shot), full_page=False)
+    print(f"    скриншот состояния: {shot}")
 
 
 def main() -> None:
@@ -110,19 +147,25 @@ def main() -> None:
             ">>> дождись загрузки раздела музыки и нажми Enter здесь... "
         )
 
-        # Context-level listener: every request of every frame is visible.
         captured: list[tuple[float, str]] = []
-        ctx.on("request", lambda req: captured.append((time.time(), req.url))
-               if is_stream_url(req.url) else None)
+        all_reqs: list[tuple[float, str]] = []
+        ctx.on("request", lambda req: all_reqs.append((time.time(), req.url))
+               or (captured.append((time.time(), req.url)) if is_stream_url(req.url) else None))
+        # CDP sees the same page from the protocol side; a mismatch between
+        # the two channels means the request bypasses Playwright's view.
+        cdp = ctx.new_cdp_session(page)
+        cdp.send("Network.enable")
+        cdp.on("Network.requestWillBeSent",
+               lambda ev: all_reqs.append((time.time(), ev["request"]["url"])))
 
         print("\n--- первый проход (холодная страница):")
         for owner, aid in targets:
-            capture_one(page, captured, owner, aid, wait_s=20)
+            capture_one(page, captured, all_reqs, owner, aid, wait_s=20)
 
         if len(targets) > 1:
             print("\n--- повторный проход (тёплый браузер):")
             for owner, aid in targets:
-                capture_one(page, captured, owner, aid, wait_s=15)
+                capture_one(page, captured, all_reqs, owner, aid, wait_s=15)
 
         input("\n>>> Готово. Enter — закрыть браузер... ")
         ctx.close()
