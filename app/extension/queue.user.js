@@ -45,9 +45,20 @@
   const getGuild = () => GM_getValue(LS.guild, "");
   const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
 
+  // In-script action journal: the hover-panel diagnostics dumps it, so a
+  // failed attempt can be traced without any external tooling.
+  const trace = [];
+  const log = (s) => {
+    const line = new Date().toLocaleTimeString() + " " + s;
+    trace.push(line);
+    if (trace.length > 40) trace.shift();
+    return line;
+  };
+
   // --- network -----------------------------------------------------------
 
   function api(method, path, body) {
+    log("запрос " + method + " " + path);
     return new Promise((resolve, reject) => {
       GM.xmlHttpRequest({
         method,
@@ -59,6 +70,7 @@
         data: body ? JSON.stringify(body) : undefined,
         timeout: 20000,
         onload: (r) => {
+          log("ответ " + r.status + " на " + path);
           let data = {};
           try {
             data = JSON.parse(r.responseText);
@@ -68,13 +80,15 @@
           if (r.status >= 200 && r.status < 300) resolve(data);
           else reject(new Error(data.detail || "HTTP " + r.status));
         },
-        onerror: () =>
+        onerror: (r) => {
+          log("СЕТЕВАЯ ОШИБКА на " + path + ": " + (r.error || "?") + " status=" + r.status);
           reject(
             new Error(
               "Бот недоступен: " + getServer() +
               ". Если Tampermonkey спрашивал про доступ к домену — ответьте «разрешить всегда» (меню Tampermonkey → настройки → этому скрипту → домены).",
             ),
-          ),
+          );
+        },
         ontimeout: () => reject(new Error("Таймаут запроса к боту")),
       });
     });
@@ -194,6 +208,20 @@
   // Each returns { tracks, collections, artists } — the content actually
   // visible on the page, for the hover panel.
 
+  function ytCardTitle(a) {
+    // The title sits in a #video-title node inside the video card; the
+    // anchor around the thumbnail only wraps the duration badge, so its
+    // text is "3:53" — exactly why the panel showed durations.
+    const scope =
+      a.closest("ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer, yt-lockup-view-model, ytm-rich-item-renderer, ytd-compact-video-renderer") ||
+      a.parentElement ||
+      a;
+    const node = scope.querySelector("#video-title, h3 a, h3 span, a[title]");
+    const title = trim(node && (node.getAttribute("title") || node.textContent));
+    if (!title || /^([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}$/.test(title)) return "";
+    return title;
+  }
+
   function scrapeYouTube() {
     const tracks = [];
     const seen = new Set();
@@ -201,7 +229,7 @@
       const href = a.getAttribute("href") || "";
       const m = href.match(/[?&]v=([\w-]{6,})/);
       if (!m || seen.has(m[1])) continue;
-      const title = trim(a.getAttribute("title") || a.textContent);
+      const title = ytCardTitle(a);
       if (!title) continue;
       seen.add(m[1]);
       tracks.push({ query: "https://www.youtube.com/watch?v=" + m[1], source: "yt", title: title.slice(0, 140) });
@@ -405,6 +433,7 @@
   // --- queueing -----------------------------------------------------------
 
   async function sendQueue(body) {
+    log("sendQueue: " + body.source + " " + (body.title || body.query || "").slice(0, 60));
     if (!(await requireConfig())) return false;
     setPill("busy");
     try {
@@ -593,6 +622,7 @@
       for (const t of page.tracks) {
         body.appendChild(
           rowEl(t.title || t.query, t.source ? t.source.toUpperCase() : undefined, () => {
+            log("клик по треку из панели: " + (t.title || t.query).slice(0, 50));
             panel.classList.remove("open");
             sendQueue({
               query: t.query,
@@ -744,7 +774,9 @@
       });
     });
     L.push("GET /api/my/guilds → " + result);
-    L.push("Если всё «ок», а трек не добавляется — пришли этот отчёт целиком.");
+    L.push("--- журнал действий (свежее внизу) ---");
+    if (trace.length) L.push(trace.join("\n")); else L.push("пусто — попыток с момента загрузки страницы не было");
+    L.push("Пришли этот отчёт целиком.");
     alert(L.join("\n"));
   }
   GM_registerMenuCommand("Discord Queue: настройки", configure);
