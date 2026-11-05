@@ -943,7 +943,11 @@ class MusicService:
             try:
                 token, ua = await self._vk_token()
             except MusicServiceError:
-                pass  # no working token — the search fallback below plays instead
+                # No working token: the search fallback below plays instead.
+                logger.warning(
+                    "VK resolve: no VK Music token — searching a substitute for %r",
+                    item.title,
+                )
             else:
                 # A signed URL can die between fetch and load; refetch once.
                 for attempt in range(2):
@@ -1025,7 +1029,8 @@ class MusicService:
         import datetime as _dt
 
         self.last_error = {
-            "message": message[:500],
+            # payload.exception arrives as a dict — str() it before slicing.
+            "message": str(message)[:500],
             "context": context or {},
             "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         }
