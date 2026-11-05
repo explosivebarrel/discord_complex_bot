@@ -107,6 +107,12 @@ async def extension_queue(
     """The userscript's enqueue endpoint (API key auth). Same semantics as
     the panel one, except playlists: the script has no preview UI, so a
     playlist URL queues the whole thing right away (the panel's "Add all")."""
+    # One log line per attempt: the userscript's requests decide whether a
+    # failure is client-side (the line is absent) or server-side (present).
+    logger.info(
+        "EXT queue: guild=%s source=%s q=%r stream=%s user=%s",
+        guild_id, body.source, body.query[:80], bool(body.stream_url), user.discord_id,
+    )
     await _ensure_voice(guild_id, user, music, db, bot)
     if not body.encoded and music.looks_like_playlist(body.query, body.source):
         try:

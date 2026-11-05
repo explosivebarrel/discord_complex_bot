@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import wavelink
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -32,10 +33,9 @@ from app.bot.client import ComplexBot
 from app.core.config import load_config, setup_logging, validate_config
 from app.core.db import Database
 from app.core.db.models import utcnow
-from app.core.services.ws_hub import get_hub
 from app.core.services import availability
-import wavelink
 from app.core.services.music import MusicService
+from app.core.services.ws_hub import get_hub
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,6 @@ async def _reconnect_websocket(node: Any) -> None:
     socket and connect anew. connect() retries with backoff until the
     node answers.
     """
-    import wavelink
 
     websocket = node._websocket
     if websocket.keep_alive_task:
@@ -293,10 +292,6 @@ def main() -> None:
         host="0.0.0.0",
         port=8000,
         log_level=config.log_level.lower(),
-        # Every incoming request hits docker logs: the userscript's requests
-        # are the ones that decide whether a failure is client- or
-        # server-side.
-        access_log=True,
     )
 
 
