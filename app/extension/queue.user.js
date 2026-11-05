@@ -360,8 +360,12 @@
       XHR.prototype.send = function () {
         this.addEventListener("load", () => {
           try {
-            if (/audio|method\/|al_audio/.test(String(this.__dcbotUrl || this.responseURL || ""))) {
-              vkScanText(this.responseText);
+            // Scan every XHR response: the desktop player fetches streams
+            // through endpoints whose URLs carry no "audio" hint, so a URL
+            // filter silently missed them.
+            const text = String(this.responseText || "");
+            if (text.length <= 3_000_000 && !text.startsWith("<")) {
+              vkScanText(text);
             }
           } catch {}
         });
