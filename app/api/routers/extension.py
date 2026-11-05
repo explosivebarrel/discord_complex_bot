@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from app.core.services.music import MusicService
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "extension" / "queue.user.js"
-EXTENSION_VERSION = "1.0.6"
+EXTENSION_VERSION = "1.0.7"
 
 router = APIRouter(tags=["extension"])
 

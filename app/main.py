@@ -293,6 +293,10 @@ def main() -> None:
         host="0.0.0.0",
         port=8000,
         log_level=config.log_level.lower(),
+        # Every incoming request hits docker logs: the userscript's requests
+        # are the ones that decide whether a failure is client- or
+        # server-side.
+        access_log=True,
     )
 
 

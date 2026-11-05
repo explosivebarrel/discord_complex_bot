@@ -18,6 +18,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_deleteValue
 // @grant        unsafeWindow
+// @grant        GM_info
 // @connect      *
 // @connect      localhost
 // @run-at       document-idle
@@ -707,6 +708,46 @@
       .catch((e) => toast(String(e.message || e), true));
   }
 
+  async function diagnostics() {
+    const L = [];
+    L.push("=== Discord Queue: диагностика ===");
+    L.push("Скрипт: v" + (typeof GM_info !== "undefined" && GM_info.script ? GM_info.script.version : "?") +
+      " (Tampermonkey " + (typeof GM_info !== "undefined" ? GM_info.version : "?") + ")");
+    L.push("Сервер: " + getServer());
+    L.push("Ключ: " + (getKey() ? getKey().slice(0, 8) + "… (" + getKey().length + " симв.)" : "НЕ ЗАДАН"));
+    L.push("Гильдия: " + (getGuild() || "не выбрана") +
+      (GM_getValue(LS.guildName, "") ? " (" + GM_getValue(LS.guildName, "") + ")" : ""));
+    L.push("Страница: " + location.href);
+    if (VK_HOST.test(location.hostname)) L.push("VK перехват: " + vkCaptured.length + " треков, " + vkCollections.length + " коллекций");
+    const result = await new Promise((resolve) => {
+      GM.xmlHttpRequest({
+        method: "GET",
+        url: getServer() + "/api/my/guilds",
+        headers: { Authorization: "Bearer " + getKey() },
+        timeout: 15000,
+        onload: (r) => {
+          let names = "";
+          try {
+            names = JSON.parse(r.responseText).map((x) => x.name).join(", ");
+          } catch {
+            names = r.responseText.slice(0, 120);
+          }
+          resolve("HTTP " + r.status + (names ? "; сервера бота: " + names : "; " + names));
+        },
+        onerror: (r) =>
+          resolve(
+            "СЕТЕВАЯ ОШИБКА (запрос не покинул браузер): status=" + r.status +
+            " error=" + (r.error || "?") +
+            " → Tampermonkey блокирует домен. Меню Tampermonkey → настройки → этот скрипт → раздел доменов: убери запреты на адрес сервера, либо удали скрипт и поставь заново со страницы /extension.",
+          ),
+        ontimeout: () => resolve("ТАЙМАУТ запроса (15 c)"),
+      });
+    });
+    L.push("GET /api/my/guilds → " + result);
+    L.push("Если всё «ок», а трек не добавляется — пришли этот отчёт целиком.");
+    alert(L.join("\n"));
+  }
   GM_registerMenuCommand("Discord Queue: настройки", configure);
   GM_registerMenuCommand("Discord Queue: проверить связь", checkConnection);
+  GM_registerMenuCommand("Discord Queue: диагностика", diagnostics);
 })();
