@@ -907,6 +907,69 @@ async def test_vk_resolve_without_token_falls_back_to_search(
     assert track._author == "Artist"  # noqa: SLF001
 
 
+async def test_vk_resolve_via_browser_sidecar(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No token + sidecar URL -> the browser's stream is loaded and the
+    queue metadata is restored on top of the raw stream."""
+    item = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="vk",
+        pending_url="https://vk.com/audio1_2", title="Song", author="Artist",
+        artwork="art.png",
+    )
+
+    async def no_token() -> tuple[str, str]:
+        raise MusicServiceError("VK Music is not configured. Set the access token in Settings.")
+
+    music._vk_token = no_token  # type: ignore[method-assign]
+    object.__setattr__(music.config, "vk_resolver_url", "http://vk-resolver:8100")
+
+    async def fake_browser(owner_id: int, audio_id: int) -> str:
+        assert (owner_id, audio_id) == (1, 2)
+        return "https://ok108-2.vkuser.net/?expires=9999999999999&sig=x"
+
+    monkeypatch.setattr(music, "_resolve_via_browser", fake_browser)  # noqa: SLF001
+
+    async def fake_load(url: str):
+        assert "vkuser" in url
+        return _StubPlayable()
+
+    monkeypatch.setattr(music, "_load_stream", fake_load)  # noqa: SLF001
+
+    track = await music._resolve_item(item)  # noqa: SLF001
+    assert track._title == "Song"  # noqa: SLF001
+    assert track._author == "Artist"  # noqa: SLF001
+    assert track._artwork == "art.png"  # noqa: SLF001
+
+
+async def test_vk_resolve_sidecar_failure_falls_back_to_search(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="vk",
+        pending_url="https://vk.com/audio1_2", title="Song", author="Artist",
+    )
+
+    async def no_token() -> tuple[str, str]:
+        raise MusicServiceError("VK Music is not configured. Set the access token in Settings.")
+
+    music._vk_token = no_token  # type: ignore[method-assign]
+    object.__setattr__(music.config, "vk_resolver_url", "http://vk-resolver:8100")
+
+    async def dead_sidecar(owner_id: int, audio_id: int) -> None:
+        return None
+
+    monkeypatch.setattr(music, "_resolve_via_browser", dead_sidecar)  # noqa: SLF001
+
+    async def fake_search(query: str, source: str):
+        return [_StubPlayable()]
+
+    monkeypatch.setattr(music, "_search_with_retry", fake_search)  # noqa: SLF001
+
+    track = await music._resolve_item(item)  # noqa: SLF001
+    assert track._title == "Song"  # noqa: SLF001
+
+
 async def test_vk_open_playlist_stores_deep_links(
     music: MusicService, monkeypatch: pytest.MonkeyPatch
 ) -> None:

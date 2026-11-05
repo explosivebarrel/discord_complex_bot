@@ -36,6 +36,8 @@ services:
       # Lavalink fetches local library files from the app service.
       INTERNAL_BASE_URL: http://app:8000
       MUSIC_LIBRARY_DIR: /data/music
+      # The logged-in browser that hands out VK stream URLs (see vkresolver/).
+      VK_RESOLVER_URL: http://vk-resolver:8100
     volumes:
       - bot-data:/data
       # Local music library; drop files into data/music on the host.
@@ -45,5 +47,17 @@ services:
     ports:
       - "8000:8000"
 
+  vk-resolver:
+    build: ./vkresolver
+    container_name: dcbot-vk-resolver
+    restart: unless-stopped
+    volumes:
+      - vk-profile:/data
+      # Exported on the admin's machine by tools/vk_spike/export_session.py.
+      - ./data/vk_session.json:/data/vk_session.json:ro
+    ports:
+      - "127.0.0.1:8100:8100"
+
 volumes:
   bot-data:
+  vk-profile:

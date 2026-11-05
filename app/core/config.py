@@ -37,6 +37,8 @@ class Config:
     max_upload_mb: int = 50
     internal_base_url: str = "http://localhost:8000"
     bot_name: str = "discord_complex_bot"
+    # The logged-in browser sidecar (vkresolver/): empty = disabled.
+    vk_resolver_url: str = ""
 
 
 def load_config() -> Config:
@@ -67,6 +69,7 @@ def load_config() -> Config:
         lavalink_secure=os.getenv("LAVALINK_SECURE", "false").lower() == "true",
         yandex_music_token=os.getenv("YANDEX_MUSIC_TOKEN", ""),
         vk_music_token=os.getenv("VK_MUSIC_TOKEN", ""),
+        vk_resolver_url=os.getenv("VK_RESOLVER_URL", ""),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         music_library_dir=Path(os.getenv("MUSIC_LIBRARY_DIR", str(data_dir_value / "music"))),
         max_upload_mb=int(os.getenv("MAX_UPLOAD_MB", "50")),

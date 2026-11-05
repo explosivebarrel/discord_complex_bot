@@ -943,9 +943,10 @@ class MusicService:
             try:
                 token, ua = await self._vk_token()
             except MusicServiceError:
-                # No working token: the search fallback below plays instead.
+                # No working token: the browser sidecar or the search
+                # fallback below plays instead.
                 logger.warning(
-                    "VK resolve: no VK Music token — searching a substitute for %r",
+                    "VK resolve: no VK Music token — trying the browser sidecar for %r",
                     item.title,
                 )
             else:
@@ -954,13 +955,21 @@ class MusicService:
                     try:
                         stream = await vk_music.stream_url(token, *parsed, ua=ua)
                     except VkMusicError as exc:
-                        logger.warning("VK stream resolve failed, falling back to search: %s", exc)
+                        logger.warning("VK stream resolve failed, falling back: %s", exc)
                         break
                     track = await self._load_stream(stream)
                     if track is not None:
                         break
                     if attempt + 1 < 2:
                         await asyncio.sleep(1.0)
+            if track is None and self.config.vk_resolver_url:
+                # The sidecar's logged-in browser plays the track and hands
+                # out the signed stream URL — no VK API involved.
+                stream = await self._resolve_via_browser(*parsed)
+                if stream:
+                    track = await self._load_stream(stream)
+                    if track is not None:
+                        logger.info("VK resolve via browser sidecar (%s s)", parsed)
             if track is not None:
                 track._title = item.title or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
                 track._author = item.author or track.author  # noqa: SLF001
@@ -1001,6 +1010,27 @@ class MusicService:
             if item.length:
                 track._length = item.length  # noqa: SLF001
         return track
+
+    async def _resolve_via_browser(self, owner_id: int, audio_id: int) -> str | None:
+        """Ask the vkresolver sidecar for a signed CDN URL (vkresolver/server.py).
+        Returns None on any failure — the search fallback plays instead."""
+        import httpx
+
+        base = self.config.vk_resolver_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                resp = await client.post(
+                    f"{base}/resolve",
+                    json={"owner_id": owner_id, "audio_id": audio_id},
+                )
+            if resp.status_code == 200:
+                return resp.json().get("url")
+            logger.warning(
+                "VK resolver %s: %s %s", owner_id, resp.status_code, resp.text[:200]
+            )
+        except Exception:  # noqa: BLE001 - the sidecar is optional
+            logger.exception("VK resolver unreachable")
+        return None
 
     async def _load_stream(self, url: str) -> wavelink.Playable | None:
         """Load a direct URL through Lavalink; None on any load failure."""
