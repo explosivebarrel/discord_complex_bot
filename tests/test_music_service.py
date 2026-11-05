@@ -750,8 +750,8 @@ async def test_restore_rebinds_lazy_marker_to_fresh_session(music: MusicService,
 # --- VK Music ---
 
 def _vk_token_stub(music: MusicService) -> None:
-    async def token() -> str:
-        return "vk-test-token"
+    async def token() -> tuple[str, str]:
+        return "vk-test-token", ""
 
     music._vk_token = token  # type: ignore[method-assign]
 
@@ -772,7 +772,7 @@ async def test_vk_enqueue_plain_text_takes_first_search_hit(
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
     _vk_token_stub(music)
 
-    async def fake_search(_token: str, _query: str, _limit: int):
+    async def fake_search(_token: str, _query: str, _limit: int, **_kwargs: object):
         return [
             {
                 "title": "Song", "author": "Artist",
@@ -803,7 +803,7 @@ async def test_vk_enqueue_track_url_reads_meta_from_api(
     music.get_player = lambda _gid: player  # type: ignore[method-assign]
     _vk_token_stub(music)
 
-    async def fake_track(_token: str, owner_id: int, audio_id: int):
+    async def fake_track(_token: str, owner_id: int, audio_id: int, **_kwargs: object):
         assert (owner_id, audio_id) == (1, 2)
         return {"owner_id": 1, "id": 2, "artist": "Artist", "title": "Song", "duration": 30}
 
@@ -829,7 +829,7 @@ async def test_vk_resolve_item_loads_a_fresh_stream(
     )
     _vk_token_stub(music)
 
-    async def fake_stream(_token: str, owner_id: int, audio_id: int):
+    async def fake_stream(_token: str, owner_id: int, audio_id: int, **_kwargs: object):
         return "https://cdn.vkuser.net/song.mp3"
 
     async def fake_load(url: str):
@@ -854,7 +854,7 @@ async def test_vk_resolve_rejects_hls(music: MusicService, monkeypatch: pytest.M
     )
     _vk_token_stub(music)
 
-    async def hls_stream(_token: str, _owner: int, _audio: int):
+    async def hls_stream(_token: str, _owner: int, _audio: int, **_kwargs: object):
         raise vk_music.VkMusicError("VK streams this track over HLS, which the player cannot play.")
 
     monkeypatch.setattr(vk_music, "stream_url", hls_stream)
@@ -868,7 +868,7 @@ async def test_vk_open_playlist_stores_deep_links(
 ) -> None:
     _vk_token_stub(music)
 
-    async def fake_playlist(_token: str, owner_id: int, playlist_id: int):
+    async def fake_playlist(_token: str, owner_id: int, playlist_id: int, **_kwargs: object):
         assert (owner_id, playlist_id) == (123, 45)
         entry = {
             "title": "t", "author": "a", "url": "https://vk.com/audio1_1",

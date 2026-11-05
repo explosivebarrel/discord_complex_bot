@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 from typing import Any
 
@@ -33,6 +34,15 @@ VK_OAUTH_URL = (
     + "&display=mobile&response_type=token&scope=audio"
     + "&redirect_uri=https://oauth.vk.com/blank.html&v=" + VK_API_VERSION
 )
+# Direct auth as the official Android client: a password-grant token that
+# looks exactly like the official app's (antifraud tolerates it far better
+# than third-party clients, and the flow needs no Google checkin).
+VK_OFFICIAL_UA = (
+    "VKAndroidApp/5.52-4543 (Android 5.1.1; SDK 22; x86_64; unknown Android"
+    " SDK built for x86_64; en; 320x240)"
+)
+VK_OFFICIAL_CLIENT_ID = "2274003"
+VK_OFFICIAL_CLIENT_SECRET = "hHbZxrka2uZ6jB1inYsH"
 # Signed CDN URLs have a limited lifetime, so only the track deep link is
 # stored; the stream URL is fetched fresh right before every play.
 PLAYLIST_CAP = 1000
@@ -54,6 +64,46 @@ _AUDIOS_RE = re.compile(
 
 class VkMusicError(Exception):
     pass
+
+
+class VkAuthError(Exception):
+    """Direct auth failure. needs_code=True means VK sent a 2FA challenge:
+    retry with the SMS code."""
+
+    def __init__(self, message: str, needs_code: bool = False) -> None:
+        super().__init__(message)
+        self.needs_code = needs_code
+
+
+async def direct_auth(login: str, password: str, code: str | None = None) -> str:
+    """Password-grant token of the official Android client (2FA-aware)."""
+    params: dict[str, Any] = {
+        "grant_type": "password",
+        "client_id": VK_OFFICIAL_CLIENT_ID,
+        "client_secret": VK_OFFICIAL_CLIENT_SECRET,
+        "username": login,
+        "password": password,
+        "v": "5.116",
+        "lang": "en",
+        "scope": "all",
+        "device_id": f"{random.getrandbits(64):016x}",
+    }
+    if code:
+        params.update({"2fa_supported": 1, "force_sms": 1, "code": code})
+    try:
+        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": VK_OFFICIAL_UA}) as client:
+            resp = await client.get("https://oauth.vk.com/token", params=params)
+    except httpx.HTTPError as exc:
+        raise VkAuthError(f"VK is unreachable: {exc}") from exc
+    data = resp.json()
+    if "access_token" in data:
+        return str(data["access_token"])
+    if data.get("error") == "need_validation":
+        raise VkAuthError(
+            "VK sent a 2FA challenge — enter the code it sent you and try again.", needs_code=True
+        )
+    desc = data.get("error_description") or data.get("error") or "authorization failed"
+    raise VkAuthError(f"VK rejected the credentials: {desc}")
 
 
 def parse_track_url(url: str) -> tuple[int, int] | None:
@@ -79,7 +129,7 @@ def is_vk_host(url: str) -> bool:
     return host in ("vk.com", "vk.ru", "vkontakte.ru", "music.vk.com", "music.vk.ru")
 
 
-async def vk_call(token: str, method: str, **params: Any) -> Any:
+async def vk_call(token: str, method: str, ua: str = "", **params: Any) -> Any:
     global _vk_last_call
     params["access_token"] = token
     params["v"] = VK_API_VERSION
@@ -88,8 +138,9 @@ async def vk_call(token: str, method: str, **params: Any) -> Any:
         if wait > 0:
             await asyncio.sleep(wait)
         _vk_last_call = asyncio.get_running_loop().time()
+    headers = {"User-Agent": ua} if ua else {}
     try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
+        async with httpx.AsyncClient(timeout=12.0, headers=headers) as client:
             resp = await client.get(VK_API_URL + method, params=params)
     except httpx.HTTPError as exc:
         raise VkMusicError(f"VK is unreachable: {exc}") from exc
@@ -146,27 +197,27 @@ def track_row(item: dict[str, Any]) -> dict[str, Any]:
 
 
 async def search(
-    token: str, query: str, limit: int = 10, performer_only: bool = False
+    token: str, query: str, limit: int = 10, performer_only: bool = False, ua: str = ""
 ) -> list[dict[str, Any]]:
     params: dict[str, Any] = {"q": query, "count": min(max(limit, 1), 100)}
     if performer_only:
         params["performer_only"] = 1
-    response = await vk_call(token, "audio.search", **params)
+    response = await vk_call(token, "audio.search", ua=ua, **params)
     items = response.get("items") if isinstance(response, dict) else (response or [])
     return [track_row(item) for item in (items or [])[:limit]]
 
 
-async def track(token: str, owner_id: int, audio_id: int) -> dict[str, Any]:
-    response = await vk_call(token, "audio.getById", audios=f"{owner_id}_{audio_id}")
+async def track(token: str, owner_id: int, audio_id: int, ua: str = "") -> dict[str, Any]:
+    response = await vk_call(token, "audio.getById", ua=ua, audios=f"{owner_id}_{audio_id}")
     items = response if isinstance(response, list) else (response or {}).get("items") or []
     if not items:
         raise VkMusicError("VK does not know this track (deleted or restricted).")
     return items[0]
 
 
-async def stream_url(token: str, owner_id: int, audio_id: int) -> str:
+async def stream_url(token: str, owner_id: int, audio_id: int, ua: str = "") -> str:
     """Fresh signed CDN URL for one track. HLS-only tracks are rejected."""
-    item = await track(token, owner_id, audio_id)
+    item = await track(token, owner_id, audio_id, ua=ua)
     url = item.get("url") or ""
     if not url:
         raise VkMusicError("VK gave no stream URL for this track (it may be restricted).")
@@ -175,13 +226,13 @@ async def stream_url(token: str, owner_id: int, audio_id: int) -> str:
     return url
 
 
-async def _paged_audios(token: str, **params: Any) -> list[dict[str, Any]]:
+async def _paged_audios(token: str, ua: str = "", **params: Any) -> list[dict[str, Any]]:
     """audio.get with paging; returns at most PLAYLIST_CAP items."""
     collected: list[dict[str, Any]] = []
     offset = 0
     total: int | None = None
     while True:
-        response = await vk_call(token, "audio.get", count=_PAGE_SIZE, offset=offset, **params)
+        response = await vk_call(token, "audio.get", ua=ua, count=_PAGE_SIZE, offset=offset, **params)
         response = response if isinstance(response, dict) else {"items": response or []}
         items = response.get("items") or []
         total = total if total is not None else int(response.get("count") or 0)
@@ -203,17 +254,19 @@ def _entry(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def playlist(token: str, owner_id: int, playlist_id: int) -> tuple[str, list[dict[str, Any]]]:
-    meta = await vk_call(token, "audio.getPlaylistById", owner_id=owner_id, playlist_id=playlist_id)
+async def playlist(
+    token: str, owner_id: int, playlist_id: int, ua: str = ""
+) -> tuple[str, list[dict[str, Any]]]:
+    meta = await vk_call(token, "audio.getPlaylistById", ua=ua, owner_id=owner_id, playlist_id=playlist_id)
     if isinstance(meta, list):
         meta = meta[0] if meta else {}
-    entries = await _paged_audios(token, owner_id=owner_id, playlist_id=playlist_id)
+    entries = await _paged_audios(token, ua=ua, owner_id=owner_id, playlist_id=playlist_id)
     return str((meta or {}).get("title") or "VK playlist"), [_entry(item) for item in entries]
 
 
-async def user_audios(token: str, owner_id: int | None) -> tuple[str, list[dict[str, Any]]]:
+async def user_audios(token: str, owner_id: int | None, ua: str = "") -> tuple[str, list[dict[str, Any]]]:
     params: dict[str, Any] = {}
     if owner_id is not None:
         params["owner_id"] = owner_id
-    entries = await _paged_audios(token, **params)
+    entries = await _paged_audios(token, ua=ua, **params)
     return "VK audios", [_entry(item) for item in entries]

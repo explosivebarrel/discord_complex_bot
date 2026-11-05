@@ -42,6 +42,15 @@ class VkConfigBody(BaseModel):
     access_token: str
 
 
+class VkAuthBody(BaseModel):
+    """VK account credentials for the direct auth (official Android client).
+    The password is used once for the token exchange and never stored."""
+
+    login: str
+    password: str
+    code: str = ""
+
+
 def _write_env_line(env_path: Any, key: str, value: str) -> bool:
     """Update one KEY= line in the .env file. False when the file is not writable."""
     import re
@@ -393,6 +402,46 @@ async def update_yandex(
         "token_masked": LavalinkAdmin.mask_token(token),
         "env_updated": env_written,
         "note": "Saved. Run `docker compose up -d --force-recreate lavalink` to apply.",
+    }
+
+
+@router.post("/vkmusic/auth")
+async def auth_vkmusic(
+    body: VkAuthBody,
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
+) -> dict[str, Any]:
+    """Sign in with the VK account (direct auth as the official Android
+    client) and store the audio-capable token. The password is used once
+    for the exchange and never persisted; only the token is saved. A 2FA
+    challenge comes back as 428 with needs_code=true — resend with code."""
+    _require_superadmin(user)
+    from app.core.services import vk_music
+
+    try:
+        token = await vk_music.direct_auth(body.login.strip(), body.password, body.code.strip() or None)
+    except vk_music.VkAuthError as exc:
+        raise HTTPException(
+            status_code=428 if exc.needs_code else 400,
+            detail=str(exc),
+            headers={"X-Needs-Code": "1"} if exc.needs_code else None,
+        ) from exc
+    try:
+        await vk_music.vk_call(token, "audio.search", ua=vk_music.VK_OFFICIAL_UA, q="test", count=1)
+    except vk_music.VkMusicError as exc:
+        raise HTTPException(status_code=400, detail=f"The token VK issued does not work: {exc}") from exc
+
+    await db.set_system_setting(
+        VK_TOKEN_KEY, {"access_token": token, "user_agent": vk_music.VK_OFFICIAL_UA}
+    )
+    env_path = config.data_dir.parent / ".env"
+    env_written = _write_env_line(env_path, "VK_MUSIC_TOKEN", token)
+    await db.audit("admin.update_vkmusic", actor_id=user.discord_id, actor_kind="web")
+    return {
+        "token_masked": LavalinkAdmin.mask_token(token),
+        "env_updated": env_written,
+        "note": "Signed in and verified. VK search and playback use the new token right away.",
     }
 
 

@@ -311,7 +311,9 @@ async function handle<T>(resp: Response): Promise<T> {
   }
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({ detail: resp.statusText }));
-    throw new Error(body.detail ?? `HTTP ${resp.status}`);
+    const err = new Error(body.detail ?? `HTTP ${resp.status}`) as Error & { status?: number };
+    err.status = resp.status;
+    throw err;
   }
   return resp.json() as Promise<T>;
 }
@@ -675,6 +677,15 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: accessToken }),
+    }).then((r) =>
+      handle<{ token_masked: string; env_updated: boolean; note: string }>(r),
+    ),
+
+  vkAuth: (login: string, password: string, code = "") =>
+    fetch("/api/admin/system/vkmusic/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login, password, code }),
     }).then((r) =>
       handle<{ token_masked: string; env_updated: boolean; note: string }>(r),
     ),

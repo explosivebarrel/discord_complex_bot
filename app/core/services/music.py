@@ -527,9 +527,9 @@ class MusicService:
             rows = await self._ytdlp_search(query, limit * 4 if performer else limit, "ytsearch", "yt")
             return [r for r in rows if self._author_matches(r, needle)] if performer else rows[:limit]
         if source == "vk":
-            token = await self._vk_token()
+            token, ua = await self._vk_token()
             try:
-                return await vk_music.search(token, query, limit, performer_only=performer)
+                return await vk_music.search(token, query, limit, performer_only=performer, ua=ua)
             except VkMusicError as exc:
                 raise MusicServiceError(str(exc)) from exc
         result = await self._search_with_retry(query, source)
@@ -576,17 +576,21 @@ class MusicService:
             return "archive"
         return source
 
-    async def _vk_token(self) -> str:
-        """The VK audio token: the DB setting wins, .env is the fallback.
+    async def _vk_token(self) -> tuple[str, str]:
+        """The VK audio token and its client User-Agent: the DB setting wins,
+        .env is the fallback (env tokens carry no UA override).
 
         Reading the DB on every call keeps the Settings-page token live
         without a container restart (unlike the Lavalink-side Yandex token).
+        The User-Agent must match the token's client family for audio
+        methods — direct-auth tokens are saved together with it.
         """
         stored = await self.db.get_system_setting("vkmusic_token")
-        token = (stored or {}).get("access_token") or self.config.vk_music_token
+        stored = stored or {}
+        token = stored.get("access_token") or self.config.vk_music_token
         if not token:
             raise MusicServiceError("VK Music is not configured. Set the access token in Settings.")
-        return token
+        return token, stored.get("user_agent") or ""
 
     async def enqueue(
         self,
@@ -668,8 +672,8 @@ class MusicService:
             title = f"{playlist_title or 'Playlist'} - {len(items)} track(s)"
         elif source == "vk" and self._is_playlist_url(query):
             # Collections: /playlist/<owner>_<id>, /album/... and /audios<owner>.
-            token = await self._vk_token()
-            playlist_title, entries = await self._vk_playlist_entries(token, query)
+            token, ua = await self._vk_token()
+            playlist_title, entries = await self._vk_playlist_entries(token, query, ua=ua)
             if not entries:
                 raise MusicServiceError("The playlist is empty or cannot be read.")
             entries = entries[:PLAYLIST_LIMIT]
@@ -726,13 +730,13 @@ class MusicService:
             title = items[0].display_title
         elif source == "vk":
             # No metadata (raw URL or plain text): read it from the VK API.
-            token = await self._vk_token()
+            token, ua = await self._vk_token()
             parsed = vk_music.parse_track_url(query)
             try:
                 if parsed is not None:
-                    row = vk_music.track_row(await vk_music.track(token, *parsed))
+                    row = vk_music.track_row(await vk_music.track(token, *parsed, ua=ua))
                 else:
-                    rows = await vk_music.search(token, query, 1)
+                    rows = await vk_music.search(token, query, 1, ua=ua)
                     if not rows:
                         raise MusicServiceError("Nothing found for this query.")
                     row = rows[0]
@@ -828,12 +832,14 @@ class MusicService:
             )
         return False
 
-    async def _vk_playlist_entries(self, token: str, query: str) -> tuple[str, list[dict[str, Any]]]:
+    async def _vk_playlist_entries(
+        self, token: str, query: str, ua: str = ""
+    ) -> tuple[str, list[dict[str, Any]]]:
         try:
             parsed = vk_music.parse_playlist_url(query)
             if parsed is not None:
-                return await vk_music.playlist(token, *parsed)
-            return await vk_music.user_audios(token, vk_music.parse_audios_url(query))
+                return await vk_music.playlist(token, *parsed, ua=ua)
+            return await vk_music.user_audios(token, vk_music.parse_audios_url(query), ua=ua)
         except VkMusicError as exc:
             raise MusicServiceError(str(exc)) from exc
 
@@ -900,7 +906,7 @@ class MusicService:
                 track._artwork = item.artwork  # noqa: SLF001
             return track
         if item.source == "vk":
-            token = await self._vk_token()
+            token, ua = await self._vk_token()
             parsed = vk_music.parse_track_url(item.pending_url)
             if parsed is None:
                 raise MusicServiceError("This VK link is not a single track the bot can play.")
@@ -908,7 +914,7 @@ class MusicService:
             # A signed URL can die between fetch and load; refetch once.
             for attempt in range(2):
                 try:
-                    stream = await vk_music.stream_url(token, *parsed)
+                    stream = await vk_music.stream_url(token, *parsed, ua=ua)
                 except VkMusicError as exc:
                     raise MusicServiceError(str(exc)) from exc
                 track = await self._load_stream(stream)
@@ -1258,8 +1264,8 @@ class MusicService:
             entries = list(getattr(result, "tracks", None) or [])
             title = str(getattr(result, "name", None) or "Playlist")
         elif source == "vk":
-            token = await self._vk_token()
-            title, entries = await self._vk_playlist_entries(token, query)
+            token, ua = await self._vk_token()
+            title, entries = await self._vk_playlist_entries(token, query, ua=ua)
             title = title or "Playlist"
         else:
             title, entries = await self._resolve_playlist(query)
