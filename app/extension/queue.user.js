@@ -47,6 +47,17 @@
   const getGuild = () => GM_getValue(LS.guild, "");
   const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // VK covers arrive as URL strings or as album objects with photo_N keys
+  // at several sizes; anything that is not a URL string is not a cover.
+  function bestCover(v) {
+    if (typeof v === "string" && v) return v;
+    if (v && typeof v === "object") {
+      for (const k of ["photo_600", "photo_300", "photo_120", "photo_34", "url"]) {
+        if (typeof v[k] === "string" && v[k]) return v[k];
+      }
+    }
+    return null;
+  }
 
   // --- session log --------------------------------------------------------
   // Everything the script does lands here: requests, responses, errors with
@@ -107,6 +118,19 @@
     return (iso || "").slice(11, 23);
   }
 
+  function apiErrorText(status, data) {
+    const d = data && data.detail;
+    if (typeof d === "string" && d) return d;
+    if (Array.isArray(d) && d.length) {
+      // Pydantic validation errors: [{loc: [...], msg, type}, ...]
+      return (
+        d.map((e) => `${(e.loc || []).slice(-2).join(".")}: ${e.msg}`).join("; ").slice(0, 200) ||
+        "HTTP " + status
+      );
+    }
+    return "HTTP " + status;
+  }
+
   function logsAsText() {
     return LOGS.map(
       (l) => `[${fmtTs(l.ts)}] [${l.level.toUpperCase()}] ${l.msg}` + (l.data ? ` | ${JSON.stringify(l.data)}` : "")
@@ -145,7 +169,7 @@
             resolve(data);
           } else {
             log(`← ${r.status} ${path} (${ms} мс) ${r.responseText.slice(0, 200)}`, "err");
-            reject(new Error(data.detail || "HTTP " + r.status));
+            reject(new Error(apiErrorText(r.status, data)));
           }
         },
         onerror: (r) => {
@@ -211,11 +235,11 @@
       value.url.length < 1200 &&
       (value.title || value.artist)
     ) {
-      const cover =
-        (value.album && (value.album.thumb || value.album.coverUrl)) ||
-        value.thumb ||
-        value.coverUrl ||
-        null;
+      const cover = bestCover(
+        value.album
+          ? value.album.thumb ?? value.album.coverUrl ?? value.album
+          : value.thumb ?? value.coverUrl,
+      );
       vkRemember({
         owner_id: value.owner_id ?? null,
         id: value.id ?? null,
@@ -864,13 +888,21 @@
     },
     {
       host: /^music\.yandex\.ru$/,
-      rows: '.d-track, a[href*="/track/"]',
+      rows: '[class*="CommonTrack_root"], [class*="HorizontalCardContainer_root"], a[href*="/track/"]',
       info: (el) => {
-        const a = el.matches && el.matches('a[href*="/track/"]') ? el : el.querySelector('a[href*="/track/"]');
+        // The /track/ anchor is the title link inside the card; the overlay
+        // belongs on the card itself (one-two levels up).
+        const card =
+          el.matches && el.matches('a[href*="/track/"]')
+            ? el.closest('[class*="CommonTrack_root"], [class*="HorizontalCardContainer_root"]') || el
+            : el;
+        const a = card.matches('a[href*="/track/"]')
+          ? card
+          : card.querySelector('a[href*="/track/"]');
         if (!a) return null;
         const href = (a.getAttribute("href") || "").split("?")[0];
         if (!/^\/(album\/\d+\/)?track\/\d+/.test(href)) return null;
-        const label = trim(el.getAttribute("aria-label") || el.textContent).slice(0, 140);
+        const label = trim(card.getAttribute("aria-label") || card.textContent).slice(0, 140);
         return { query: location.origin + href, source: "ym", title: label || undefined };
       },
     },
