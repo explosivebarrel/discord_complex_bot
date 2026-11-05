@@ -47,6 +47,26 @@
   const getGuild = () => GM_getValue(LS.guild, "");
   const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // VK writes the audio owner with a leading "-" in data-audio-id
+  // (-266440537_...) while API payloads carry it positive — try all sign
+  // and order variants of the id pair when matching a capture.
+  function captureVariants(ownerId, audioId) {
+    const o = Number(ownerId);
+    const a = Number(audioId);
+    const ao = Math.abs(o);
+    return [
+      `${o}_${a}`,
+      `${a}_${o}`,
+      `${ao}_${a}`,
+      `${a}_${ao}`,
+    ];
+  }
+
+  function findCapture(ownerId, audioId) {
+    const variants = captureVariants(ownerId, audioId);
+    return vkCaptured.find((x) => variants.includes(x.key)) || null;
+  }
   // VK covers arrive as URL strings or as album objects with photo_N keys
   // at several sizes; anything that is not a URL string is not a cover.
   function decodeHtml(s) {
@@ -525,12 +545,11 @@
         firstParsed = p;
         firstRaw = (el.getAttribute("data-audio") || "").slice(0, 120);
       }
-      const key = p.owner_id + "_" + p.id;
+      const cap = findCapture(p.owner_id, p.id);
+      // Dedupe on the capture key when matched (sign variants collapse).
+      const key = cap ? cap.key : p.owner_id + "_" + p.id;
       if (seen.has(key)) continue;
       seen.add(key);
-      const cap =
-        vkCaptured.find((x) => x.key === key) ||
-        vkCaptured.find((x) => x.key === `${p.id}_${p.owner_id}`) || null;
       // The API capture is ground truth for artist/title; the DOM parse
       // (whose data-audio field order VK may change) only fills gaps.
       const author = (cap && cap.artist) || p.artist || undefined;
@@ -813,7 +832,10 @@
     target.click(); // native click: VK's own handlers fetch the stream
     for (let i = 0; i < 16; i++) {
       await sleep(250);
-      const cap = vkCaptured.find((x) => x.key === row.key);
+      const pm = row.query.match(/audio(-?\d+)_(\d+)/);
+      const cap = pm
+        ? findCapture(Number(pm[1]), Number(pm[2]))
+        : vkCaptured.find((x) => x.key === row.key);
       if (cap && cap.url) {
         log("VK: ссылка получена за " + Math.round((Date.now() - startedAt) / 100) / 10 + " с");
         return sendQueue({
@@ -948,9 +970,7 @@
         const p = parseAudioRow(el);
         if (!p) return null;
         const key = `${p.owner_id}_${p.id}`;
-        const cap =
-          vkCaptured.find((x) => x.key === key) ||
-          vkCaptured.find((x) => x.key === `${p.id}_${p.owner_id}`) || null;
+        const cap = findCapture(p.owner_id, p.id);
         const author = (cap && cap.artist) || p.artist || undefined;
         const name = (cap && cap.title) || p.title || "";
         return {
