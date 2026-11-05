@@ -60,10 +60,15 @@ services:
     build: ./vkresolver
     container_name: dcbot-vk-resolver
     restart: unless-stopped
-    volumes:
-      - vk-profile:/data
+    environment:
+      PROFILE_DIR: /profile
       # Exported on the admin's machine by tools/vk_spike/export_session.py.
-      - ./data/vk_session.json:/data/vk_session.json:ro
+      SESSION_FILE: /session/vk_session.json
+    volumes:
+      - vk-profile:/profile
+      # Whole data dir read-only: single-file bind mounts confuse Docker
+      # Desktop when the file appears after the first mount.
+      - ./data:/session:ro
     ports:
       - "127.0.0.1:8100:8100"
 
