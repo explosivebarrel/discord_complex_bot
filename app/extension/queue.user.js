@@ -495,8 +495,10 @@
     let firstRaw = "";
     for (const el of document.querySelectorAll("[data-audio]")) {
       // Hidden rows (player next-up templates, other sections) would
-      // otherwise show "from nowhere".
-      if (!el.offsetParent) continue;
+      // otherwise show "from nowhere". getClientRects, NOT offsetParent:
+      // offsetParent is null for position:fixed ancestors too, which hid
+      // ~70% of rows on desktop vk.ru.
+      if (!el.getClientRects().length) continue;
       const p = parseAudioRow(el);
       if (!p) {
         parseFails++;
