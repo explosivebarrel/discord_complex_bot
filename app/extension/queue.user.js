@@ -492,9 +492,9 @@
   // --- queueing -----------------------------------------------------------
 
   async function sendQueue(body) {
-    if (!(await requireConfig())) return false;
-    setPill("busy");
     try {
+      if (!(await requireConfig())) return false;
+      setPill("busy");
       const r = await api("POST", "/api/extension/queue/" + getGuild(), body);
       const where = GM_getValue(LS.guildName, "");
       const count = r.queued && r.queued > 1 ? ` (${r.queued} трек.)` : "";
@@ -512,35 +512,43 @@
   }
 
   function requireConfig() {
-    if (!getKey()) {
-      const m = "Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»";
-      log(m, "warn");
-      toast(m, true);
+    try {
+      const hasKey = !!getKey();
+      const hasGuild = !!getGuild();
+      log("конфиг: ключ=" + (hasKey ? "есть" : "НЕТ") + " гильдия=" + (hasGuild ? "есть" : "НЕТ"));
+      if (!hasKey) {
+        const m = "Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»";
+        log(m, "warn");
+        toast(m, true);
+        return Promise.resolve(false);
+      }
+      if (!hasGuild) {
+        // The common setup footgun: the guild prompt was cancelled. With a
+        // single guild there is nothing to choose — pick it silently.
+        return api("GET", "/api/my/guilds")
+          .then((guilds) => {
+            if (guilds.length === 1) {
+              GM_setValue(LS.guild, guilds[0].id);
+              GM_setValue(LS.guildName, guilds[0].name);
+              log("гильдия выбрана автоматически: " + guilds[0].name);
+              return true;
+            }
+            const m = "Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»";
+            log(m, "warn");
+            toast(m, true);
+            return false;
+          })
+          .catch((e) => {
+            logErr("автовыбор гильдии не удался", e);
+            toast(String(e.message || e), true);
+            return false;
+          });
+      }
+      return Promise.resolve(true);
+    } catch (e) {
+      logErr("проверка конфигурации упала", e);
       return Promise.resolve(false);
     }
-    if (!getGuild()) {
-      // The common setup footgun: the guild prompt was cancelled. With a
-      // single guild there is nothing to choose — pick it silently.
-      return api("GET", "/api/my/guilds")
-        .then((guilds) => {
-          if (guilds.length === 1) {
-            GM_setValue(LS.guild, guilds[0].id);
-            GM_setValue(LS.guildName, guilds[0].name);
-            log("гильдия выбрана автоматически: " + guilds[0].name);
-            return true;
-          }
-          const m = "Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»";
-          log(m, "warn");
-          toast(m, true);
-          return false;
-        })
-        .catch((e) => {
-          logErr("автовыбор гильдии не удался", e);
-          toast(String(e.message || e), true);
-          return false;
-        });
-    }
-    return Promise.resolve(true);
   }
 
   async function enqueueCurrent() {
@@ -661,7 +669,13 @@
     panel.addEventListener("mouseenter", () => clearTimeout(hideTimer));
     pill.addEventListener("mouseleave", closeSoon);
     panel.addEventListener("mouseleave", closeSoon);
-    log("скрипт инициализирован, host=" + location.hostname);
+    log(
+      "скрипт инициализирован, host=" + location.hostname +
+      "; GM: xmlHttpRequest=" + (typeof GM !== "undefined" && GM.xmlHttpRequest ? "ok" : "ОТСУТСТВУЕТ") +
+      " setValue=" + (typeof GM_setValue === "function" ? "ok" : "ОТСУТСТВУЕТ") +
+      " getValue=" + (typeof GM_getValue === "function" ? "ok" : "ОТСУТСТВУЕТ")
+    );
+    installErrorTraps();
   }
 
   function tabEl(label, tabId) {
