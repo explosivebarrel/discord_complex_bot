@@ -940,17 +940,21 @@
   const INLINE_SITES = [
     {
       host: VK_HOST,
-      rows: "[data-audio]",
+      // Desktop rows carry data-audio-id / audio_row{owner}_{id}, mobile
+      // rows data-audio — parseAudioRow handles all three.
+      rows: '[data-audio], [data-audio-id], [id^="audio_row"]',
       info: (el) => {
         const p = parseAudioRow(el);
         if (!p) return null;
-        const key = p.owner_id + "_" + p.id;
-        const cap = vkCaptured.find((x) => x.key === key);
+        const key = `${p.owner_id}_${p.id}`;
+        const cap =
+          vkCaptured.find((x) => x.key === key) ||
+          vkCaptured.find((x) => x.key === `${p.id}_${p.owner_id}`) || null;
         const author = (cap && cap.artist) || p.artist || undefined;
         const name = (cap && cap.title) || p.title || "";
         return {
-          key,
-          query: `https://vk.ru/audio${p.owner_id}_${p.id}`,
+          key: cap ? cap.key : key,
+          query: `https://vk.ru/audio${cap && cap.owner_id != null ? cap.owner_id : p.owner_id}_${cap && cap.id != null ? cap.id : p.id}`,
           source: "vk",
           title: ([author, name].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140),
           author,
