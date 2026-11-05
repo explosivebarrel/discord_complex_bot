@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord Council Bot — Queue
 // @namespace    dcbot-queue
-// @version      1.0.3
+// @version      @@VERSION@@
 // @description  Add tracks to the Discord Council Bot queue right from YouTube, Yandex Music, SoundCloud and VK pages.
 // @author       dcbot
 // @match        https://www.youtube.com/*
@@ -24,7 +24,9 @@
 // ==/UserScript==
 
 /* The bot serves this file itself: @@SERVER@@ becomes the deployment's base
-   URL, so install + updates need zero configuration beyond the API key. */
+   URL, so install + updates need zero configuration beyond the API key.
+   Pill click = queue the page's track. Hovering the pill opens a panel
+   with every track/collection visible on the page (per-site scraping). */
 
 (function () {
   "use strict";
@@ -40,6 +42,7 @@
   const getServer = () => GM_getValue(LS.server, SERVER) || SERVER;
   const getKey = () => GM_getValue(LS.key, "");
   const getGuild = () => GM_getValue(LS.guild, "");
+  const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
 
   // --- network -----------------------------------------------------------
 
@@ -76,71 +79,19 @@
     });
   }
 
-  // --- per-site extractors ------------------------------------------------
-  // Each returns { query, source, title, author, length_ms, artwork, stream_url }
-  // or null when this page is not a track/playlist.
-
-  function extractYouTube() {
-    const url = new URL(location.href);
-    const list = url.searchParams.get("list");
-    const v = url.searchParams.get("v") || (location.pathname.match(/^\/(shorts|watch)\/([\w-]{6,})/) || [])[2];
-    if (list && (!v || location.pathname === "/playlist")) {
-      return { query: "https://www.youtube.com/playlist?list=" + list, source: "yt" };
-    }
-    if (!v) return null;
-    const details =
-      window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.videoDetails
-        ? window.ytInitialPlayerResponse.videoDetails
-        : null;
-    const row = {
-      query: "https://www.youtube.com/watch?v=" + v,
-      source: "yt",
-    };
-    if (details) {
-      row.title = details.title;
-      row.author = details.author;
-      row.length_ms = details.lengthSeconds ? Number(details.lengthSeconds) * 1000 : undefined;
-      const thumbs = details.thumbnail && details.thumbnail.thumbnails;
-      if (thumbs && thumbs.length) row.artwork = thumbs[thumbs.length - 1].url;
-    } else {
-      row.title = document.title.replace(/ - YouTube$/, "").trim();
-    }
-    return row;
-  }
-
-  function extractYandex() {
-    // The server rewrites music.yandex.ru -> .com for the Lavalink plugin,
-    // so send whatever the user sees. Albums/playlists open as a preview.
-    const p = location.pathname;
-    const track = p.match(/^\/(album\/(\d+)\/)?track\/(\d+)/);
-    if (track) {
-      return {
-        query: location.origin + (track[2] ? "/album/" + track[2] : "") + "/track/" + track[3],
-        source: "ym",
-      };
-    }
-    if (/^\/album\/\d+/.test(p) || /^\/users\/\d+\/playlists\/\d+/.test(p) || /^\/playlists\//.test(p)) {
-      return { query: location.origin + p, source: "ym" };
-    }
-    return null;
-  }
-
-  function extractSoundCloud() {
-    if (location.pathname === "/" || location.pathname.split("/").filter(Boolean).length < 2) return null;
-    return { query: location.origin + location.pathname, source: "sc" };
-  }
-
   // --- VK: capture stream URLs from the page's own API traffic -----------
   // The VK web player plays blob: URLs, so the only way to get a playable
   // link is to hook the page's fetch/XHR and pick audio items out of the
-  // JSON payloads it loads. Items land in vkCaptured (newest last).
+  // JSON payloads it loads. Items land in vkCaptured (newest last); the
+  // same payloads carry catalog playlists/albums (open-on-site rows).
 
-  const vkCaptured = [];
-  const VK_MAX_ITEMS = 40;
+  const VK_HOST = /^(vk\.com|m\.vk\.com|music\.vk\.com|vk\.ru|m\.vk\.ru|music\.vk\.ru|vkontakte\.ru)$/;
+  const vkCaptured = []; // audio items {owner_id,id,url,title,artist,duration,key}
+  const vkCollections = []; // catalog playlists {owner_id,id,title,key}
+  const VK_MAX_ITEMS = 60;
 
   function vkRemember(item) {
     if (!item.url || !/^https?:\/\//.test(item.url) || /\.m3u8/i.test(item.url)) return;
-    if (!item.owner_id && !item.url) return;
     const key = item.owner_id != null && item.id != null ? `${item.owner_id}_${item.id}` : item.url;
     const row = { ...item, key, ms: Date.now() };
     const at = vkCaptured.findIndex((x) => x.key === key);
@@ -155,21 +106,30 @@
       value.forEach(vkScan);
       return;
     }
+    const hasId = value.owner_id != null && value.id != null;
     if (
       typeof value.url === "string" &&
       /\.mp3(\?|$)/.test(value.url) &&
-      (value.title || value.artist) &&
-      typeof value.url === "string" &&
-      value.url.length < 1200
+      value.url.length < 1200 &&
+      (value.title || value.artist)
     ) {
       vkRemember({
         owner_id: value.owner_id ?? null,
         id: value.id ?? null,
         url: value.url.startsWith("//") ? "https:" + value.url : value.url,
-        title: (value.title || "").trim(),
-        artist: (value.artist || "").trim(),
+        title: trim(value.title),
+        artist: trim(value.artist),
         duration: Number(value.duration) || 0,
       });
+    } else if (hasId && typeof value.title === "string" && value.title && !value.url && !value.artist) {
+      // Catalog playlist/album: an id-pair with a title but no playable URL.
+      const key = `${value.owner_id}_${value.id}`;
+      const row = { owner_id: value.owner_id, id: value.id, title: trim(value.title), key };
+      const at = vkCollections.findIndex((x) => x.key === key);
+      if (at < 0) {
+        vkCollections.push(row);
+        if (vkCollections.length > VK_MAX_ITEMS) vkCollections.shift();
+      }
     }
     for (const k in value) vkScan(value[k]);
   }
@@ -229,7 +189,170 @@
     }
   }
 
-  const VK_HOST = /^(vk\.com|m\.vk\.com|music\.vk\.com|vk\.ru|m\.vk\.ru|music\.vk\.ru|vkontakte\.ru)$/;
+  // --- page scrapers ------------------------------------------------------
+  // Each returns { tracks, collections, artists } — the content actually
+  // visible on the page, for the hover panel.
+
+  function scrapeYouTube() {
+    const tracks = [];
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href*="/watch?v="]')) {
+      const href = a.getAttribute("href") || "";
+      const m = href.match(/[?&]v=([\w-]{6,})/);
+      if (!m || seen.has(m[1])) continue;
+      const title = trim(a.getAttribute("title") || a.textContent);
+      if (!title) continue;
+      seen.add(m[1]);
+      tracks.push({ query: "https://www.youtube.com/watch?v=" + m[1], source: "yt", title: title.slice(0, 140) });
+      if (tracks.length >= 40) break;
+    }
+    const collections = [];
+    const seenPl = new Set();
+    for (const a of document.querySelectorAll('a[href*="/playlist?list="]')) {
+      const href = a.getAttribute("href") || "";
+      const m = href.match(/[?&]list=([\w-]+)/);
+      if (!m || seenPl.has(m[1])) continue;
+      const label = trim(a.getAttribute("title") || a.textContent);
+      if (!label) continue;
+      seenPl.add(m[1]);
+      collections.push({ query: "https://www.youtube.com/playlist?list=" + m[1], label: label.slice(0, 140), kind: "playlist" });
+      if (collections.length >= 40) break;
+    }
+    return { tracks, collections, artists: [] };
+  }
+
+  function scrapeYandex() {
+    const abs = (href) => location.origin + href;
+    const tracks = [];
+    const collections = [];
+    const artists = [];
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href*="/track/"]')) {
+      const href = (a.getAttribute("href") || "").split("?")[0];
+      if (!/^\/(album\/\d+\/)?track\/\d+/.test(href)) continue;
+      if (seen.has(href)) continue;
+      const label = trim(a.textContent);
+      if (!label) continue;
+      seen.add(href);
+      tracks.push({ query: abs(href), source: "ym", title: label.slice(0, 140) });
+      if (tracks.length >= 40) break;
+    }
+    for (const a of document.querySelectorAll('a[href*="/album/"], a[href*="/playlists/"]')) {
+      const href = (a.getAttribute("href") || "").split("?")[0];
+      if (!/^\/album\/\d+$/.test(href) && !/^\/users\/\d+\/playlists\/\d+$/.test(href) && !/^\/playlists\/\d+/.test(href)) continue;
+      if (seen.has(href)) continue;
+      const label = trim(a.getAttribute("title") || a.textContent);
+      if (!label) continue;
+      seen.add(href);
+      collections.push({ query: abs(href), label: label.slice(0, 140), kind: href.includes("/album/") ? "album" : "playlist" });
+      if (collections.length >= 40) break;
+    }
+    for (const a of document.querySelectorAll('a[href*="/artist/"]')) {
+      const href = (a.getAttribute("href") || "").split("?")[0];
+      if (!/^\/artist\/\d+$/.test(href)) continue;
+      if (seen.has(href)) continue;
+      const label = trim(a.getAttribute("title") || a.textContent);
+      if (!label) continue;
+      seen.add(href);
+      artists.push({ url: abs(href), label: label.slice(0, 140) });
+      if (artists.length >= 30) break;
+    }
+    return { tracks, collections, artists };
+  }
+
+  function scrapeVK() {
+    // The hook already knows the audio (and catalog playlist) items the
+    // page loaded — newest first, since the player prefetches the catalog.
+    const tracks = [...vkCaptured].reverse().map((x) => ({
+      query: x.owner_id != null && x.id != null ? `https://vk.ru/audio${x.owner_id}_${x.id}` : location.href,
+      source: "vk",
+      title: [x.artist, x.title].filter(Boolean).join(" — ").slice(0, 140) || "(без названия)",
+      author: x.artist || undefined,
+      length_ms: x.duration ? x.duration * 1000 : undefined,
+      stream_url: x.url,
+    }));
+    const collections = vkCollections.slice(-40).reverse().map((x) => ({
+      query: `https://vk.ru/playlist${x.owner_id}_${x.id}`,
+      label: x.title,
+      kind: "playlist",
+      openOnly: true, // VK playlist enqueue needs a server token — open instead
+    }));
+    return { tracks, collections, artists: [] };
+  }
+
+  const SCRAPERS = [
+    [/(^|\.)youtube\.com$/, scrapeYouTube],
+    [/^music\.yandex\.ru$/, scrapeYandex],
+    [/(^|\.)soundcloud\.com$/, () => ({ tracks: [], collections: [], artists: [] })],
+    [VK_HOST, scrapeVK],
+  ];
+
+  function scrapePage() {
+    const host = location.hostname.replace(/^www\./, "");
+    for (const [pattern, fn] of SCRAPERS) {
+      if (pattern.test(host)) {
+        try {
+          return fn();
+        } catch (e) {
+          console.warn("[dcbot-queue] scraper failed:", e);
+          return { tracks: [], collections: [], artists: [] };
+        }
+      }
+    }
+    return { tracks: [], collections: [], artists: [] };
+  }
+
+  // --- current-page extractor (the pill click) ----------------------------
+  // Returns { query, source, title, author, length_ms, artwork, stream_url }
+  // or null when this page is not a track/playlist.
+
+  function extractYouTube() {
+    const url = new URL(location.href);
+    const list = url.searchParams.get("list");
+    const v = url.searchParams.get("v") || (location.pathname.match(/^\/(shorts|watch)\/([\w-]{6,})/) || [])[2];
+    if (list && (!v || location.pathname === "/playlist")) {
+      return { query: "https://www.youtube.com/playlist?list=" + list, source: "yt" };
+    }
+    if (!v) return null;
+    const details =
+      window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.videoDetails
+        ? window.ytInitialPlayerResponse.videoDetails
+        : null;
+    const row = { query: "https://www.youtube.com/watch?v=" + v, source: "yt" };
+    if (details) {
+      row.title = details.title;
+      row.author = details.author;
+      row.length_ms = details.lengthSeconds ? Number(details.lengthSeconds) * 1000 : undefined;
+      const thumbs = details.thumbnail && details.thumbnail.thumbnails;
+      if (thumbs && thumbs.length) row.artwork = thumbs[thumbs.length - 1].url;
+    } else {
+      row.title = document.title.replace(/ - YouTube$/, "").trim();
+    }
+    return row;
+  }
+
+  function extractYandex() {
+    // The server rewrites music.yandex.ru -> .com for the Lavalink plugin,
+    // so send whatever the user sees. Albums/playlists open as a preview.
+    const p = location.pathname;
+    const track = p.match(/^\/(album\/(\d+)\/)?track\/(\d+)/);
+    if (track) {
+      return {
+        query: location.origin + (track[2] ? "/album/" + track[2] : "") + "/track/" + track[3],
+        source: "ym",
+      };
+    }
+    if (/^\/album\/\d+/.test(p) || /^\/users\/\d+\/playlists\/\d+/.test(p) || /^\/playlists\//.test(p)) {
+      return { query: location.origin + p, source: "ym" };
+    }
+    return null;
+  }
+
+  function extractSoundCloud() {
+    if (location.pathname === "/" || location.pathname.split("/").filter(Boolean).length < 2) return null;
+    return { query: location.origin + location.pathname, source: "sc" };
+  }
+
   function extractVK() {
     const path = location.pathname;
     const track = path.match(/audio(-?\d+)_(\d+)/);
@@ -278,13 +401,84 @@
     return null;
   }
 
+  // --- queueing -----------------------------------------------------------
+
+  async function sendQueue(body) {
+    if (!requireConfig()) return false;
+    setPill("busy");
+    try {
+      const r = await api("POST", "/api/extension/queue/" + getGuild(), body);
+      const where = GM_getValue(LS.guildName, "");
+      const count = r.queued && r.queued > 1 ? ` (${r.queued} трек.)` : "";
+      toast("В очереди: " + (r.title || "") + count + (where ? " → " + where : ""));
+      return true;
+    } catch (e) {
+      toast(String(e.message || e), true);
+      return false;
+    } finally {
+      setPill("idle");
+    }
+  }
+
+  function requireConfig() {
+    if (!getKey()) {
+      toast("Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»", true);
+      return false;
+    }
+    if (!getGuild()) {
+      toast("Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»", true);
+      return false;
+    }
+    return true;
+  }
+
+  async function enqueueCurrent() {
+    const row = extract();
+    if (!row) {
+      const host = location.hostname.replace(/^www\./, "");
+      toast(
+        /vk\.|vkontakte/.test(host)
+          ? "VK не отдал ссылку. Открой в VK любой трек (нажми play в плеере) и нажми кнопку ещё раз."
+          : "На этой странице не найден трек или плейлист",
+        true,
+      );
+      return;
+    }
+    await sendQueue({
+      query: row.query,
+      source: row.source,
+      title: row.title,
+      author: row.author,
+      length_ms: row.length_ms,
+      artwork: row.artwork,
+      stream_url: row.stream_url,
+    });
+  }
+
   // --- UI -----------------------------------------------------------------
 
   const CSS = `
-    #dcbot-pill{position:fixed;right:18px;bottom:18px;z-index:2147483647;display:flex;align-items:center;gap:6px;
-      background:#1f1b2e;color:#e7e1f5;border:1px solid #453f63;border-radius:999px;padding:8px 14px;
-      font:500 13px/1 Roboto,system-ui,sans-serif;cursor:pointer;user-select:none;box-shadow:0 6px 18px rgba(0,0,0,.45);
-      opacity:.82;transition:opacity .15s}
+    #dcbot-wrap{position:fixed;right:18px;bottom:18px;z-index:2147483647;display:flex;flex-direction:column;
+      align-items:flex-end;gap:10px;font:400 13px/1.4 Roboto,system-ui,sans-serif}
+    #dcbot-panel{display:none;width:320px;max-height:46vh;background:#201a33;color:#e7e1f5;
+      border:1px solid #453f63;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.55);overflow:hidden;
+      flex-direction:column}
+    #dcbot-panel.open{display:flex}
+    #dcbot-panel .dcbot-head{padding:9px 12px;font-weight:500;font-size:12px;color:#b7ace0;
+      border-bottom:1px solid #35305a;text-transform:uppercase;letter-spacing:.4px;display:flex;
+      justify-content:space-between;align-items:center}
+    #dcbot-panel .dcbot-body{overflow-y:auto;padding:4px 0 8px}
+    #dcbot-panel .dcbot-cat{padding:7px 12px 3px;font-size:11px;font-weight:500;color:#8f83bd;
+      text-transform:uppercase;letter-spacing:.5px}
+    #dcbot-panel .dcbot-row{padding:6px 12px;cursor:pointer;display:block;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis}
+    #dcbot-panel .dcbot-row:hover{background:#322a52}
+    #dcbot-panel .dcbot-row .dcbot-kind{color:#8f83bd;font-size:11px;margin-left:6px}
+    #dcbot-panel .dcbot-empty{padding:8px 12px;color:#8f83bd}
+    #dcbot-pill{display:flex;align-items:center;gap:6px;background:#1f1b2e;color:#e7e1f5;
+      border:1px solid #453f63;border-radius:999px;padding:8px 14px;
+      font:500 13px/1 Roboto,system-ui,sans-serif;cursor:pointer;user-select:none;
+      box-shadow:0 6px 18px rgba(0,0,0,.45);opacity:.82;transition:opacity .15s}
     #dcbot-pill:hover{opacity:1}
     #dcbot-pill.busy{opacity:.6;pointer-events:none}
     #dcbot-toast{position:fixed;right:18px;bottom:64px;z-index:2147483647;max-width:340px;
@@ -308,81 +502,147 @@
     toast._t = setTimeout(() => el.classList.remove("show"), 5000);
   }
 
-  function ensurePill() {
-    if (!document.getElementById("dcbot-pill")) {
-      const style = document.createElement("style");
-      style.textContent = CSS;
-      document.documentElement.appendChild(style);
-      const pill = document.createElement("div");
-      pill.id = "dcbot-pill";
-      pill.textContent = "＋ Queue";
-      pill.title = "Добавить трек в очередь Discord Council Bot";
-      pill.addEventListener("click", enqueueCurrent);
-      document.documentElement.appendChild(pill);
-    }
+  function ensureUi() {
+    if (document.getElementById("dcbot-wrap")) return;
+    const style = document.createElement("style");
+    style.textContent = CSS;
+    document.documentElement.appendChild(style);
+
+    const wrap = document.createElement("div");
+    wrap.id = "dcbot-wrap";
+
+    const panel = document.createElement("div");
+    panel.id = "dcbot-panel";
+
+    const pill = document.createElement("div");
+    pill.id = "dcbot-pill";
+    pill.textContent = "＋ Queue";
+    pill.title = "Добавить трек страницы в очередь; наведи — треки со страницы";
+    pill.addEventListener("click", enqueueCurrent);
+
+    wrap.appendChild(panel);
+    wrap.appendChild(pill);
+    document.documentElement.appendChild(wrap);
+
+    // Hover intent: opening on hover, closing shortly after leaving both
+    // the pill and the panel.
+    let hideTimer = 0;
+    const open = () => {
+      clearTimeout(hideTimer);
+      renderPanel();
+      panel.classList.add("open");
+    };
+    const closeSoon = () => {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => panel.classList.remove("open"), 400);
+    };
+    pill.addEventListener("mouseenter", open);
+    panel.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+    pill.addEventListener("mouseleave", closeSoon);
+    panel.addEventListener("mouseleave", closeSoon);
   }
 
-  function setPill(state) {
-    const pill = document.getElementById("dcbot-pill");
-    if (!pill) return;
-    pill.classList.toggle("busy", state === "busy");
-    pill.textContent = state === "busy" ? "…" : "＋ Queue";
+  function rowEl(label, kindTag, onClick) {
+    const el = document.createElement("div");
+    el.className = "dcbot-row";
+    el.textContent = label;
+    if (kindTag) {
+      const tag = document.createElement("span");
+      tag.className = "dcbot-kind";
+      tag.textContent = kindTag;
+      el.appendChild(tag);
+    }
+    el.addEventListener("click", onClick);
+    return el;
   }
 
-  function requireConfig() {
-    if (!getKey()) {
-      toast("Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»", true);
-      return false;
-    }
-    if (!getGuild()) {
-      toast("Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»", true);
-      return false;
-    }
-    return true;
-  }
+  function renderPanel() {
+    const panel = document.getElementById("dcbot-panel");
+    if (!panel) return;
+    const body = document.createElement("div");
+    body.className = "dcbot-body";
+    const page = scrapePage();
 
-  async function enqueueCurrent() {
-    if (!requireConfig()) return;
-    const row = extract();
-    if (!row) {
-      const host = location.hostname.replace(/^www\./, "");
-      toast(
-        /vk\.|vkontakte/.test(host)
-          ? "VK не отдал ссылку. Открой в VK любой трек (нажми play в плеере) и нажми кнопку ещё раз."
-          : "На этой странице не найден трек или плейлист",
-        true,
-      );
-      return;
+    const head = document.createElement("div");
+    head.className = "dcbot-head";
+    const title = document.createElement("span");
+    title.textContent = "На странице";
+    const hint = document.createElement("span");
+    hint.textContent = "клик — в очередь";
+    hint.style.color = "#6f6599";
+    head.appendChild(title);
+    head.appendChild(hint);
+
+    if (page.tracks.length) {
+      const cat = document.createElement("div");
+      cat.className = "dcbot-cat";
+      cat.textContent = "Треки";
+      body.appendChild(cat);
+      for (const t of page.tracks) {
+        body.appendChild(
+          rowEl(t.title || t.query, t.source ? t.source.toUpperCase() : undefined, () => {
+            panel.classList.remove("open");
+            sendQueue({
+              query: t.query,
+              source: t.source,
+              title: t.title,
+              author: t.author,
+              length_ms: t.length_ms,
+              artwork: t.artwork,
+              stream_url: t.stream_url,
+            });
+          }),
+        );
+      }
     }
-    setPill("busy");
-    try {
-      const body = {
-        query: row.query,
-        source: row.source,
-        title: row.title,
-        author: row.author,
-        length_ms: row.length_ms,
-        artwork: row.artwork,
-        stream_url: row.stream_url,
-      };
-      const r = await api("POST", "/api/extension/queue/" + getGuild(), body);
-      const where = GM_getValue(LS.guildName, "");
-      const count = r.queued && r.queued > 1 ? ` (${r.queued} трек.)` : "";
-      toast("В очереди: " + (r.title || "") + count + (where ? " → " + where : ""));
-    } catch (e) {
-      toast(String(e.message || e), true);
-    } finally {
-      setPill("idle");
+    if (page.collections.length) {
+      const cat = document.createElement("div");
+      cat.className = "dcbot-cat";
+      cat.textContent = "Альбомы и плейлисты";
+      body.appendChild(cat);
+      for (const c of page.collections) {
+        body.appendChild(
+          rowEl(
+            c.label,
+            c.kind === "album" ? "альбом" : "плейлист",
+            () => {
+              panel.classList.remove("open");
+              if (c.openOnly) window.open(c.query, "_blank");
+              else sendQueue({ query: c.query, source: location.hostname.includes("yandex") ? "ym" : "yt" });
+            },
+          ),
+        );
+      }
     }
+    if (page.artists.length) {
+      const cat = document.createElement("div");
+      cat.className = "dcbot-cat";
+      cat.textContent = "Исполнители (откроется на сайте)";
+      body.appendChild(cat);
+      for (const a of page.artists) {
+        body.appendChild(
+          rowEl(a.label, undefined, () => {
+            window.open(a.url, "_blank");
+          }),
+        );
+      }
+    }
+    if (!page.tracks.length && !page.collections.length && !page.artists.length) {
+      const empty = document.createElement("div");
+      empty.className = "dcbot-empty";
+      empty.textContent = "На странице не нашлось треков и коллекций.";
+      body.appendChild(empty);
+    }
+
+    panel.replaceChildren(head, body);
   }
 
   // SPA sites navigate without reloads — keep the pill mounted.
-  const observer = new MutationObserver(() => ensurePill());
+  const observer = new MutationObserver(() => ensureUi());
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  ensurePill();
+  ensureUi();
 
-  const host = location.hostname.replace(/^www\./, "");
-  if (VK_HOST.test(host)) initVkHook();
+  if (VK_HOST.test(location.hostname.replace(/^www\./, ""))) initVkHook();
 
   // --- menu ---------------------------------------------------------------
 
