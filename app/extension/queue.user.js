@@ -45,6 +45,18 @@
   const getServer = () => GM_getValue(LS.server, SERVER) || SERVER;
   const getKey = () => GM_getValue(LS.key, "");
   const getGuild = () => GM_getValue(LS.guild, "");
+
+  // Per-site inline overlay switches (the panel's "Сайты" tab).
+  const INLINE_PREFS_KEY = "dcbot_inline";
+  function inlineEnabled(siteId) {
+    const prefs = GM_getValue(INLINE_PREFS_KEY, {}) || {};
+    return prefs[siteId] !== false;
+  }
+  function setInlineEnabled(siteId, on) {
+    const prefs = GM_getValue(INLINE_PREFS_KEY, {}) || {};
+    prefs[siteId] = !!on;
+    GM_setValue(INLINE_PREFS_KEY, prefs);
+  }
   const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -962,6 +974,8 @@
   // Per-site row selectors + how to queue a row element.
   const INLINE_SITES = [
     {
+      id: "vk",
+      label: "VK",
       host: VK_HOST,
       // Desktop rows carry data-audio-id / audio_row{owner}_{id}, mobile
       // rows data-audio — parseAudioRow handles all three.
@@ -991,6 +1005,8 @@
       },
     },
     {
+      id: "ym",
+      label: "Яндекс.Музыка",
       host: /^music\.yandex\.ru$/,
       rows: '[class*="CommonTrack_root"], [class*="HorizontalCardContainer_root"], a[href*="/track/"]',
       info: (el) => {
@@ -1011,6 +1027,8 @@
       },
     },
     {
+      id: "yt",
+      label: "YouTube",
       host: /(^|\.)youtube\.com$/,
       rows: "ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytm-rich-item-renderer",
       info: (el) => {
@@ -1045,7 +1063,8 @@
     if (r.width < 80 || r.bottom < 0 || r.top > innerHeight) return;
     inlineEl = el;
     inlineInfo = info;
-    bar.style.top = Math.max(4, r.top - 9) + "px";
+    bar.style.top =
+      (r.top >= 34 ? Math.max(4, r.top - 32) : r.bottom + 6) + "px";
     bar.style.left = Math.max(4, r.left) + "px";
     bar.style.width = r.width + "px";
     bar.querySelector(".dcbot-name").textContent = info.title || "";
@@ -1086,7 +1105,7 @@
       if (!site) return;
       if (e.target.closest && e.target.closest("#dcbot-inline, #dcbot-wrap")) return;
       const el = e.target.closest ? e.target.closest(site.rows) : null;
-      if (el) {
+      if (el && inlineEnabled(site.id)) {
         clearTimeout(inlineHideTimer);
         showInline(el);
       } else {
@@ -1212,7 +1231,36 @@
     const head = document.createElement("div");
     head.className = "dcbot-head";
     head.appendChild(tabEl("Треки", "queue"));
+    head.appendChild(tabEl("Сайты", "sites"));
     head.appendChild(tabEl("Лог (" + LOGS.length + ")", "log"));
+
+    if (activeTab === "sites") {
+      const body = document.createElement("div");
+      body.className = "dcbot-body";
+      const cat = document.createElement("div");
+      cat.className = "dcbot-cat";
+      cat.textContent = "Кнопка + Queue над треками";
+      body.appendChild(cat);
+      for (const s of INLINE_SITES) {
+        const row = rowEl(
+          s.label,
+          inlineEnabled(s.id) ? "вкл" : "выкл",
+          () => {
+            setInlineEnabled(s.id, !inlineEnabled(s.id));
+            if (!inlineEnabled(s.id)) hideInlineNow();
+            log("кнопка над треками для " + s.label + ": " + (inlineEnabled(s.id) ? "вкл" : "выкл"));
+            renderPanel();
+          },
+        );
+        body.appendChild(row);
+      }
+      const hint = document.createElement("div");
+      hint.className = "dcbot-empty";
+      hint.textContent = "Клик по строке — переключить. SoundCloud не имеет карточек с кнопкой.";
+      body.appendChild(hint);
+      panel.replaceChildren(head, body);
+      return;
+    }
 
     if (activeTab === "log") {
       const bar = document.createElement("div");
