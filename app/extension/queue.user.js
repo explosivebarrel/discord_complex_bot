@@ -314,6 +314,25 @@
     for (const k in value) vkScan(value[k]);
   }
 
+  // The stream request URL itself is the link: when the player fetches an
+  // HLS manifest or an mp3 from the audio CDN, remember the URL. HLS
+  // manifests are plain text (not JSON), so response scanning can't see
+  // them — but the request URL says everything.
+  function vkCaptureUrl(url) {
+    if (typeof url !== "string" || !/^https?:\/\//.test(url)) return;
+    if (!/vkuseraudio\.net|vkuser\.net|vk\.com\/.*audio|vk\.ru\/.*audio/i.test(url)) return;
+    if (!/\.(m3u8|mp3|mp4|aac)(\?|$)/i.test(url)) return;
+    const item = {
+      owner_id: null, id: null, url,
+      title: "", artist: "", duration: 0,
+      key: "url:" + url, ms: Date.now(),
+    };
+    const at = vkCaptured.findIndex((x) => x.key === item.key);
+    if (at >= 0) vkCaptured.splice(at, 1);
+    vkCaptured.push(item);
+    if (vkCaptured.length > VK_MAX_ITEMS) vkCaptured.shift();
+  }
+
   function vkScanText(text) {
     if (typeof text !== "string" || !text || text.length > 3_000_000) return;
     let data;
@@ -335,6 +354,10 @@
     const origFetch = W.fetch;
     if (typeof origFetch === "function") {
       W.fetch = function (...args) {
+        try {
+          const u = args[0];
+          vkCaptureUrl(typeof u === "string" ? u : u && u.url);
+        } catch {}
         const p = origFetch.apply(this, args);
         try {
           p.then((res) => {
@@ -360,6 +383,8 @@
       XHR.prototype.send = function () {
         this.addEventListener("load", () => {
           try {
+            // The request URL may BE the stream (m3u8/mp3 on the CDN).
+            vkCaptureUrl(String(this.__dcbotUrl || this.responseURL || ""));
             // Scan every XHR response: the desktop player fetches streams
             // through endpoints whose URLs carry no "audio" hint, so a URL
             // filter silently missed them.
@@ -886,7 +911,7 @@
     // attribute and every capture key, so the mismatch is visible.
     log(
       "VK: capture не совпал — row.attr=" + JSON.stringify(row.attr || "") +
-        " | capture keys: " + vkCaptured.map((x) => x.key).slice(0, 10).join(", "),
+        " | capture keys: " + vkCaptured.slice(-10).map((x) => x.key.slice(0, 60)).join(", "),
       "warn",
     );
     const mobile = /m\.vk\.(ru|com)/.test(location.hostname);
