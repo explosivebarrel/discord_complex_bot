@@ -35,7 +35,7 @@ HOURLY_LIMIT = int(os.environ.get("HOURLY_LIMIT", "40"))
 # library track the sidecar account cannot see returns {"response":[]},
 # and the search-by-name phase finds the same song in the open catalog.
 DEEP_LINK_TIMEOUT = float(os.environ.get("DEEP_LINK_TIMEOUT", "8"))
-SEARCH_TIMEOUT = float(os.environ.get("SEARCH_TIMEOUT", "15"))
+SEARCH_TIMEOUT = float(os.environ.get("SEARCH_TIMEOUT", "25"))
 
 CDN_HOST_RE = re.compile(r"(?:vkuseraudio|vkuser)\.net$|okcdn\.ru$", re.I)
 METHOD_RE = re.compile(r"method/audio\.(?:getById|get)\b|al_audio\.php", re.I)
@@ -149,8 +149,12 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
 
     async def wait_for_url(deadline_s: float, exact: bool) -> str | None:
         """exact=True: only the deep link's own audio.getById row counts.
-        exact=False (search): the first track stream of the results page."""
+        exact=False (search): click result rows one by one — a free
+        account's search payload carries no stream URLs until a row is
+        played (and an ad plays first, ct=0, filtered out)."""
         deadline = time.time() + deadline_s
+        clicked = 0
+        last_click = 0.0
         while time.time() < deadline:
             while responses:
                 resp = responses.pop(0)
@@ -179,6 +183,17 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
                         except Exception:  # noqa: BLE001 - best effort
                             pass
                         break
+            elif time.time() - last_click > 5:
+                # Play the next result row (trusted click); re-clicking the
+                # same row would pause it.
+                rows = await page.query_selector_all("[data-audio], [data-audio-id]")
+                if clicked < len(rows):
+                    try:
+                        await rows[clicked].click(timeout=2000)
+                        clicked += 1
+                        last_click = time.time()
+                    except Exception:  # noqa: BLE001 - best effort
+                        clicked += 1
             await page.wait_for_timeout(500)
         return None
 
