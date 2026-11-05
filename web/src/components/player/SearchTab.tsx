@@ -19,7 +19,7 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
-import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as SearchIcon, IconPlayArrow as PlayArrow } from "../icons";
+import { IconAddToQueue as AddQueue, IconFavorite as Favorite, IconSearch as SearchIcon, IconPlayArrow as PlayArrow, IconGraphicEq as GraphicEq } from "../icons";
 import { MsIcon } from "../MsIcon";
 import { PlaylistAddMenu } from "../PlaylistAddMenu";
 import { MosaicCover } from "../MosaicCover";
@@ -32,7 +32,7 @@ import type { SearchTabProps } from "./playerProps";
     chips (+ radio presets / upload). It stays put while the page scrolls
     underneath, like Yandex Music's top search. */
 export function SearchBar({
-  gid, source, setSource, query, setQuery, hasQuery, searchActive, setSearchActive,
+  gid, source, setSource, query, setQuery, performer, setPerformer, hasQuery, searchActive, setSearchActive,
   setResults, searching, enqueueing, enqueue, doSearch, sourceAvailable,
   uploading, fileInputRef, uploadFiles, onPreset, guard,
   SOURCES, PLACEHOLDERS, RADIO_PRESETS, UPLOAD_ACCEPT,
@@ -81,7 +81,7 @@ export function SearchBar({
         <Box sx={{ position: "relative", flex: 1, minWidth: 0 }}>
           <TextField
             fullWidth
-            placeholder={PLACEHOLDERS[source]}
+            placeholder={performer ? "Artist name — tracks by this performer only" : PLACEHOLDERS[source]}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setSearchActive(true)}
@@ -209,6 +209,20 @@ export function SearchBar({
             </Tooltip>
           );
         })}
+        {/* Artist mode: keep only rows whose author matches the query — a
+            band name no longer returns unrelated tracks sharing its title. */}
+        <Chip
+          icon={<GraphicEq fontSize="small" />}
+          label="Artist"
+          clickable
+          color={performer ? "secondary" : "default"}
+          variant={performer ? "filled" : "outlined"}
+          onClick={() => {
+            setPerformer(!performer);
+            setResults(null);
+          }}
+          sx={{ flexShrink: 0 }}
+        />
       </Stack>
 
       {source === "radio" && (

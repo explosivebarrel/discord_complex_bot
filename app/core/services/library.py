@@ -137,11 +137,39 @@ def _row(path: Path, root: Path) -> dict[str, Any]:
     }
 
 
+# path -> (mtime, artist); audio tags never change without the mtime moving.
+_ARTIST_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _file_artist(path: Path) -> str:
+    """The ID3/metadata artist of an audio file, '' when absent or unreadable."""
+    cached = _ARTIST_CACHE.get(str(path))
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return ""
+    if cached and cached[0] == mtime:
+        return cached[1]
+    artist = ""
+    try:
+        from mutagen import File as MutagenFile
+
+        f = MutagenFile(path, easy=True)
+        if f is not None and f.tags:
+            values = f.get("artist") or []
+            artist = str(values[0]).strip() if values else ""
+    except Exception:  # noqa: BLE001 - a broken/unreadable tag is not an error
+        artist = ""
+    _ARTIST_CACHE[str(path)] = (mtime, artist)
+    return artist
+
+
 def search_local_for_guild(
-    config: Config, guild_id: int, query: str = "", limit: int = 50
+    config: Config, guild_id: int, query: str = "", limit: int = 50, performer: bool = False
 ) -> list[dict[str, Any]]:
     """Files visible to one guild: the shared library root plus this
-    guild's uploads — never another guild's uploads folder."""
+    guild's uploads — never another guild's uploads folder. Matches the
+    file name; in performer mode only the embedded artist tag instead."""
     root = _library_root(config)
     if not root.is_dir():
         return []
@@ -155,9 +183,14 @@ def search_local_for_guild(
         # Other guilds' uploads stay invisible.
         if rel.startswith(f"{UPLOADS_DIRNAME}/") and not rel.startswith(own_prefix):
             continue
-        if needle and needle not in rel.lower():
-            continue
         row = _row(path, root)
+        row["artist"] = _file_artist(path)
+        if needle:
+            if performer:
+                if needle not in row["artist"].lower():
+                    continue
+            elif needle not in rel.lower() and needle not in row["artist"].lower():
+                continue
         row["name"] = display_name(path.stem)
         found.append(row)
         if len(found) >= limit:

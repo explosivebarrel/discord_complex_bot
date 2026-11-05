@@ -406,12 +406,21 @@ async def update_vkmusic(
     """Save the VK audio access token in the DB and in .env.
 
     The bot re-reads the DB value before every VK call, so it applies
-    without a restart.
+    without a restart. The token is validated against the audio API first:
+    a bad one used to save fine and every VK search then failed with a
+    cryptic error in the panel.
     """
     _require_superadmin(user)
     token = body.access_token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="access_token must not be empty")
+
+    from app.core.services import vk_music
+
+    try:
+        await vk_music.vk_call(token, "audio.search", q="test", count=1)
+    except vk_music.VkMusicError as exc:
+        raise HTTPException(status_code=400, detail=f"VK rejected this token: {exc}") from exc
 
     await db.set_system_setting(VK_TOKEN_KEY, {"access_token": token})
     env_path = config.data_dir.parent / ".env"
@@ -421,5 +430,5 @@ async def update_vkmusic(
     return {
         "token_masked": LavalinkAdmin.mask_token(token),
         "env_updated": env_written,
-        "note": "Saved. VK search and playback use the new token right away.",
+        "note": "Saved and verified. VK search and playback use the new token right away.",
     }

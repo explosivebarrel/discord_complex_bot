@@ -25,6 +25,9 @@ export interface SearchBarProps {
   setSource: (s: string) => void;
   query: string;
   setQuery: (q: string) => void;
+  /** Artist mode: only rows whose author matches the query. */
+  performer: boolean;
+  setPerformer: (v: boolean) => void;
   hasQuery: boolean;
   searchActive: boolean;
   setSearchActive: (v: boolean) => void;

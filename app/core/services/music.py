@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -503,25 +504,45 @@ class MusicService:
             return "hls"
         return "ok"
 
-    async def search(self, query: str, limit: int = 10, source: str = "yt") -> list[dict[str, Any]]:
+    @staticmethod
+    def _author_matches(row: dict[str, Any], needle: str) -> bool:
+        # Whole-word match: a band name must not match longer words in an
+        # author ("кино" vs the "Киновселенная" movie channel).
+        return re.search(rf"\b{re.escape(needle)}\b", (row.get("author") or "").casefold()) is not None
+
+    async def search(
+        self, query: str, limit: int = 10, source: str = "yt", performer: bool = False
+    ) -> list[dict[str, Any]]:
+        """One search page. performer=True is the "artist" mode: rows whose
+        author does not match the query are filtered out (text search on
+        YouTube/Yandex matches titles too, so a band name returns unrelated
+        tracks that merely share its name)."""
+        needle = query.strip().casefold()
         if source == "sc":
-            return await self._ytdlp_search(query, limit, "scsearch", "sc")
+            # Performer mode over-fetches: text search matches titles too,
+            # and only some of the rows are by the requested author.
+            rows = await self._ytdlp_search(query, limit * 4 if performer else limit, "scsearch", "sc")
+            return [r for r in rows if self._author_matches(r, needle)] if performer else rows[:limit]
         if source == "yt":
-            return await self._ytdlp_search(query, limit, "ytsearch", "yt")
+            rows = await self._ytdlp_search(query, limit * 4 if performer else limit, "ytsearch", "yt")
+            return [r for r in rows if self._author_matches(r, needle)] if performer else rows[:limit]
         if source == "vk":
             token = await self._vk_token()
             try:
-                return await vk_music.search(token, query, limit)
+                return await vk_music.search(token, query, limit, performer_only=performer)
             except VkMusicError as exc:
                 raise MusicServiceError(str(exc)) from exc
         result = await self._search_with_retry(query, source)
-        if isinstance(result, wavelink.Playlist):
-            tracks = result.tracks[:limit]
-        else:
-            tracks = result[:limit]
+        # The Lavalink-side sources (Yandex Music) have no artist-only flag:
+        # take a wide page and keep the author matches.
+        cap = limit * 4 if performer else limit
+        tracks = (result.tracks if isinstance(result, wavelink.Playlist) else result)[:cap]
         for t in tracks:
             self.track_cache[t.encoded] = t._raw_data  # noqa: SLF001 - reuse the payload Lavalink already returned
-        return [self._track_dict(t) for t in tracks]
+        rows = [self._track_dict(t) for t in tracks]
+        if performer:
+            rows = [r for r in rows if self._author_matches(r, needle)]
+        return rows[:limit]
 
     @staticmethod
     def _track_dict(track: wavelink.Playable) -> dict[str, Any]:

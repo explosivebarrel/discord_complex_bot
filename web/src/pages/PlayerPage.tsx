@@ -126,6 +126,9 @@ export function PlayerPage() {
   // "All" is the default: with the search cache the first slow multi-source
   // query is remembered, so later searches of the same query are instant.
   const [source, setSource] = useState("all");
+  // Artist mode: only rows whose author matches the query — a band name no
+  // longer returns other artists' tracks that merely share its title.
+  const [performer, setPerformer] = useState(false);
   const [results, setResults] = useState<TrackInfo[] | null>(null);
   const [searching, setSearching] = useState(false);
   // Sequence guard for search responses: only the newest request may paint.
@@ -279,13 +282,13 @@ export function PlayerPage() {
       .catch(guard);
   };
 
-  const doSearch = (q: string = query, src: string = source) => {
+  const doSearch = (q: string = query, src: string = source, asPerformer: boolean = performer) => {
     if (!q.trim()) return;
     // A slow response must never overwrite a newer search's results.
     const seq = ++searchSeq.current;
     setSearching(true);
     api
-      .search(gid, q, src)
+      .search(gid, q, src, false, asPerformer)
       .then((r) => {
         if (searchSeq.current !== seq) return;
         setResults(r.results);
@@ -297,7 +300,7 @@ export function PlayerPage() {
         // (the banner explains the swap) and replace when done. On failure
         // the cached results simply stay.
         api
-          .search(gid, q, src, true)
+          .search(gid, q, src, true, asPerformer)
           .then((r2) => {
             if (searchSeq.current === seq) setResults(r2.results);
           })
@@ -873,7 +876,7 @@ export function PlayerPage() {
   );
 
   const searchBarProps = {
-    gid, source, setSource, query, setQuery, hasQuery, searchActive, setSearchActive,
+    gid, source, setSource, query, setQuery, performer, setPerformer, hasQuery, searchActive, setSearchActive,
     setResults, setSearching, searching, enqueueing, enqueue, doSearch: () => doSearch(),
     sourceAvailable, uploading, fileInputRef, uploadFiles,
     onPreset: (preset: string) => {

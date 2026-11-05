@@ -355,9 +355,9 @@ export const api = {
       body: JSON.stringify({ query, source }),
     }).then((r) => handle<PlaylistPageInfo>(r)),
 
-  search: (guildId: string, q: string, source: string = "yt", fresh = false) =>
+  search: (guildId: string, q: string, source: string = "yt", fresh = false, performer = false) =>
     fetch(
-      `/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}${fresh ? "&fresh=true" : ""}`,
+      `/api/guilds/${guildId}/player/search?q=${encodeURIComponent(q)}&source=${source}${fresh ? "&fresh=true" : ""}${performer ? "&performer=true" : ""}`,
     ).then((r) => handle<SearchResponse>(r)),
 
   uploadTrack: (guildId: string, file: File) => {

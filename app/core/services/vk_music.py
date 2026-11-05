@@ -120,8 +120,13 @@ def track_row(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def search(token: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
-    response = await vk_call(token, "audio.search", q=query, count=min(max(limit, 1), 100))
+async def search(
+    token: str, query: str, limit: int = 10, performer_only: bool = False
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"q": query, "count": min(max(limit, 1), 100)}
+    if performer_only:
+        params["performer_only"] = 1
+    response = await vk_call(token, "audio.search", **params)
     items = response.get("items") if isinstance(response, dict) else (response or [])
     return [track_row(item) for item in (items or [])[:limit]]
 

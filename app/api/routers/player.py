@@ -226,7 +226,7 @@ async def player_ws(websocket: WebSocket, guild_id: int) -> None:
 
 
 async def _run_search(
-    q: str, source: str, guild_id: int, music: MusicService, config: Config
+    q: str, source: str, guild_id: int, music: MusicService, config: Config, performer: bool = False
 ) -> list[dict[str, Any]]:
     """The uncached search dispatch shared by the panel endpoint."""
     if source == "radio":
@@ -242,23 +242,32 @@ async def _run_search(
     if source == "local":
         # TrackInfo-compatible rows: the panel Queue button enqueues
         # {query: uri, source: "local"} against MusicService.enqueue.
-        rows = search_local_for_guild(config, guild_id, q)
+        rows = search_local_for_guild(config, guild_id, q, performer=performer)
         for row in rows:
-            row.update({"title": row["name"], "author": "local", "uri": row["path"], "source": "local"})
+            row.update({
+                "title": row["name"],
+                "author": row.get("artist") or "local",
+                "uri": row["path"],
+                "source": "local",
+            })
         return rows
     if source == "all":
         # One broken source must not fail the whole search.
         found = await asyncio.gather(
-            music.search(q, limit=5, source="yt"),
-            music.search(q, limit=4, source="sc"),
-            music.search(q, limit=4, source="ym"),
-            music.search(q, limit=4, source="vk"),
+            music.search(q, limit=5, source="yt", performer=performer),
+            music.search(q, limit=4, source="sc", performer=performer),
+            music.search(q, limit=4, source="ym", performer=performer),
+            music.search(q, limit=4, source="vk", performer=performer),
             radio_search(q, limit=3),
             archive_search(q, limit=3),
             return_exceptions=True,
         )
         rows = (r if isinstance(r, list) else [] for r in found)
         yt_res, sc_res, ym_res, vk_res, radio_res, arch_res = rows
+        if performer:
+            # The archive rows come unfiltered from their own search.
+            needle = q.strip().casefold()
+            arch_res = [r for r in arch_res if music._author_matches(r, needle)]  # noqa: SLF001
         # Only yt/sc go through yt-dlp at play time; probe them so the panel
         # can mark HLS-only and DRM tracks before the user queues them.
         to_probe = [r for r in (*yt_res, *sc_res) if r.get("uri")]
@@ -266,19 +275,22 @@ async def _run_search(
         for row, verdict in zip(to_probe, probes):
             if verdict in ("hls", "drm"):
                 row["issue"] = verdict
-        merged = [*yt_res, *sc_res, *ym_res, *vk_res, *radio_res, *arch_res]
+        merged = [*yt_res, *sc_res, *ym_res, *vk_res, *arch_res]
+        if not performer:
+            merged = [*merged, *radio_res]
         if not merged:
             raise HTTPException(status_code=502, detail="All sources failed. Try again in a moment.")
         return merged
     try:
-        return await music.search(q, source=source)
+        return await music.search(q, source=source, performer=performer)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _search_cache_key(source: str, guild_id: int, q: str) -> str:
+def _search_cache_key(source: str, guild_id: int, q: str, performer: bool = False) -> str:
     norm = " ".join(q.split()).casefold()
-    return hashlib.sha1(f"{source}|{guild_id}|{norm}".encode()).hexdigest()
+    mode = "artist" if performer else "title"
+    return hashlib.sha1(f"{source}|{mode}|{guild_id}|{norm}".encode()).hexdigest()
 
 
 SEARCH_FRESH_TTL = timedelta(minutes=30)
@@ -293,6 +305,7 @@ async def search(
     q: str,
     source: str = "yt",
     fresh: bool = False,
+    performer: bool = False,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
     config: Config = Depends(get_config),
@@ -300,8 +313,9 @@ async def search(
 ) -> dict[str, Any]:
     """Search with a stale-while-revalidate cache: results up to 30 minutes
     old come back instantly, older ones (up to a day) come back at once
-    with cache="stale" while the client re-requests with fresh=true."""
-    key = _search_cache_key(source, guild_id, q)
+    with cache="stale" while the client re-requests with fresh=true.
+    performer=True is the artist mode: only rows whose author matches."""
+    key = _search_cache_key(source, guild_id, q, performer)
     if not fresh:
         cached = await db.get_search_cache(key)
         if cached is not None:
@@ -310,7 +324,7 @@ async def search(
                 return {"results": cached["payload"], "cache": "fresh"}
             if age <= SEARCH_STALE_TTL:
                 return {"results": cached["payload"], "cache": "stale"}
-    results = await _run_search(q, source, guild_id, music, config)
+    results = await _run_search(q, source, guild_id, music, config, performer)
     try:
         await db.upsert_search_cache(key, results)
         await db.prune_search_cache(utcnow() - SEARCH_STALE_TTL)

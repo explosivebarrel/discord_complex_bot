@@ -242,21 +242,38 @@ export function SettingsPage() {
               VK Music access token
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
-              Needs a token with the audio scope (mobile-client trick). Open{" "}
-              <Link
-                href="https://oauth.vk.com/authorize?client_id=2685278&display=mobile&response_type=token&scope=audio&redirect_uri=https://oauth.vk.com/blank.html&v=5.199"
-                target="_blank"
-                rel="noreferrer"
-              >
-                this VK OAuth link
-              </Link>{" "}
-              while logged into the VK account, allow access, then copy <code>access_token</code> from the
-              blank-page URL. Applied without a restart. Current: {vk?.configured ? vk.token_masked : "not set"}.
+              <ol style={{ margin: "0 0 8px 18px", padding: 0 }}>
+                <li>
+                  In this browser, log out of VK and log into the account whose music you want the
+                  bot to use (the token inherits that account's audio library).
+                </li>
+                <li>
+                  Open{" "}
+                  <Link
+                    href="https://oauth.vk.com/authorize?client_id=2685278&display=mobile&response_type=token&scope=audio&redirect_uri=https://oauth.vk.com/blank.html&v=5.199"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    this VK OAuth link
+                  </Link>{" "}
+                  (a mobile-client login that still grants the audio scope; regular web OAuth does not
+                  anymore) and press Allow.
+                </li>
+                <li>
+                  You land on an almost empty page — copy the <code>access_token=...</code> value
+                  from its address bar (everything between <code>access_token=</code> and{" "}
+                  <code>&amp;expires_in</code>) and paste it here.
+                </li>
+              </ol>
+              The token is verified against the audio API before saving. It dies when the account
+              changes its password or VK forces a re-login — then search starts failing with an
+              authorization error and you simply paste a fresh one here. Applied without a restart.
+              Current: {vk?.configured ? vk.token_masked : "not set"}.
             </Typography>
             <Stack direction="row" spacing={1}>
               <TextField
                 fullWidth
-                placeholder="vk1.a.… paste the access token"
+                placeholder="paste the access_token from the OAuth page"
                 value={vkToken}
                 onChange={(e) => setVkToken(e.target.value)}
               />
