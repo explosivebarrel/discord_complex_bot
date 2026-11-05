@@ -1157,6 +1157,12 @@ class MusicService:
         except MusicServiceError as exc:
             # A dead entry must not stop the queue; report it and move on.
             self.record_error(str(exc), {"guild_id": guild_id, "title": item.display_title})
+            await self.notify(
+                guild_id,
+                "player",
+                "Track skipped",
+                f'"{item.display_title}" — {exc}',
+            )
             return await self.play_next(guild_id, reason)
         item.track = track
         try:

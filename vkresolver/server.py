@@ -35,7 +35,8 @@ HOURLY_LIMIT = int(os.environ.get("HOURLY_LIMIT", "40"))
 # library track the sidecar account cannot see returns {"response":[]},
 # and the search-by-name phase finds the same song in the open catalog.
 DEEP_LINK_TIMEOUT = float(os.environ.get("DEEP_LINK_TIMEOUT", "8"))
-SEARCH_TIMEOUT = float(os.environ.get("SEARCH_TIMEOUT", "25"))
+SEARCH_TIMEOUT = float(os.environ.get("SEARCH_TIMEOUT", "0"))
+NO_STREAM_TTL = float(os.environ.get("NO_STREAM_TTL", "600"))
 
 CDN_HOST_RE = re.compile(r"(?:vkuseraudio|vkuser)\.net$|okcdn\.ru$", re.I)
 METHOD_RE = re.compile(r"method/audio\.(?:getById|get)\b|al_audio\.php", re.I)
@@ -155,6 +156,7 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
         deadline = time.time() + deadline_s
         clicked = 0
         last_click = 0.0
+        empty_seen_at = 0.0  # getById answered without our track: no access
         while time.time() < deadline:
             while responses:
                 resp = responses.pop(0)
@@ -164,6 +166,12 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
                     continue
                 if exact:
                     url = _stream_from_json(body, owner_id, audio_id)
+                    if url is None and '"response":[]' in body.replace(" ", ""):
+                        # The account cannot see this track; the page will
+                        # never play it. A short grace covers a stream that
+                        # raced the response, then bail — the bot's fallback
+                        # resolves a substitute much faster than a full wait.
+                        empty_seen_at = empty_seen_at or time.time()
                 else:
                     url = next(
                         (u for u in VK_CDN_URL_RE.findall(body.replace("\\/", "/").replace("\\u0026", "&"))
@@ -174,6 +182,8 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
                     return url
             if streams:
                 return streams.pop(0)[1]
+            if empty_seen_at and time.time() - empty_seen_at > 2:
+                return None
             if exact:
                 for sel in PLAY_SELECTORS:
                     el = await page.query_selector(sel)
@@ -211,11 +221,13 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
             if "login" in str(exc):
                 raise
         # Phase 2: search by name — the same song from the open catalog.
-        if not query:
+        # Only useful on subscription accounts (a free account's pre-roll
+        # ad never starts headless); SEARCH_TIMEOUT=0 disables it.
+        if not query or SEARCH_TIMEOUT <= 0:
             raise RuntimeError("no_stream")
         await page.goto("https://vk.ru/audio?q=" + quote(query), wait_until="commit")
         await page.wait_for_load_state("load")
-        url = await wait_for_url(SEARCH_TIMEOUT, exact=False)
+        url = await wait_for_url(SEARCH_TIMEOUT, exact=False)  # only reached when enabled
         if url:
             return url, "search"
         raise RuntimeError("no_stream")
@@ -233,10 +245,14 @@ async def resolve(owner_id: int, audio_id: int, query: str) -> dict:
     hit = state.cache.get(key)
     now = time.time()
     if hit and hit[1] > now:
+        if hit[0] is None:
+            raise RuntimeError("no_stream")  # cached negative: known unavailable
         return {"url": hit[0], "ms": 0, "via": "cache"}
     async with state.lock:
         hit = state.cache.get(key)
         if hit and hit[1] > time.time():
+            if hit[0] is None:
+                raise RuntimeError("no_stream")
             return {"url": hit[0], "ms": 0, "via": "cache"}
         # Sliding-hour ceiling: a cache hit does not count, a page resolve does.
         now = time.time()
@@ -252,6 +268,15 @@ async def resolve(owner_id: int, audio_id: int, query: str) -> dict:
         t0 = time.time()
         try:
             url, via = await _resolve_once(owner_id, audio_id, query)
+        except RuntimeError as exc:
+            state.last_error = str(exc)
+            if str(exc) == "no_stream":
+                # Remember the dead entry: repeats fail in ~0ms instead of
+                # another page round-trip.
+                state.cache[key] = (None, time.time() + NO_STREAM_TTL)
+                if len(state.cache) > 500:
+                    state.cache.pop(next(iter(state.cache)))
+            raise
         except Exception as exc:  # noqa: BLE001 - reported to the caller
             state.last_error = str(exc)
             raise
