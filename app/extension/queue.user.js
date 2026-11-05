@@ -209,6 +209,11 @@
       value.url.length < 1200 &&
       (value.title || value.artist)
     ) {
+      const cover =
+        (value.album && (value.album.thumb || value.album.coverUrl)) ||
+        value.thumb ||
+        value.coverUrl ||
+        null;
       vkRemember({
         owner_id: value.owner_id ?? null,
         id: value.id ?? null,
@@ -216,6 +221,7 @@
         title: trim(value.title),
         artist: trim(value.artist),
         duration: Number(value.duration) || 0,
+        artwork: typeof cover === "string" && cover.startsWith("//") ? "https:" + cover : cover,
       });
     } else if (hasId && typeof value.title === "string" && value.title && !value.url && !value.artist) {
       // Catalog playlist/album: an id-pair with a title but no playable URL.
@@ -381,6 +387,7 @@
       author: x.artist || undefined,
       length_ms: x.duration ? x.duration * 1000 : undefined,
       stream_url: x.url,
+      artwork: x.artwork || undefined,
     }));
     const collections = vkCollections.slice(-40).reverse().map((x) => ({
       query: `https://vk.ru/playlist${x.owner_id}_${x.id}`,
@@ -487,6 +494,7 @@
       title: title || undefined,
       author: picked.artist || undefined,
       length_ms: picked.duration ? picked.duration * 1000 : undefined,
+      artwork: picked.artwork || undefined,
     };
   }
 

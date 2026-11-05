@@ -961,8 +961,23 @@ class MusicService:
             return track
         loaded = await wavelink.Playable.search(item.pending_url)
         if isinstance(loaded, wavelink.Playlist) or not loaded:
+            if item.source == "direct":
+                # The userscript's VK capture: the signed CDN link lives a
+                # few hours at most; replaying an old history entry fails.
+                raise MusicServiceError(
+                    "The direct VK link has expired - add the track from the VK page again."
+                )
             raise MusicServiceError("Could not load the stream.")
-        return loaded[0]
+        track = loaded[0]
+        if item.source == "direct":
+            # Lavalink only sees the CDN filename: restore the metadata the
+            # queue captured, or dock/history/recent all show "Unknown".
+            track._title = item.title or track.title  # noqa: SLF001
+            track._author = item.author or track.author  # noqa: SLF001
+            track._artwork = item.artwork or track.artwork  # noqa: SLF001
+            if item.length:
+                track._length = item.length  # noqa: SLF001
+        return track
 
     async def _load_stream(self, url: str) -> wavelink.Playable | None:
         """Load a direct URL through Lavalink; None on any load failure."""
