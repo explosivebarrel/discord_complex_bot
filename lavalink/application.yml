@@ -64,9 +64,13 @@ plugins:
     clients:
       - MUSIC
       - ANDROID_VR
-      - TV
+      # TVHTML5 (plain "TV") answers "the page needs to be reloaded" and WEB
+      # demands a poToken login from this IP; TVHTML5_SIMPLY (since 1.18.0)
+      # and the music/mobile-web clients still stream anonymously.
+      - TVHTML5_SIMPLY
       - IOS
-      - WEB
+      - ANDROID_MUSIC
+      - MWEB
 
   lavasrc:
     providers:
