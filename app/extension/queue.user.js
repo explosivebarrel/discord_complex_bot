@@ -49,6 +49,13 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // VK covers arrive as URL strings or as album objects with photo_N keys
   // at several sizes; anything that is not a URL string is not a cover.
+  function decodeHtml(s) {
+    if (typeof s !== "string" || !s.includes("&")) return s;
+    const ta = document.createElement("textarea");
+    ta.innerHTML = s;
+    return trim(ta.value);
+  }
+
   function bestCover(v) {
     if (typeof v === "string" && v) return v;
     if (v && typeof v === "object") {
@@ -244,8 +251,8 @@
         owner_id: value.owner_id ?? null,
         id: value.id ?? null,
         url: value.url.startsWith("//") ? "https:" + value.url : value.url,
-        title: trim(value.title),
-        artist: trim(value.artist),
+        title: decodeHtml(trim(value.title)),
+        artist: decodeHtml(trim(value.artist)),
         duration: Number(value.duration) || 0,
         artwork: typeof cover === "string" && cover.startsWith("//") ? "https:" + cover : cover,
       });
@@ -418,16 +425,23 @@
     try {
       const j = JSON.parse(raw);
       if (Array.isArray(j)) {
-        owner = Number(j[0]);
-        id = Number(j[1]);
-        const strs = j.filter((x) => typeof x === "string").map(trim).filter(Boolean);
-        title = strs.find((s) => !/^https?:/.test(s) && !/^\d{1,2}:\d{2}/.test(s)) || "";
-        artist = strs.filter((s) => s !== title)[0] || "";
+        // Observed VK layout (m.vk.ru sample):
+        // [audioId, ownerId, "", title, artist, duration, ...]
+        id = Number(j[0]);
+        owner = Number(j[1]);
+        title = typeof j[3] === "string" ? decodeHtml(j[3]) : "";
+        artist = typeof j[4] === "string" ? decodeHtml(j[4]) : "";
+        duration = Number(j[5]) || 0;
+        if (!title || !artist) {
+          const strs = j.filter((x) => typeof x === "string").map(trim).filter(Boolean);
+          title = title || strs.find((s) => !/^https?:/.test(s) && !/^\d{1,2}:\d{2}/.test(s)) || "";
+          artist = artist || strs.filter((s) => s !== title)[0] || "";
+        }
       } else if (j && typeof j === "object") {
         owner = Number(j.owner_id);
         id = Number(j.id);
-        title = trim(j.title);
-        artist = trim(j.artist || j.performer);
+        title = decodeHtml(trim(j.title));
+        artist = decodeHtml(trim(j.artist || j.performer));
         duration = Number(j.duration) || 0;
       }
     } catch {
@@ -483,15 +497,19 @@
       const key = p.owner_id + "_" + p.id;
       if (seen.has(key)) continue;
       seen.add(key);
-      const cap = vkCaptured.find((x) => x.key === key);
+      const cap =
+        vkCaptured.find((x) => x.key === key) ||
+        vkCaptured.find((x) => x.key === `${p.id}_${p.owner_id}`) || null;
       // The API capture is ground truth for artist/title; the DOM parse
       // (whose data-audio field order VK may change) only fills gaps.
       const author = (cap && cap.artist) || p.artist || undefined;
       const name = (cap && cap.title) || p.title || "";
       const title = ([author, name].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140);
+      const oid = cap && cap.owner_id != null ? cap.owner_id : p.owner_id;
+      const aid = cap && cap.id != null ? cap.id : p.id;
       tracks.push({
-        key,
-        query: `https://vk.ru/audio${p.owner_id}_${p.id}`,
+        key: cap ? cap.key : key,
+        query: `https://vk.ru/audio${oid}_${aid}`,
         source: "vk",
         title,
         author,
