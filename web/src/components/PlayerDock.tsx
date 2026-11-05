@@ -153,23 +153,26 @@ export function PlayerDock({
   }, []);
   // Full WebGL glass: the dock and the FAB are scene islands — the lens is
   // painted beneath their transparent DOM; CSS glass stays the fallback.
-  // `!!state` also re-runs the registration after the early-return mounts
-  // the boxes (the ref callback fills them during that render's commit).
-  // The FAB is a frosted panel by default (the small lens reads badly on a
-  // 60px disc); the lens is a settings toggle.
+  // The gate tracks the dock being MOUNTED (the early return hides it while
+  // `state` exists but is idle and disconnected): `!!state` alone flips true
+  // on the first idle poll, the glass registration then never re-runs when
+  // the dock finally mounts, and the scene keeps no glass on it. The FAB is
+  // a frosted panel by default (the small lens reads badly on a 60px disc);
+  // the lens is a settings toggle.
   const { glassWebgl, glassTuning } = useAppTheme();
+  const dockMounted = !!state && (!!current || state.connected);
   const fabKind = glassTuning.fabFrost ? "panel" : "lens";
   const fabTint = glassTuning.fabFrost ? glassTuning.fabTint : glassTuning.lensTint;
   const fabTintAlpha = glassTuning.fabFrost ? glassTuning.fabTintAlpha : glassTuning.lensTintAlpha;
   useGlassIsland(
     dockRef,
     { radius: 20, kind: "lens" },
-    glassWebgl && !!state,
+    glassWebgl && dockMounted,
   );
   useGlassIsland(
     fabRef,
     { radius: 30, kind: fabKind, blur: glassTuning.fabBlur },
-    glassWebgl && !!state,
+    glassWebgl && dockMounted,
   );
   // Layout mode from the dock's own width: below ~680px (sidebars open on
   // a small screen) one row cannot fit cover + title + transport + actions,

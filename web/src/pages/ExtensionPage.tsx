@@ -34,10 +34,10 @@ function TokenRow({ id, label, created, lastUsed, onRevoke }: {
         </Typography>
         <Typography variant="caption" component="div" sx={{ color: "text.secondary" }} noWrap>
           {new Date(created).toLocaleDateString()}
-          {lastUsed ? ` · использован ${new Date(lastUsed).toLocaleDateString()}` : " · ещё не использовался"}
+          {lastUsed ? ` · last used ${new Date(lastUsed).toLocaleDateString()}` : " · never used"}
         </Typography>
       </Box>
-      <Tooltip title="Отозвать ключ">
+      <Tooltip title="Revoke key">
         <IconButton size="small" onClick={onRevoke} aria-label={`Revoke key ${label || id}`}>
           <MsIcon name="delete" fontSize={18} />
         </IconButton>
@@ -86,52 +86,81 @@ export function ExtensionPage() {
             Tracks straight from the platform pages
           </Typography>
           <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-            Плагин-юзерскрипт добавляет кнопку «＋ Queue» на страницы YouTube,
-            Яндекс.Музыки, SoundCloud и VK. Один клик — трек в очереди бота.
-            Никаких токенов площадок на сервере: страница, на которой вы
-            авторизованы, сама даёт всё необходимое.
+            The userscript plugin adds a "＋ Queue" pill to YouTube, Yandex
+            Music, SoundCloud and VK pages. Hover it for a panel with every
+            track visible on the page; click a track to add it to the bot's
+            queue. No platform tokens live on the server: the page you are
+            logged into provides everything.
           </Typography>
           <Stack spacing={1.5} sx={{ mb: 2 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Chip size="small" label="1" sx={{ flexShrink: 0 }} />
+            <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+              <Chip size="small" label="1" sx={{ flexShrink: 0, mt: 0.25 }} />
               <Typography variant="body2">
-                Поставьте{" "}
+                Install a userscript manager —{" "}
                 <a href="https://www.tampermonkey.net/" target="_blank" rel="noreferrer">
                   Tampermonkey
                 </a>{" "}
-                (или Violentmonkey), если ещё нет.
+                (Chrome, Edge, Firefox, Opera) or{" "}
+                <a href="https://violentmonkey.github.io/" target="_blank" rel="noreferrer">
+                  Violentmonkey
+                </a>{" "}
+                — if you don't have one. This is a browser extension that runs
+                the plugin on the supported pages; the plugin itself is ours
+                and comes from this server.
               </Typography>
             </Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Chip size="small" label="2" sx={{ flexShrink: 0 }} />
+            <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+              <Chip size="small" label="2" sx={{ flexShrink: 0, mt: 0.25 }} />
               <Typography variant="body2">
-                Нажмите «Установить» — откроется страница Tampermonkey с плагином. Он
-                обновляется сам при новых версиях бота.
+                Click "Install userscript" below. Tampermonkey intercepts
+                .user.js links and opens its own install page — press
+                "Install" there. If nothing opens, open the Tampermonkey
+                dashboard → Utilities → "Import from URL" and paste the same
+                link. Updates are automatic: whenever the bot ships a new
+                plugin version, Tampermonkey picks it up on its own.
               </Typography>
             </Box>
             <Box sx={{ pl: 5 }}>
               <Button component="a" href={scriptUrl} variant="contained" startIcon={<MsIcon name="download" fontSize={20} />}>
-                Установить юзерскрипт
+                Install userscript
               </Button>
             </Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Chip size="small" label="3" sx={{ flexShrink: 0 }} />
+            <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+              <Chip size="small" label="3" sx={{ flexShrink: 0, mt: 0.25 }} />
               <Typography variant="body2">
-                Создайте персональный ключ ниже, скопируйте его.
+                Create a personal key below ("Create key") and copy it — it is
+                shown exactly once. The key identifies you to the bot; treat
+                it like a password, anyone holding it can queue tracks on your
+                behalf (revoke it here anytime).
               </Typography>
             </Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <Chip size="small" label="4" sx={{ flexShrink: 0 }} />
+            <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+              <Chip size="small" label="4" sx={{ flexShrink: 0, mt: 0.25 }} />
               <Typography variant="body2">
-                На любой поддерживаемой странице: меню Tampermonkey → «Discord Queue:
-                настройки» → вставьте ключ, выберите сервер. Готово.
+                On any supported page, click the Tampermonkey toolbar icon →
+                "Discord Queue: настройки" (settings) → paste the key and
+                press OK, then pick the server from the list. Use this exact
+                browser and profile — the key is stored per browser.
+              </Typography>
+            </Box>
+            <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+              <Chip size="small" label="5" sx={{ flexShrink: 0, mt: 0.25 }} />
+              <Typography variant="body2">
+                Verify: Tampermonkey menu → "Discord Queue: проверить связь"
+                (check connection) should report the server. Then play any
+                track on YouTube / Yandex Music / VK and press the "＋ Queue"
+                pill in the corner. Problems? The same menu has "Discord
+                Queue: скопировать лог (текст)" — send the log when asking
+                for help.
               </Typography>
             </Box>
           </Stack>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            Ключ — это доступ к добавлению треков от вашего имени: не публикуйте его.
-            VK добавляется как «услышать сейчас» (прямая ссылка со страницы живёт
-            недолго), YouTube / Яндекс.Музыка / SoundCloud работают в обычном режиме.
+            Known limits: VK queues as "listen now" — the direct stream link
+            taken from the page lives for a few hours, so replays from history
+            may ask you to add the track again; the mobile m.vk.ru player may
+            refuse to yield links (desktop vk.ru is the reliable one).
+            YouTube / Yandex Music / SoundCloud queue normally.
           </Typography>
         </CardContent>
       </Card>
@@ -140,17 +169,17 @@ export function ExtensionPage() {
         <CardContent>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>
             <Typography variant="h6" sx={{ flex: 1 }}>
-              Мои ключи
+              My keys
             </Typography>
             <Button size="small" variant="tonal" onClick={createKey}>
-              Создать ключ
+              Create key
             </Button>
           </Stack>
           {newKey && (
             <Box
               onClick={() => {
                 navigator.clipboard?.writeText(newKey);
-                feedback.show("Ключ скопирован");
+                feedback.show("Key copied");
               }}
               sx={(t) => ({
                 bgcolor: t.palette.m3.surfaceContainerHighest,
@@ -165,7 +194,7 @@ export function ExtensionPage() {
             >
               {newKey}
               <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mt: 0.5, fontFamily: "inherit" }}>
-                Показан только один раз — скопируйте сейчас (клик — в буфер)
+                Shown only once — copy it now (click to copy)
               </Typography>
             </Box>
           )}
@@ -187,7 +216,7 @@ export function ExtensionPage() {
           ) : (
             !newKey && (
               <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Ключей ещё нет.
+                No keys yet.
               </Typography>
             )
           )}
