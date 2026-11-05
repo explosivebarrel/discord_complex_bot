@@ -85,7 +85,19 @@ def _looks_like_stream(url: str) -> bool:
     return (m.group(1) if m else "2") != "0"
 
 
-def _stream_from_json(body: str, owner_id: int, audio_id: int) -> str | None:
+def _artwork_from_row(row: dict) -> str | None:
+    """album.thumb / thumb carry photo_34..photo_600 sizes."""
+    album = row.get("album") if isinstance(row.get("album"), dict) else {}
+    thumb = album.get("thumb") or row.get("thumb")
+    if isinstance(thumb, dict):
+        for size in ("photo_600", "photo_300", "photo_270", "photo_68", "photo_34"):
+            url = thumb.get(size)
+            if isinstance(url, str) and url.startswith("http"):
+                return url.replace("\/", "/")
+    return None
+
+
+def _stream_from_json(body: str, owner_id: int, audio_id: int) -> tuple[str | None, str | None]:
     """audio.getById answers {"response": [{...,"url": "https://..."}]}.
     Only the exact requested track counts: `{"response":[]}` means the
     sidecar account has no access (foreign/private library tracks), and
@@ -102,8 +114,8 @@ def _stream_from_json(body: str, owner_id: int, audio_id: int) -> str | None:
             continue
         url = row.get("url")
         if isinstance(url, str) and _looks_like_stream(url):
-            return url
-    return None
+            return url, _artwork_from_row(row)
+    return None, None
 
 
 def _cache_ttl(url: str) -> float:
@@ -165,7 +177,7 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
                 except Exception:  # noqa: BLE001 - navigated away / streamed
                     continue
                 if exact:
-                    url = _stream_from_json(body, owner_id, audio_id)
+                    url, art = _stream_from_json(body, owner_id, audio_id)
                     if url is None and '"response":[]' in body.replace(" ", ""):
                         # The account cannot see this track; the page will
                         # never play it. A short grace covers a stream that
@@ -179,11 +191,11 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
                         None,
                     )
                 if url:
-                    return url
+                    return url, art
             if streams:
-                return streams.pop(0)[1]
+                return streams.pop(0)[1], None
             if empty_seen_at and time.time() - empty_seen_at > 2:
-                return None
+                return None, None
             if exact:
                 for sel in PLAY_SELECTORS:
                     el = await page.query_selector(sel)
@@ -205,7 +217,7 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
                     except Exception:  # noqa: BLE001 - best effort
                         clicked += 1
             await page.wait_for_timeout(500)
-        return None
+        return None, None
 
     try:
         # Phase 1: the deep link (exact track; foreign/private tracks fast-
@@ -214,9 +226,9 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
             await _ride_redirects(page, owner_id, audio_id)
             if "login" in page.url:
                 raise RuntimeError("login_required")
-            url = await wait_for_url(DEEP_LINK_TIMEOUT, exact=True)
+            url, art = await wait_for_url(DEEP_LINK_TIMEOUT, exact=True)
             if url:
-                return url, "page"
+                return url, art, "page"
         except RuntimeError as exc:
             if "login" in str(exc):
                 raise
@@ -227,9 +239,9 @@ async def _resolve_once(owner_id: int, audio_id: int, query: str) -> tuple[str, 
             raise RuntimeError("no_stream")
         await page.goto("https://vk.ru/audio?q=" + quote(query), wait_until="commit")
         await page.wait_for_load_state("load")
-        url = await wait_for_url(SEARCH_TIMEOUT, exact=False)  # only reached when enabled
+        url, _ = await wait_for_url(SEARCH_TIMEOUT, exact=False)  # only reached when enabled
         if url:
-            return url, "search"
+            return url, None, "search"
         raise RuntimeError("no_stream")
     finally:
         stop.set()
@@ -244,16 +256,16 @@ async def resolve(owner_id: int, audio_id: int, query: str) -> dict:
     key = (owner_id, audio_id)
     hit = state.cache.get(key)
     now = time.time()
-    if hit and hit[1] > now:
+    if hit and hit[2] > now:
         if hit[0] is None:
             raise RuntimeError("no_stream")  # cached negative: known unavailable
-        return {"url": hit[0], "ms": 0, "via": "cache"}
+        return {"url": hit[0], "artwork": hit[1], "ms": 0, "via": "cache"}
     async with state.lock:
         hit = state.cache.get(key)
-        if hit and hit[1] > time.time():
+        if hit and hit[2] > time.time():
             if hit[0] is None:
                 raise RuntimeError("no_stream")
-            return {"url": hit[0], "ms": 0, "via": "cache"}
+            return {"url": hit[0], "artwork": hit[1], "ms": 0, "via": "cache"}
         # Sliding-hour ceiling: a cache hit does not count, a page resolve does.
         now = time.time()
         while state.hourly and state.hourly[0] < now - 3600:
@@ -267,13 +279,13 @@ async def resolve(owner_id: int, audio_id: int, query: str) -> dict:
         state.hourly.append(time.time())
         t0 = time.time()
         try:
-            url, via = await _resolve_once(owner_id, audio_id, query)
+            url, art, via = await _resolve_once(owner_id, audio_id, query)
         except RuntimeError as exc:
             state.last_error = str(exc)
             if str(exc) == "no_stream":
                 # Remember the dead entry: repeats fail in ~0ms instead of
                 # another page round-trip.
-                state.cache[key] = (None, time.time() + NO_STREAM_TTL)
+                state.cache[key] = (None, None, time.time() + NO_STREAM_TTL)
                 if len(state.cache) > 500:
                     state.cache.pop(next(iter(state.cache)))
             raise
@@ -283,10 +295,10 @@ async def resolve(owner_id: int, audio_id: int, query: str) -> dict:
         state.last_resolved = time.time()
         state.last_error = None
         ttl = _cache_ttl(url)
-        state.cache[key] = (url, time.time() + ttl)
+        state.cache[key] = (url, art, time.time() + ttl)
         if len(state.cache) > 500:
             state.cache.pop(next(iter(state.cache)))
-        return {"url": url, "ms": int((time.time() - t0) * 1000), "via": via}
+        return {"url": url, "artwork": art, "ms": int((time.time() - t0) * 1000), "via": via}
 
 
 @app.on_event("startup")
@@ -355,7 +367,7 @@ async def resolve_ep(body: dict) -> dict:
 
 @app.get("/health")
 async def health() -> dict:
-    fresh = sum(1 for _, exp in state.cache.values() if exp > time.time())
+    fresh = sum(1 for url, _, exp in state.cache.values() if url and exp > time.time())
     return {
         "session": state.logged_in,
         "last_error": state.last_error,

@@ -967,12 +967,14 @@ class MusicService:
                 # out the signed stream URL — no VK API involved. The name
                 # hints power its search phase for tracks the sidecar
                 # account cannot see (foreign library entries).
-                stream = await self._resolve_via_browser(
+                stream, vk_art = await self._resolve_via_browser(
                     *parsed, title=str(item.title or ""), author=str(item.author or "")
                 )
                 if stream:
                     track = await self._load_stream(stream)
                     if track is not None:
+                        if vk_art and not item.artwork:
+                            item.artwork = vk_art
                         logger.info("VK resolve via browser sidecar: %s_%s", *parsed)
                     else:
                         logger.warning(
@@ -1003,8 +1005,7 @@ class MusicService:
                 raise MusicServiceError("Could not load the VK track. Try adding it again.")
             sub._title = item.title or str(info.get("title") or sub.title)  # noqa: SLF001
             sub._author = item.author or str(info.get("uploader") or sub.author)  # noqa: SLF001
-            if item.artwork:
-                sub._artwork = item.artwork  # noqa: SLF001
+            sub._artwork = item.artwork or info.get("thumbnail")  # noqa: SLF001
             return sub
         loaded = await wavelink.Playable.search(item.pending_url)
         if isinstance(loaded, wavelink.Playlist) or not loaded:
@@ -1028,9 +1029,10 @@ class MusicService:
 
     async def _resolve_via_browser(
         self, owner_id: int, audio_id: int, title: str = "", author: str = ""
-    ) -> str | None:
+    ) -> tuple[str | None, str | None]:
         """Ask the vkresolver sidecar for a signed CDN URL (vkresolver/server.py).
-        Returns None on any failure — the search fallback plays instead."""
+        Returns (url, artwork); (None, None) on any failure — the search
+        fallback plays instead."""
         import httpx
 
         base = self.config.vk_resolver_url.rstrip("/")
@@ -1046,13 +1048,14 @@ class MusicService:
                     },
                 )
             if resp.status_code == 200:
-                return resp.json().get("url")
+                data = resp.json()
+                return data.get("url"), data.get("artwork")
             logger.warning(
                 "VK resolver %s: %s %s", owner_id, resp.status_code, resp.text[:200]
             )
         except Exception:  # noqa: BLE001 - the sidecar is optional
             logger.exception("VK resolver unreachable")
-        return None
+        return None, None
 
     async def _load_stream(self, url: str) -> wavelink.Playable | None:
         """Load a direct URL through Lavalink; None on any load failure."""
