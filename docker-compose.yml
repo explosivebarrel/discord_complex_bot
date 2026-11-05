@@ -44,8 +44,17 @@ services:
       - ./data/music:/data/music
       # The panel edits the Yandex token here; lavalink reads it on recreate.
       - ./.env:/srv/.env
+    # No published port: the web container is the front door (see below).
+
+  web:
+    build: ./web
+    container_name: dcbot-web
+    restart: unless-stopped
+    depends_on:
+      - app
+    # Frontend-only changes rebuild just this image; the bot stays up.
     ports:
-      - "8000:8000"
+      - "8000:80"
 
   vk-resolver:
     build: ./vkresolver
