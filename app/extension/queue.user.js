@@ -1308,10 +1308,11 @@
         );
         body.appendChild(row);
       }
-      const hint = document.createElement("div");
-      hint.className = "dcbot-empty";
-      hint.textContent = "Клик по строке — переключить. SoundCloud не имеет карточек с кнопкой.";
-      body.appendChild(hint);
+      const ver = typeof GM_info !== "undefined" && GM_info.script ? "v" + GM_info.script.version : "?";
+      const verLine = document.createElement("div");
+      verLine.className = "dcbot-empty";
+      verLine.textContent = "Версия плагина: " + ver + " (Tampermonkey " + (typeof GM_info !== "undefined" ? GM_info.version : "?") + "). Клик по строке — переключить.";
+      body.appendChild(verLine);
       panel.replaceChildren(head, body);
       return;
     }
