@@ -544,7 +544,8 @@
         source: "vk",
         title,
         author,
-        length_ms: (cap && cap.duration) || (p.duration || 0) * 1000 || undefined,
+        // Both cap.duration and p.duration are seconds — multiply whichever won.
+        length_ms: ((cap && cap.duration) || p.duration || 0) * 1000 || undefined,
         artwork: (cap && cap.artwork) || p.artwork || undefined,
         stream_url: cap ? cap.url : undefined,
       });
@@ -958,7 +959,12 @@
           source: "vk",
           title: ([author, name].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140),
           author,
-          length_ms: (cap && cap.duration) || (p.duration || 0) * 1000 || undefined,
+          // cap.duration is SECONDS (VK API), p.duration too — the field
+          // is milliseconds: 177 sent raw showed 0:00/0:00 in the player.
+          length_ms:
+            (cap && cap.duration ? cap.duration * 1000 : undefined) ||
+            (p.duration || 0) * 1000 ||
+            undefined,
           artwork: (cap && cap.artwork) || p.artwork || undefined,
           stream_url: cap ? cap.url : undefined,
         };
