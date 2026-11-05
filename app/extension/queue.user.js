@@ -18,6 +18,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_deleteValue
 // @grant        GM_setClipboard
+// @grant        GM_info
 // @grant        unsafeWindow
 // @connect      *
 // @connect      localhost
@@ -78,6 +79,28 @@
     });
   }
 
+  // Uncaught errors and rejections land in the session log too: a
+  // silent death between a click and the request was exactly what
+  // made the previous debugging blind.
+  function installErrorTraps() {
+    try {
+      window.addEventListener("error", (e) => {
+        log("НЕПЕРЕХВАЧЕНА ОШИБКА: " + e.message + " @" + (e.filename || "?") + ":" + (e.lineno || "?"), "err", {
+          stack: e.error && e.error.stack ? String(e.error.stack).split("\n").slice(0, 4).join("\n") : undefined,
+        });
+      });
+      window.addEventListener("unhandledrejection", (e) => {
+        const r = e.reason;
+        log("НЕОБРАБОТАННЫЙ REJECTION: " + (r && r.message ? r.message : String(r)), "err", {
+          stack: r && r.stack ? String(r.stack).split("\n").slice(0, 4).join("\n") : undefined,
+        });
+      });
+      log("глобальные ловушки ошибок установлены");
+    } catch (e) {
+      /* traps are diagnostic, never fatal */
+    }
+  }
+
   function fmtTs(iso) {
     return (iso || "").slice(11, 23);
   }
@@ -89,7 +112,7 @@
   }
 
   function logsAsJson() {
-    return JSON.stringify({ script: "dcbot-queue", version: "1.0.9", page: location.href, logs: LOGS }, null, 2);
+    return JSON.stringify({ script: "dcbot-queue", version: typeof GM_info !== "undefined" && GM_info.script ? GM_info.script.version : "?", page: location.href, logs: LOGS }, null, 2);
   }
 
   // --- network ------------------------------------------------------------
@@ -617,6 +640,13 @@
     #dcbot-toast.show{opacity:1;transform:translateY(0)}
     #dcbot-toast.err{border-color:#8c3d50;background:#2e1b26}
   `;
+
+  function setPill(state) {
+    const pill = document.getElementById("dcbot-pill");
+    if (!pill) return;
+    pill.classList.toggle("busy", state === "busy");
+    pill.textContent = state === "busy" ? "…" : "＋ Queue";
+  }
 
   function toast(text, isErr) {
     let el = document.getElementById("dcbot-toast");
