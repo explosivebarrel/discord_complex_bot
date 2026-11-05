@@ -78,6 +78,8 @@ export function ExtensionPage() {
   return (
     <AppShell me={me} back title="Add from sites">
       {feedback.node}
+      {/* Same content column as About/Settings: capped width, card gap. */}
+      <Stack spacing={2} sx={{ maxWidth: 760 }}>
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
@@ -191,6 +193,7 @@ export function ExtensionPage() {
           )}
         </CardContent>
       </Card>
+      </Stack>
     </AppShell>
   );
 }
