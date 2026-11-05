@@ -601,13 +601,22 @@ class MusicService:
         encoded: str | None = None,
         source: str = "yt",
         meta: dict[str, Any] | None = None,
+        stream_url: str | None = None,
     ) -> dict[str, Any]:
         """Add a search query, a track URL or a whole playlist to the queue.
 
         yt/sc tracks from the panel arrive with metadata and queue as
         pending items; the direct stream resolves right before playback.
-        Start playback if the player is idle.
+        Start playback if the player is idle. stream_url (VK userscript
+        captures the signed CDN link off the page) queues a pending item
+        that plays the raw URL directly, no VK token involved — such links
+        are short-lived, meant for immediate listening.
         """
+        if stream_url:
+            # Bypass the VK API entirely: pending "direct" item, the raw URL
+            # loads through Lavalink at play time (the _resolve_item fallback).
+            source = "direct"
+            query = stream_url
         source = self._detect_source(query, source)
         meta = meta or {}
         items: list[QueueItem] = []
@@ -707,6 +716,23 @@ class MusicService:
                     author="local",
                     length=int(meta.get("length_ms") or 0),
                     artwork=None,
+                )
+            ]
+            title = items[0].display_title
+        elif source == "direct":
+            # The userscript's VK capture: pending item over a raw signed
+            # stream URL, Lavalink loads it directly at play time.
+            items = [
+                QueueItem(
+                    track=None,
+                    requested_by_id=requester_id,
+                    requested_by_name=requester_name,
+                    source=source,
+                    pending_url=query,
+                    title=str(meta.get("title") or "?"),
+                    author=str(meta.get("author") or ""),
+                    length=int(meta.get("length_ms") or 0),
+                    artwork=meta.get("artwork"),
                 )
             ]
             title = items[0].display_title

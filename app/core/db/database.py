@@ -24,6 +24,7 @@ from app.core.db.models import (
     PlayHistory,
     SearchCache,
     SystemSetting,
+    UserApiToken,
     UserPlaylist,
     UserPlaylistTrack,
     WebSession,
@@ -172,6 +173,72 @@ class Database:
             if row is not None:
                 await session.delete(row)
                 await session.commit()
+
+    # --- user API tokens (browser userscript keys) ---
+
+    async def create_user_api_token(
+        self, token_hash: str, *, discord_id: int, username: str, global_name: str, label: str
+    ) -> None:
+        async with self.session_factory() as session:
+            session.add(
+                UserApiToken(
+                    id=token_hash,
+                    discord_id=discord_id,
+                    username=username[:128],
+                    global_name=global_name[:128],
+                    label=label[:128],
+                )
+            )
+            await session.commit()
+
+    async def get_user_api_token(self, token_hash: str) -> UserApiToken | None:
+        async with self.session_factory() as session:
+            return await session.get(UserApiToken, token_hash)
+
+    async def touch_user_api_token(self, token_hash: str) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(UserApiToken, token_hash)
+            if row is not None:
+                row.last_used_at = utcnow()
+                await session.commit()
+
+    async def list_user_api_tokens(self, discord_id: int) -> list[UserApiToken]:
+        async with self.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(UserApiToken)
+                    .where(UserApiToken.discord_id == discord_id, UserApiToken.revoked == False)  # noqa: E712
+                    .order_by(UserApiToken.created_at.desc())
+                )
+            ).scalars().all()
+            return list(rows)
+
+    async def revoke_user_api_token(self, token_hash: str, discord_id: int) -> bool:
+        """Revoke only if the key belongs to the caller; True when found."""
+        async with self.session_factory() as session:
+            row = await session.get(UserApiToken, token_hash)
+            if row is None or row.discord_id != discord_id:
+                return False
+            row.revoked = True
+            await session.commit()
+            return True
+
+    async def revoke_user_api_token_by_prefix(self, id_prefix: str, discord_id: int) -> bool:
+        async with self.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(UserApiToken).where(
+                        UserApiToken.discord_id == discord_id,
+                        UserApiToken.revoked == False,  # noqa: E712
+                    )
+                )
+            ).scalars().all()
+            row = next((r for r in rows if r.id.startswith(id_prefix)), None)
+            if row is None:
+                return False
+            row.revoked = True
+            await session.commit()
+            return True
 
     # --- play history ---
 

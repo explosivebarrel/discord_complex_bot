@@ -16,6 +16,7 @@ from app.core.db.models import utcnow
 if TYPE_CHECKING:
     from app.api.discord_oauth import DiscordOAuthClient
     from app.bot.client import ComplexBot
+    from app.core.db.models import UserApiToken
     from app.core.services.music import MusicService
 
 SESSION_COOKIE = "dcbot_session"
@@ -123,6 +124,69 @@ async def get_current_user(
     if session is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return CurrentUser(session, config)
+
+
+# --- personal API keys (browser userscript) ---
+
+API_KEY_PREFIX = "vkq_"
+
+
+class ApiKeyUser(CurrentUser):
+    """A CurrentUser without Discord OAuth tokens: membership checks fall
+    back to the bot's member cache, and OAuth-only endpoints reject it
+    through the empty access_token."""
+
+    def __init__(self, row: UserApiToken, config: Config) -> None:
+        self.session_id = f"key:{row.id[:12]}"
+        self.discord_id = row.discord_id
+        self.username = row.username
+        self.global_name = row.global_name
+        self.avatar = None
+        self.access_token = ""
+        self.refresh_token = ""
+        self.is_superadmin = self.discord_id in config.superadmin_ids
+
+
+def _bearer_key(request: Request) -> str | None:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer ") and auth[7:].strip():
+        return auth[7:].strip()
+    header = request.headers.get("X-API-Key", "")
+    return header.strip() or None
+
+
+async def get_api_user(
+    request: Request,
+    db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
+) -> ApiKeyUser:
+    key = _bearer_key(request)
+    if key is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if not key.startswith(API_KEY_PREFIX):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    row = await db.get_user_api_token(hash_token(key))
+    if row is None or row.revoked:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    await db.touch_user_api_token(row.id)
+    return ApiKeyUser(row, config)
+
+
+async def require_guild_member_key(
+    guild_id: int,
+    user: ApiKeyUser = Depends(get_api_user),
+    bot: ComplexBot = Depends(get_bot),
+) -> CurrentUser:
+    """Guild gate for API-key callers: membership via the bot cache only
+    (the key carries no Discord OAuth tokens)."""
+    if user.is_superadmin:
+        return user
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        raise HTTPException(status_code=404, detail="Bot is not on this server")
+    if guild.get_member(user.discord_id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this server")
+    return user
 
 
 async def is_guild_admin(db: Database, user: CurrentUser, guild_id: int) -> bool:

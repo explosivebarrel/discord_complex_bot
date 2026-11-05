@@ -1177,3 +1177,38 @@ async def test_resync_starts_queue_head_when_current_is_gone(
     assert [i.track.title for i in music.played[GUILD_ID]] == ["queued head"]
     assert music.queues[GUILD_ID] == deque()
     assert "Playback resumed" in notified
+
+
+async def test_userscript_stream_url_queues_direct_item(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The userscript's VK capture: a signed stream URL queues a pending
+    "direct" item played without any VK token."""
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+
+    async def fail_token():  # must never be reached
+        raise AssertionError("VK token must not be needed for direct stream")
+
+    async def fake_resolve(it: QueueItem):
+        return make_track(it.display_title)
+
+    music._vk_token = fail_token  # type: ignore[method-assign]
+    music._resolve_item = fake_resolve  # type: ignore[method-assign]
+
+    result = await music.enqueue(
+        GUILD_ID,
+        "https://vk.com/audio1_2",
+        1,
+        "u",
+        source="vk",
+        meta={"title": "Song", "author": "Artist", "length_ms": 30_000},
+        stream_url="https://cs1-72v4.vkuser.net/stream.mp3?extra=signature",
+    )
+
+    assert result["now_playing"] is True
+    item = music.current_items[GUILD_ID]
+    assert item.source == "direct"
+    assert item.pending_url == "https://cs1-72v4.vkuser.net/stream.mp3?extra=signature"
+    assert item.display_title == "Song"
+    assert item.length == 30_000

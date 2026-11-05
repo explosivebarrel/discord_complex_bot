@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.api.deps import (
+    API_KEY_PREFIX,
     MOCK_TIERS,
     SESSION_COOKIE,
     STATE_COOKIE,
@@ -21,6 +22,7 @@ from app.api.deps import (
     get_current_user,
     get_db,
     get_oauth,
+    hash_token,
     revoke_session,
     section_allows,
     set_access_mock,
@@ -222,4 +224,62 @@ async def access_mock_put(
     if body.tier is not None and body.tier not in MOCK_TIERS:
         raise HTTPException(status_code=400, detail=f"tier must be one of {MOCK_TIERS} or null")
     set_access_mock(user.session_id, int(body.guild_id), body.tier)
+    return {"status": "ok"}
+
+
+# --- personal API keys (browser userscript) ---
+
+
+class ApiTokenBody(BaseModel):
+    label: str = ""
+
+
+@router.post("/me/tokens")
+async def create_api_token(
+    body: ApiTokenBody,
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Issue a personal API key. The raw key is returned exactly once —
+    only its SHA-256 hash is stored."""
+    token = f"{API_KEY_PREFIX}{secrets.token_urlsafe(32)}"
+    await db.create_user_api_token(
+        hash_token(token),
+        discord_id=user.discord_id,
+        username=user.username,
+        global_name=user.global_name,
+        label=body.label.strip(),
+    )
+    await db.audit("auth.create_api_token", actor_id=user.discord_id, actor_kind="web")
+    return {"token": token}
+
+
+@router.get("/me/tokens")
+async def list_api_tokens(
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> list[dict[str, Any]]:
+    rows = await db.list_user_api_tokens(user.discord_id)
+    return [
+        {
+            "id": row.id[:12],
+            "label": row.label,
+            "created_at": row.created_at.isoformat(),
+            "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
+        }
+        for row in rows
+    ]
+
+
+@router.delete("/me/tokens/{token_id}")
+async def revoke_api_token(
+    token_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, str]:
+    """token_id is the 12-char id prefix the list endpoint returns."""
+    ok = await db.revoke_user_api_token_by_prefix(token_id, user.discord_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Key not found")
+    await db.audit("auth.revoke_api_token", actor_id=user.discord_id, actor_kind="web")
     return {"status": "ok"}

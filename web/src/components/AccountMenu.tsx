@@ -15,6 +15,7 @@ import { MsIcon } from "./MsIcon";
 
 const Ic = {
   about: <MsIcon name="info" fontSize={20} />,
+  extension: <MsIcon name="extension" fontSize={20} />,
   settings: <MsIcon name="settings" fontSize={20} />,
   logout: <MsIcon name="logout" fontSize={20} />,
 };
@@ -45,6 +46,10 @@ function AccountMenuBody({
       <ListItemButton component={RouterLink} to="/about" onClick={onClose}>
         <ListItemIcon>{Ic.about}</ListItemIcon>
         <ListItemText primary="About" />
+      </ListItemButton>
+      <ListItemButton component={RouterLink} to="/extension" onClick={onClose}>
+        <ListItemIcon>{Ic.extension}</ListItemIcon>
+        <ListItemText primary="Add from sites" />
       </ListItemButton>
       {me.is_superadmin && (
         <ListItemButton component={RouterLink} to="/settings" onClick={onClose}>

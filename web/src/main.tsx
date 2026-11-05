@@ -20,6 +20,7 @@ import { PlayerPage } from "./pages/PlayerPage";
 import { AboutPage } from "./pages/AboutPage";
 import { AdminPage } from "./pages/AdminPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ExtensionPage } from "./pages/ExtensionPage";
 import { StatsPage } from "./pages/StatsPage";
 import { PostsPage } from "./pages/PostsPage";
 import { ModerationPage } from "./pages/ModerationPage";
@@ -116,6 +117,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/guild/:guildId/posts" element={<PostsPage />} />
             <Route path="/guild/:guildId/moderation" element={<ModerationPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/extension" element={<ExtensionPage />} />
             <Route path="/sandbox" element={<SandboxPage />} />
           </Routes>
         </BrowserRouter>

@@ -63,6 +63,23 @@ class WebSession(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class UserApiToken(Base):
+    """Long-lived personal API key of a panel user (the browser userscript
+    authenticates with it). Same shape as WebSession: only the SHA-256
+    hash is stored, the raw token is shown to the user exactly once."""
+
+    __tablename__ = "user_api_tokens"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # SHA-256 hash of the key
+    discord_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    username: Mapped[str] = mapped_column(String(128), default="")
+    global_name: Mapped[str] = mapped_column(String(128), default="")
+    label: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

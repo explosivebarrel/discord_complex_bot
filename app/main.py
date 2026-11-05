@@ -19,6 +19,7 @@ from app.api.discord_oauth import DiscordOAuthClient
 from app.api.routers import (
     admin,
     auth,
+    extension,
     favorites,
     library,
     moderation,
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(system.router)
     app.include_router(system.public_router)
+    app.include_router(extension.router)
     app.include_router(favorites.router)
     app.include_router(library.router)
     app.include_router(posts.router)

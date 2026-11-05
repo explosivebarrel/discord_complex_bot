@@ -70,11 +70,14 @@ class EnqueueBody(BaseModel):
     author: str | None = None
     length_ms: int | None = None
     artwork: str | None = None
+    # VK userscript capture: the signed CDN stream URL taken off the page;
+    # plays without any server-side VK token.
+    stream_url: str | None = None
 
     @model_validator(mode="after")
     def check_query_or_encoded(self) -> EnqueueBody:
-        if not self.query and not self.encoded:
-            raise ValueError("Provide a query or an encoded track")
+        if not self.query and not self.encoded and not self.stream_url:
+            raise ValueError("Provide a query, a stream URL or an encoded track")
         return self
 
 
@@ -406,6 +409,32 @@ async def remove_upload(
     return {"deleted": rel_path}
 
 
+async def _ensure_voice(
+    guild_id: int, user: CurrentUser, music: MusicService, db: Database, bot: ComplexBot
+) -> None:
+    """Connect the bot to voice before an enqueue if it is not in one yet."""
+    if music.get_player(guild_id) is not None:
+        return
+    # The bot is not in voice yet. Use the default channel from the guild
+    # settings, then the voice channel of the requester.
+    settings = await db.get_guild_settings(guild_id)
+    channel_id = settings.default_voice_channel_id
+    if channel_id is None:
+        guild = bot.get_guild(guild_id)
+        member = guild.get_member(user.discord_id) if guild else None
+        if member is not None and member.voice is not None and member.voice.channel is not None:
+            channel_id = member.voice.channel.id
+    if channel_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Connect the bot to a voice channel first, or set the default channel in settings.",
+        )
+    try:
+        await music.connect(guild_id, channel_id, user.discord_id)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/enqueue")
 async def enqueue(
     guild_id: int,
@@ -415,25 +444,7 @@ async def enqueue(
     db: Database = Depends(get_db),
     bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
-    if music.get_player(guild_id) is None:
-        # The bot is not in voice yet. Use the default channel from the guild
-        # settings, then the voice channel of the requester.
-        settings = await db.get_guild_settings(guild_id)
-        channel_id = settings.default_voice_channel_id
-        if channel_id is None:
-            guild = bot.get_guild(guild_id)
-            member = guild.get_member(user.discord_id) if guild else None
-            if member is not None and member.voice is not None and member.voice.channel is not None:
-                channel_id = member.voice.channel.id
-        if channel_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Connect the bot to a voice channel first, or set the default channel in settings.",
-            )
-        try:
-            await music.connect(guild_id, channel_id, user.discord_id)
-        except MusicServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _ensure_voice(guild_id, user, music, db, bot)
     if not body.encoded and music.looks_like_playlist(body.query, body.source):
         # The panel opens a playlist preview instead of dumping the tracks
         # into the queue; the Discord slash command keeps the old behavior.
@@ -469,6 +480,7 @@ async def enqueue(
             encoded=body.encoded,
             source=body.source,
             meta=meta,
+            stream_url=body.stream_url,
         )
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

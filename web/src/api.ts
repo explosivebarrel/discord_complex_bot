@@ -10,6 +10,15 @@ export interface Me {
   access_mock?: Record<string, AccessMockTier>;
 }
 
+/** One personal API key of the current user (the userscript's credential).
+    The raw key is only ever returned by createApiToken, never listed. */
+export interface ApiTokenInfo {
+  id: string;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export type GuildSection = keyof GuildBrief["access"];
 
 export interface GuildBrief {
@@ -320,6 +329,16 @@ async function handle<T>(resp: Response): Promise<T> {
 
 export const api = {
   me: () => fetch("/api/auth/me").then((r) => handle<Me>(r)),
+
+  listApiTokens: () => fetch("/api/auth/me/tokens").then((r) => handle<ApiTokenInfo[]>(r)),
+  createApiToken: (label: string) =>
+    fetch("/api/auth/me/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    }).then((r) => handle<{ token: string }>(r)),
+  revokeApiToken: (id: string) =>
+    fetch(`/api/auth/me/tokens/${id}`, { method: "DELETE" }).then((r) => handle<{ status: string }>(r)),
 
   logout: () => fetch("/api/auth/logout", { method: "POST" }),
 
