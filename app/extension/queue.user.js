@@ -212,7 +212,20 @@
   const VK_MAX_ITEMS = 60;
 
   function vkRemember(item) {
-    if (!item.url || !/^https?:\/\//.test(item.url) || /\.m3u8/i.test(item.url)) return;
+    if (!item.url || !/^https?:\/\//.test(item.url)) return;
+    if (/\.m3u8/i.test(item.url)) {
+      // Mobile VK hands out HLS for many tracks; the bot cannot play it.
+      // Silent drops made mobile look broken for no visible reason.
+      if (Date.now() - (vkRemember._m3u8Log || 0) > 5000) {
+        vkRemember._m3u8Log = Date.now();
+        log(
+          "VK: HLS-ссылка (m3u8) пропущена — бот не играет HLS: " +
+            [item.artist, item.title].filter(Boolean).join(" — ").slice(0, 60),
+          "warn",
+        );
+      }
+      return;
+    }
     const key = item.owner_id != null && item.id != null ? `${item.owner_id}_${item.id}` : item.url;
     const row = { ...item, key, ms: Date.now() };
     const at = vkCaptured.findIndex((x) => x.key === key);
@@ -794,7 +807,10 @@
         });
       }
     }
-    const m = "VK не отдал ссылку — включи трек вручную и попробуй ещё раз";
+    const mobile = /m\.vk\.(ru|com)/.test(location.hostname);
+    const m = mobile
+      ? "VK не отдал ссылку: мобильный VK часто отдаёт HLS (бот его не играет) — добавь трек с десктопной vk.ru"
+      : "VK не отдал ссылку — включи трек вручную и попробуй ещё раз";
     log(m, "warn");
     toast(m, true);
     return false;
