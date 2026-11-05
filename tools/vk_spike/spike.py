@@ -56,23 +56,32 @@ def goto_track(page: Page, owner: str, aid: str, timeout_s: float = 30.0) -> Non
     print(f"    (навигация не устоялась, текущий URL: {page.url})")
 
 
-def scan_response(resp, captured: list, via: dict) -> None:
+def scan_response(resp, captured: list, via: dict, stats: dict) -> None:
     """The web API hands out stream URLs in JSON bodies (the userscript
-    proves it on user pages) — scan every method response for them."""
-    u = resp.url
-    if "web.api.vk.ru/method/" not in u and "al_audio" not in u:
-        return
+    proves it on user pages) — scan every method response for them.
+    Bodies are read OUTSIDE event handlers (sync-API reentrancy)."""
+    name = urlsplit(resp.url).path.rsplit("/", 1)[-1].split("?")[0]
     try:
         body = resp.text()
-    except Exception:  # noqa: BLE001 - bodies of streamed/failed responses
+    except Exception as exc:  # noqa: BLE001 - bodies of streamed/failed responses
+        stats["unreadable"] = stats.get("unreadable", 0) + 1
+        print(f"      [тело {name} нечитаемо: {exc}]")
         return
     if not body or len(body) > 3_000_000:
         return
-    for m in VK_CDN_RE.finditer(body):
-        url = m.group(0).replace("\\/", "/")
+    stats["scanned"] = stats.get("scanned", 0) + 1
+    # JSON may escape slashes: https:\/\/... breaks naive URL regexes.
+    clean = body.replace("\\/", "/")
+    found = 0
+    for m in VK_CDN_RE.finditer(clean):
+        url = m.group(0)
+        found += 1
         if url not in {c[1] for c in captured}:
             captured.append((time.time(), url))
-            via[url] = urlsplit(u).path.rsplit("/", 1)[-1]
+            via[url] = name
+    stats["urls"] = stats.get("urls", 0) + found
+    if name.startswith("audio") and not found:
+        print(f"      [ответ {name} без CDN-ссылок] {clean[:500]}")
 
 
 def dump_traffic(all_reqs: list[tuple[float, str]]) -> None:
@@ -91,7 +100,7 @@ def dump_traffic(all_reqs: list[tuple[float, str]]) -> None:
     print("    web.api методы: " + (", ".join(f"{m}×{n}" for m, n in methods.most_common(15)) or "нет"))
 
 
-def capture_one(page: Page, captured: list, via: dict,
+def capture_one(page: Page, captured: list, via: dict, stats: dict,
                 all_reqs: list[tuple[float, str]], owner: str, aid: str,
                 wait_s: float) -> None:
     before = len(captured)
@@ -101,6 +110,9 @@ def capture_one(page: Page, captured: list, via: dict,
     print(f"    страница: {page.url[:80]}")
     got = None
     while time.time() - t0 < wait_s:
+        # Scan pending API response bodies outside of event handlers.
+        while pending:
+            scan_response(pending.pop(0), captured, via, stats)
         fresh = captured[before:]
         if fresh:
             got = fresh[0]
@@ -115,6 +127,8 @@ def capture_one(page: Page, captured: list, via: dict,
                     pass
                 break
         page.wait_for_timeout(500)
+    while pending:
+        scan_response(pending.pop(0), captured, via, stats)
 
     if got:
         print(f"    ПОЙМАНО за {got[0] - t0:.1f} с: {got[1][:180]}")
@@ -167,7 +181,9 @@ def main() -> None:
 
         captured: list[tuple[float, str]] = []
         via: dict[str, str] = {}
+        stats: dict = {}
         all_reqs: list[tuple[float, str]] = []
+        pending: list = []  # API responses queued by the handler, read in-loop
 
         def on_request(req) -> None:
             all_reqs.append((time.time(), req.url))
@@ -175,7 +191,8 @@ def main() -> None:
                 captured.append((time.time(), req.url))
 
         ctx.on("request", on_request)
-        ctx.on("response", lambda resp: scan_response(resp, captured, via))
+        ctx.on("response", lambda r: pending.append(r)
+               if ("method/" in r.url or "al_audio" in r.url) else None)
         # CDP sees the same page from the protocol side; a mismatch between
         # the two channels means the request bypasses Playwright's view.
         cdp = ctx.new_cdp_session(page)
