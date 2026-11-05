@@ -9,6 +9,8 @@
 // @match        https://music.yandex.ru/*
 // @match        https://soundcloud.com/*
 // @match        https://vk.com/*
+// @match        https://vk.ru/*
+// @match        https://m.vk.ru/*
 // @match        https://music.vk.com/*
 // @grant        GM.xmlHttpRequest
 // @grant        GM_setValue
@@ -227,6 +229,7 @@
     }
   }
 
+  const VK_HOST = /^(vk\.com|m\.vk\.com|music\.vk\.com|vk\.ru|m\.vk\.ru|music\.vk\.ru|vkontakte\.ru)$/;
   function extractVK() {
     const path = location.pathname;
     const track = path.match(/audio(-?\d+)_(\d+)/);
@@ -257,7 +260,7 @@
     [/(^|\.)youtube\.com$/, extractYouTube],
     [/^music\.yandex\.ru$/, extractYandex],
     [/(^|\.)soundcloud\.com$/, extractSoundCloud],
-    [/^(vk\.com|m\.vk\.com|music\.vk\.com|vkontakte\.ru)$/, extractVK],
+    [VK_HOST, extractVK],
   ];
 
   function extract() {
@@ -364,7 +367,8 @@
       };
       const r = await api("POST", "/api/extension/queue/" + getGuild(), body);
       const where = GM_getValue(LS.guildName, "");
-      toast((r.preview ? "Плейлист загружен: " : "В очереди: ") + (r.title || "") + (where ? " → " + where : ""));
+      const count = r.queued && r.queued > 1 ? ` (${r.queued} трек.)` : "";
+      toast("В очереди: " + (r.title || "") + count + (where ? " → " + where : ""));
     } catch (e) {
       toast(String(e.message || e), true);
     } finally {
@@ -378,7 +382,7 @@
   ensurePill();
 
   const host = location.hostname.replace(/^www\./, "");
-  if (/^(vk\.com|m\.vk\.com|music\.vk\.com|vkontakte\.ru)$/.test(host)) initVkHook();
+  if (VK_HOST.test(host)) initVkHook();
 
   // --- menu ---------------------------------------------------------------
 

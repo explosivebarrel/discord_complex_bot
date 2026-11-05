@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from app.core.services.music import MusicService
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "extension" / "queue.user.js"
-EXTENSION_VERSION = "1.0.3"
+EXTENSION_VERSION = "1.0.4"
 
 router = APIRouter(tags=["extension"])
 
@@ -87,11 +87,18 @@ async def extension_queue(
     bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
     """The userscript's enqueue endpoint (API key auth). Same semantics as
-    the panel one: playlist URLs open a preview session, tracks queue."""
+    the panel one, except playlists: the script has no preview UI, so a
+    playlist URL queues the whole thing right away (the panel's "Add all")."""
     await _ensure_voice(guild_id, user, music, db, bot)
     if not body.encoded and music.looks_like_playlist(body.query, body.source):
         try:
             session = await music.open_playlist(body.query, body.source)
+        except MusicServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            result = await music.queue_entire_playlist(
+                guild_id, session.id, user.discord_id, user.global_name
+            )
         except MusicServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         await db.audit(
@@ -99,14 +106,9 @@ async def extension_queue(
             guild_id=guild_id,
             actor_id=user.discord_id,
             actor_kind="web",
-            details={"query": body.query, "via": "extension", "preview": True},
+            details={"query": body.query, "via": "extension", "add_all": True},
         )
-        return {
-            "preview": music.playlist_page(session.id, 0),
-            "queued": 0,
-            "title": session.title,
-            "now_playing": False,
-        }
+        return result
     try:
         result = await music.enqueue(
             guild_id,
