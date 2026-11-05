@@ -15,7 +15,7 @@
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_deleteValue
-// @connect      @@CONNECT@@
+// @connect      *
 // @connect      localhost
 // @run-at       document-idle
 // ==/UserScript==
@@ -61,7 +61,13 @@
           if (r.status >= 200 && r.status < 300) resolve(data);
           else reject(new Error(data.detail || "HTTP " + r.status));
         },
-        onerror: () => reject(new Error("Бот недоступен: " + getServer())),
+        onerror: () =>
+          reject(
+            new Error(
+              "Бот недоступен: " + getServer() +
+              ". Если Tampermonkey спрашивал про доступ к домену — ответьте «разрешить всегда» (меню Tampermonkey → настройки → этому скрипту → домены).",
+            ),
+          ),
         ontimeout: () => reject(new Error("Таймаут запроса к боту")),
       });
     });

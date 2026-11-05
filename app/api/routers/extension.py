@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -34,7 +33,7 @@ if TYPE_CHECKING:
     from app.core.services.music import MusicService
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "extension" / "queue.user.js"
-EXTENSION_VERSION = "1.0.0"
+EXTENSION_VERSION = "1.0.2"
 
 router = APIRouter(tags=["extension"])
 
@@ -45,11 +44,11 @@ async def userscript(config: Config = Depends(get_config)) -> Response:
         template = SCRIPT_PATH.read_text(encoding="utf-8")
     except OSError:
         raise HTTPException(status_code=404, detail="Userscript template is missing") from None
-    host = urlparse(config.base_url).netloc
-    script = (
-        template.replace("@@VERSION@@", EXTENSION_VERSION)
-        .replace("@@SERVER@@", config.base_url.rstrip("/"))
-        .replace("@@CONNECT@@", host)
+    # The script's @connect is a wildcard: the user may reach the bot under
+    # any name (IP, DDNS host, reverse proxy), so per-base_url matching
+    # would only cause Tampermonkey-side blocks.
+    script = template.replace("@@VERSION@@", EXTENSION_VERSION).replace(
+        "@@SERVER@@", config.base_url.rstrip("/")
     )
     return Response(
         content=script,
