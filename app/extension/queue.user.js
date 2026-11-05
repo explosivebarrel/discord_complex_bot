@@ -57,6 +57,7 @@
   const LOG_CAP = 400;
   let logSeq = 0;
   let activeTab = "queue"; // queue | log
+  let pinned = false; // pill click pins the panel open until re-clicked
 
   function log(msg, level = "info", data) {
     const entry = {
@@ -437,9 +438,18 @@
     // could not read); captured items missing from the DOM come last.
     const seen = new Set();
     const tracks = [];
+    let parseFails = 0;
+    let failSample = "";
     for (const el of document.querySelectorAll("[data-audio]")) {
+      // Hidden rows (player next-up templates, other sections) would
+      // otherwise show "from nowhere".
+      if (!el.offsetParent) continue;
       const p = parseAudioRow(el);
-      if (!p) continue;
+      if (!p) {
+        parseFails++;
+        if (!failSample) failSample = (el.getAttribute("data-audio") || "").slice(0, 80);
+        continue;
+      }
       const key = p.owner_id + "_" + p.id;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -457,6 +467,7 @@
         stream_url: cap ? cap.url : undefined,
       });
     }
+    if (parseFails) log(`VK: ${parseFails} строк не разобрано, пример: ${failSample}`, "warn");
     for (const x of [...vkCaptured].reverse()) {
       if (seen.has(x.key)) continue;
       seen.add(x.key);
@@ -758,7 +769,7 @@
   const CSS = `
     #dcbot-wrap{position:fixed;right:18px;bottom:18px;z-index:2147483647;display:flex;flex-direction:column;
       align-items:flex-end;gap:10px;font:400 13px/1.4 Roboto,system-ui,sans-serif}
-    #dcbot-panel{display:none;width:380px;max-height:52vh;background:#201a33;color:#e7e1f5;
+    #dcbot-panel{display:none;width:380px;height:min(48vh,430px);background:#201a33;color:#e7e1f5;
       border:1px solid #453f63;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.55);overflow:hidden;
       flex-direction:column}
     #dcbot-panel.open{display:flex}
@@ -787,6 +798,14 @@
       box-shadow:0 6px 18px rgba(0,0,0,.45);opacity:.82;transition:opacity .15s}
     #dcbot-pill:hover{opacity:1}
     #dcbot-pill.busy{opacity:.6;pointer-events:none}
+    #dcbot-inline{position:fixed;display:none;align-items:center;gap:8px;z-index:2147483646;
+      background:rgba(24,19,40,.92);color:#e7e1f5;border:1px solid #55497f;border-radius:8px;
+      padding:5px 8px;font:500 12px/1 Roboto,system-ui,sans-serif;box-shadow:0 6px 16px rgba(0,0,0,.5)}
+    #dcbot-inline .dcbot-add{background:#6a5acd;color:#fff;border:none;border-radius:6px;padding:5px 10px;
+      font:500 12px/1 Roboto,system-ui,sans-serif;cursor:pointer;flex-shrink:0}
+    #dcbot-inline .dcbot-add:hover{background:#7b6bdd}
+    #dcbot-inline .dcbot-add.busy{opacity:.6;pointer-events:none}
+    #dcbot-inline .dcbot-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.8;flex:1;min-width:0}
     #dcbot-toast{position:fixed;right:18px;bottom:64px;z-index:2147483647;max-width:340px;
       background:#241f36;color:#efe9ff;border:1px solid #453f63;border-radius:10px;padding:10px 14px;
       font:400 13px/1.4 Roboto,system-ui,sans-serif;box-shadow:0 8px 22px rgba(0,0,0,.5);
@@ -815,6 +834,145 @@
     toast._t = setTimeout(() => el.classList.remove("show"), 5000);
   }
 
+  // --- inline hover overlay ("+ Queue" over the row under the cursor) ----
+
+  let inlineEl = null; // the row the overlay is pinned to
+  let inlineInfo = null; // the row body for the button click
+  let inlineHideTimer = 0;
+
+  // Per-site row selectors + how to queue a row element.
+  const INLINE_SITES = [
+    {
+      host: VK_HOST,
+      rows: "[data-audio]",
+      info: (el) => {
+        const p = parseAudioRow(el);
+        if (!p) return null;
+        const key = p.owner_id + "_" + p.id;
+        const cap = vkCaptured.find((x) => x.key === key);
+        return {
+          key,
+          query: `https://vk.ru/audio${p.owner_id}_${p.id}`,
+          source: "vk",
+          title: ([p.artist || (cap && cap.artist), p.title || (cap && cap.title)].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140),
+          author: p.artist || (cap && cap.artist) || undefined,
+          length_ms: (p.duration || (cap && cap.duration) || 0) * 1000 || undefined,
+          artwork: p.artwork || (cap && cap.artwork) || undefined,
+          stream_url: cap ? cap.url : undefined,
+        };
+      },
+    },
+    {
+      host: /^music\.yandex\.ru$/,
+      rows: '.d-track, a[href*="/track/"]',
+      info: (el) => {
+        const a = el.matches && el.matches('a[href*="/track/"]') ? el : el.querySelector('a[href*="/track/"]');
+        if (!a) return null;
+        const href = (a.getAttribute("href") || "").split("?")[0];
+        if (!/^\/(album\/\d+\/)?track\/\d+/.test(href)) return null;
+        const label = trim(el.getAttribute("aria-label") || el.textContent).slice(0, 140);
+        return { query: location.origin + href, source: "ym", title: label || undefined };
+      },
+    },
+    {
+      host: /(^|\.)youtube\.com$/,
+      rows: "ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, ytm-rich-item-renderer",
+      info: (el) => {
+        const a = el.querySelector('a[href*="/watch?v="]');
+        if (!a) return null;
+        const m = (a.getAttribute("href") || "").match(/[?&]v=([\w-]{6,})/);
+        if (!m) return null;
+        return {
+          query: "https://www.youtube.com/watch?v=" + m[1],
+          source: "yt",
+          title: (ytCardTitle(a) || trim(el.textContent)).slice(0, 140),
+        };
+      },
+    },
+  ];
+  let inlineSite = null;
+
+  function inlineSiteFor() {
+    if (inlineSite) return inlineSite;
+    const host = location.hostname.replace(/^www\./, "");
+    inlineSite = INLINE_SITES.find((s) => s.host.test(host)) || null;
+    return inlineSite;
+  }
+
+  function showInline(el) {
+    const site = inlineSiteFor();
+    if (!site) return;
+    const info = site.info(el);
+    const bar = document.getElementById("dcbot-inline");
+    if (!bar || !info) return;
+    const r = el.getBoundingClientRect();
+    if (r.width < 80 || r.bottom < 0 || r.top > innerHeight) return;
+    inlineEl = el;
+    inlineInfo = info;
+    bar.style.top = Math.max(4, r.top - 9) + "px";
+    bar.style.left = Math.max(4, r.left) + "px";
+    bar.style.width = r.width + "px";
+    bar.querySelector(".dcbot-name").textContent = info.title || "";
+    bar.style.display = "flex";
+  }
+
+  function hideInlineNow() {
+    const bar = document.getElementById("dcbot-inline");
+    if (bar) bar.style.display = "none";
+    inlineEl = null;
+    inlineInfo = null;
+  }
+
+  function initInlineOverlay() {
+    const bar = document.createElement("div");
+    bar.id = "dcbot-inline";
+    const btn = document.createElement("button");
+    btn.className = "dcbot-add";
+    btn.textContent = "+ Queue";
+    const name = document.createElement("span");
+    name.className = "dcbot-name";
+    btn.addEventListener("click", async () => {
+      if (!inlineInfo) return;
+      btn.classList.add("busy");
+      try {
+        if (inlineInfo.source === "vk") await playAndQueue(inlineInfo);
+        else await sendQueue(inlineInfo);
+      } finally {
+        btn.classList.remove("busy");
+      }
+    });
+    bar.appendChild(btn);
+    bar.appendChild(name);
+    document.documentElement.appendChild(bar);
+
+    document.addEventListener("mouseover", (e) => {
+      const site = inlineSiteFor();
+      if (!site) return;
+      if (e.target.closest && e.target.closest("#dcbot-inline, #dcbot-wrap")) return;
+      const el = e.target.closest ? e.target.closest(site.rows) : null;
+      if (el) {
+        clearTimeout(inlineHideTimer);
+        showInline(el);
+      } else {
+        clearTimeout(inlineHideTimer);
+        inlineHideTimer = setTimeout(hideInlineNow, 500);
+      }
+    });
+    bar.addEventListener("mouseenter", () => clearTimeout(inlineHideTimer));
+    bar.addEventListener("mouseleave", () => {
+      clearTimeout(inlineHideTimer);
+      inlineHideTimer = setTimeout(hideInlineNow, 500);
+    });
+    // Keep the overlay glued to its row while it is visible.
+    document.addEventListener(
+      "scroll",
+      () => {
+        if (inlineEl && inlineInfo) showInline(inlineEl);
+      },
+      { capture: true, passive: true },
+    );
+  }
+
   function ensureUi() {
     if (document.getElementById("dcbot-wrap")) return;
     const style = document.createElement("style");
@@ -830,8 +988,18 @@
     const pill = document.createElement("div");
     pill.id = "dcbot-pill";
     pill.textContent = "＋ Queue";
-    pill.title = "Добавить трек страницы в очередь; наведи — треки со страницы и лог";
-    pill.addEventListener("click", enqueueCurrent);
+    pill.title = "Клик — закрепить/открепить панель (треки со страницы + лог)";
+    pill.addEventListener("click", () => {
+      pinned = !pinned;
+      pill.classList.toggle("pinned", pinned);
+      if (pinned) {
+        open();
+        log("панель закреплена");
+      } else {
+        closeSoon();
+        log("панель откреплена");
+      }
+    });
 
     wrap.appendChild(panel);
     wrap.appendChild(pill);
@@ -847,7 +1015,9 @@
     };
     const closeSoon = () => {
       clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => panel.classList.remove("open"), 400);
+      hideTimer = setTimeout(() => {
+        if (!pinned) panel.classList.remove("open");
+      }, 400);
     };
     pill.addEventListener("mouseenter", open);
     panel.addEventListener("mouseenter", () => clearTimeout(hideTimer));
@@ -860,6 +1030,7 @@
       " getValue=" + (typeof GM_getValue === "function" ? "ok" : "ОТСУТСТВУЕТ")
     );
     installErrorTraps();
+    initInlineOverlay();
   }
 
   function tabEl(label, tabId) {
