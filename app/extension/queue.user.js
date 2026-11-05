@@ -46,6 +46,7 @@
   const getKey = () => GM_getValue(LS.key, "");
   const getGuild = () => GM_getValue(LS.guild, "");
   const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // --- session log --------------------------------------------------------
   // Everything the script does lands here: requests, responses, errors with
@@ -377,24 +378,120 @@
     return { tracks, collections, artists };
   }
 
+  // Parse one VK audio row element (the page's own DOM). data-audio is
+  // JSON — either an object ({owner_id,id,...}) or a legacy array — fall
+  // back to regex when the shape is unknown. The row's own .audio_row__*
+  // nodes carry the visible title/artist.
+  function parseAudioRow(el) {
+    const raw = el.getAttribute("data-audio") || "";
+    let owner = null;
+    let id = null;
+    let title = "";
+    let artist = "";
+    let duration = 0;
+    let artwork = null;
+    try {
+      const j = JSON.parse(raw);
+      if (Array.isArray(j)) {
+        owner = Number(j[0]);
+        id = Number(j[1]);
+        const strs = j.filter((x) => typeof x === "string").map(trim).filter(Boolean);
+        title = strs.find((s) => !/^https?:/.test(s) && !/^\d{1,2}:\d{2}/.test(s)) || "";
+        artist = strs.filter((s) => s !== title)[0] || "";
+      } else if (j && typeof j === "object") {
+        owner = Number(j.owner_id);
+        id = Number(j.id);
+        title = trim(j.title);
+        artist = trim(j.artist || j.performer);
+        duration = Number(j.duration) || 0;
+      }
+    } catch {
+      const mo = raw.match(/"owner_id"\s*:\s*(-?\d+)/) || raw.match(/\[\s*(-?\d+)\s*,\s*(\d+)/);
+      const mi = raw.match(/"id"\s*:\s*(\d+)/) || raw.match(/,\s*(\d{4,})\s*,/);
+      if (mo) owner = Number(mo[1]);
+      if (mi) id = Number(mi[1]);
+    }
+    if (!title) {
+      const tn = el.querySelector(".audio_row__title");
+      title = trim(tn && tn.textContent);
+    }
+    if (!artist) {
+      const an = el.querySelector(".audio_row__performers, .audio_row__performer");
+      artist = trim(an && an.textContent);
+    }
+    if (owner == null || id == null || isNaN(owner) || isNaN(id)) return null;
+    return { owner_id: owner, id, title, artist, duration, artwork };
+  }
+
+  function findAudioRowEl(key) {
+    for (const el of document.querySelectorAll("[data-audio]")) {
+      const p = parseAudioRow(el);
+      if (p && p.owner_id + "_" + p.id === key) return el;
+    }
+    return null;
+  }
+
   function scrapeVK() {
-    // The hook already knows the audio (and catalog playlist) items the
-    // page loaded — newest first, since the player prefetches the catalog.
-    const tracks = [...vkCaptured].reverse().map((x) => ({
-      query: x.owner_id != null && x.id != null ? `https://vk.ru/audio${x.owner_id}_${x.id}` : location.href,
-      source: "vk",
-      title: [x.artist, x.title].filter(Boolean).join(" — ").slice(0, 140) || "(без названия)",
-      author: x.artist || undefined,
-      length_ms: x.duration ? x.duration * 1000 : undefined,
-      stream_url: x.url,
-      artwork: x.artwork || undefined,
-    }));
-    const collections = vkCollections.slice(-40).reverse().map((x) => ({
-      query: `https://vk.ru/playlist${x.owner_id}_${x.id}`,
-      label: x.title,
-      kind: "playlist",
-      openOnly: true, // VK playlist enqueue needs a server token — open instead
-    }));
+    // DOM first: the tracks the user actually SEES, in page order. The
+    // network capture provides stream URLs (and fills rows the DOM parse
+    // could not read); captured items missing from the DOM come last.
+    const seen = new Set();
+    const tracks = [];
+    for (const el of document.querySelectorAll("[data-audio]")) {
+      const p = parseAudioRow(el);
+      if (!p) continue;
+      const key = p.owner_id + "_" + p.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const cap = vkCaptured.find((x) => x.key === key);
+      const title = [p.artist || (cap && cap.artist), p.title || (cap && cap.title)]
+        .filter(Boolean).join(" — ");
+      tracks.push({
+        key,
+        query: `https://vk.ru/audio${p.owner_id}_${p.id}`,
+        source: "vk",
+        title: (title || "(без названия)").slice(0, 140),
+        author: p.artist || (cap && cap.artist) || undefined,
+        length_ms: (p.duration || (cap && cap.duration) || 0) * 1000 || undefined,
+        artwork: p.artwork || (cap && cap.artwork) || undefined,
+        stream_url: cap ? cap.url : undefined,
+      });
+    }
+    for (const x of [...vkCaptured].reverse()) {
+      if (seen.has(x.key)) continue;
+      seen.add(x.key);
+      tracks.push({
+        key: x.key,
+        query: `https://vk.ru/audio${x.owner_id}_${x.id}`,
+        source: "vk",
+        title: [x.artist, x.title].filter(Boolean).join(" — ").slice(0, 140) || "(без названия)",
+        author: x.artist || undefined,
+        length_ms: x.duration ? x.duration * 1000 : undefined,
+        artwork: x.artwork || undefined,
+        stream_url: x.url,
+      });
+    }
+    // Playlist links 404 without the access key: build from payloads that
+    // have it, plus DOM links (their href already carries the key).
+    const collections = [];
+    const seenPl = new Set();
+    const pushPl = (url, label) => {
+      if (seenPl.has(url)) return;
+      seenPl.add(url);
+      collections.push({ query: url, label: (label || "Плейлист").slice(0, 140), kind: "playlist", openOnly: true });
+    };
+    for (const x of vkCollections.slice(-40).reverse()) {
+      pushPl(
+        `https://vk.ru/audio_playlist${x.owner_id}_${x.id}` + (x.access_key ? "_" + x.access_key : ""),
+        x.title,
+      );
+    }
+    for (const a of document.querySelectorAll('a[href*="audio_playlist"]')) {
+      const href = a.getAttribute("href") || "";
+      if (!/audio_playlist-?\d+_\d+/.test(href)) continue;
+      const label = trim(a.getAttribute("title") || a.textContent);
+      pushPl(location.origin + href, label);
+    }
     return { tracks, collections, artists: [] };
   }
 
@@ -580,6 +677,55 @@
       logErr("проверка конфигурации упала", e);
       return Promise.resolve(false);
     }
+  }
+
+  // A VK row without a captured stream: click the page's own row so VK's
+  // player fetches the signed URL (the hook catches it), then queue. The
+  // track starts playing on the page — that side effect is unavoidable
+  // without a VK token.
+  async function playAndQueue(row) {
+    if (row.stream_url) {
+      return sendQueue({
+        query: row.query,
+        source: row.source,
+        title: row.title,
+        author: row.author,
+        length_ms: row.length_ms,
+        artwork: row.artwork,
+        stream_url: row.stream_url,
+      });
+    }
+    const el = findAudioRowEl(row.key);
+    if (!el) {
+      const m = "Строка трека не найдена на странице (обнови панель)";
+      log(m, "warn");
+      toast(m, true);
+      return false;
+    }
+    log("VK: запрашиваю ссылку проигрыванием трека " + row.title.slice(0, 50));
+    toast("Запрашиваю ссылку: трек заиграет на странице");
+    const startedAt = Date.now();
+    el.click(); // native click: VK's own handlers fetch the stream
+    for (let i = 0; i < 16; i++) {
+      await sleep(250);
+      const cap = vkCaptured.find((x) => x.key === row.key);
+      if (cap && cap.url) {
+        log("VK: ссылка получена за " + Math.round((Date.now() - startedAt) / 100) / 10 + " с");
+        return sendQueue({
+          query: row.query,
+          source: row.source,
+          title: row.title,
+          author: row.author,
+          length_ms: row.length_ms,
+          artwork: row.artwork,
+          stream_url: cap.url,
+        });
+      }
+    }
+    const m = "VK не отдал ссылку — включи трек вручную и попробуй ещё раз";
+    log(m, "warn");
+    toast(m, true);
+    return false;
   }
 
   async function enqueueCurrent() {
@@ -813,18 +959,22 @@
       body.appendChild(cat);
       for (const t of page.tracks) {
         body.appendChild(
-          rowEl(t.title || t.query, t.source ? t.source.toUpperCase() : undefined, () => {
-            log("клик по треку из панели: " + (t.title || t.query).slice(0, 60));
+          rowEl(t.title || t.query, t.source === "vk" && !t.stream_url ? "VK: play" : t.source ? t.source.toUpperCase() : undefined, () => {
+            log("клик по треку из панели: " + (t.title || t.query).slice(0, 60) + (t.stream_url ? "" : " (без ссылки — play-to-capture)"));
             panel.classList.remove("open");
-            sendQueue({
-              query: t.query,
-              source: t.source,
-              title: t.title,
-              author: t.author,
-              length_ms: t.length_ms,
-              artwork: t.artwork,
-              stream_url: t.stream_url,
-            });
+            if (t.source === "vk") {
+              playAndQueue(t);
+            } else {
+              sendQueue({
+                query: t.query,
+                source: t.source,
+                title: t.title,
+                author: t.author,
+                length_ms: t.length_ms,
+                artwork: t.artwork,
+                stream_url: t.stream_url,
+              });
+            }
           }),
         );
       }
