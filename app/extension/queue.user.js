@@ -464,6 +464,8 @@
     const tracks = [];
     let parseFails = 0;
     let failSample = "";
+    let firstParsed = null;
+    let firstRaw = "";
     for (const el of document.querySelectorAll("[data-audio]")) {
       // Hidden rows (player next-up templates, other sections) would
       // otherwise show "from nowhere".
@@ -474,24 +476,41 @@
         if (!failSample) failSample = (el.getAttribute("data-audio") || "").slice(0, 80);
         continue;
       }
+      if (!firstParsed) {
+        firstParsed = p;
+        firstRaw = (el.getAttribute("data-audio") || "").slice(0, 120);
+      }
       const key = p.owner_id + "_" + p.id;
       if (seen.has(key)) continue;
       seen.add(key);
       const cap = vkCaptured.find((x) => x.key === key);
-      const title = [p.artist || (cap && cap.artist), p.title || (cap && cap.title)]
-        .filter(Boolean).join(" — ");
+      // The API capture is ground truth for artist/title; the DOM parse
+      // (whose data-audio field order VK may change) only fills gaps.
+      const author = (cap && cap.artist) || p.artist || undefined;
+      const name = (cap && cap.title) || p.title || "";
+      const title = ([author, name].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140);
       tracks.push({
         key,
         query: `https://vk.ru/audio${p.owner_id}_${p.id}`,
         source: "vk",
-        title: (title || "(без названия)").slice(0, 140),
-        author: p.artist || (cap && cap.artist) || undefined,
-        length_ms: (p.duration || (cap && cap.duration) || 0) * 1000 || undefined,
-        artwork: p.artwork || (cap && cap.artwork) || undefined,
+        title,
+        author,
+        length_ms: (cap && cap.duration) || (p.duration || 0) * 1000 || undefined,
+        artwork: (cap && cap.artwork) || p.artwork || undefined,
         stream_url: cap ? cap.url : undefined,
       });
     }
     if (parseFails) log(`VK: ${parseFails} строк не разобрано, пример: ${failSample}`, "warn");
+    if (!scrapeVK._sampled && firstParsed) {
+      scrapeVK._sampled = true;
+      log(
+        `VK: пример разбора DOM-строки: artist="${firstParsed.artist}" title="${firstParsed.title}"` +
+          (firstParsed.title === firstParsed.artist ? " | ПОЛЯ СОВПАДАЮТ" : "") +
+          ` | raw: ${firstRaw}`,
+        "info",
+        { raw: firstRaw },
+      );
+    }
     for (const x of [...vkCaptured].reverse()) {
       if (seen.has(x.key)) continue;
       seen.add(x.key);
@@ -874,14 +893,16 @@
         if (!p) return null;
         const key = p.owner_id + "_" + p.id;
         const cap = vkCaptured.find((x) => x.key === key);
+        const author = (cap && cap.artist) || p.artist || undefined;
+        const name = (cap && cap.title) || p.title || "";
         return {
           key,
           query: `https://vk.ru/audio${p.owner_id}_${p.id}`,
           source: "vk",
-          title: ([p.artist || (cap && cap.artist), p.title || (cap && cap.title)].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140),
-          author: p.artist || (cap && cap.artist) || undefined,
-          length_ms: (p.duration || (cap && cap.duration) || 0) * 1000 || undefined,
-          artwork: p.artwork || (cap && cap.artwork) || undefined,
+          title: ([author, name].filter(Boolean).join(" — ") || "(без названия)").slice(0, 140),
+          author,
+          length_ms: (cap && cap.duration) || (p.duration || 0) * 1000 || undefined,
+          artwork: (cap && cap.artwork) || p.artwork || undefined,
           stream_url: cap ? cap.url : undefined,
         };
       },
