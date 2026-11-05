@@ -17,8 +17,8 @@
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_deleteValue
+// @grant        GM_setClipboard
 // @grant        unsafeWindow
-// @grant        GM_info
 // @connect      *
 // @connect      localhost
 // @run-at       document-idle
@@ -27,7 +27,8 @@
 /* The bot serves this file itself: @@SERVER@@ becomes the deployment's base
    URL, so install + updates need zero configuration beyond the API key.
    Pill click = queue the page's track. Hovering the pill opens a panel
-   with every track/collection visible on the page (per-site scraping). */
+   with two tabs: "Треки" (the page's tracks/collections) and "Лог" (the
+   full session log: requests, responses, errors with stacks). */
 
 (function () {
   "use strict";
@@ -45,20 +46,57 @@
   const getGuild = () => GM_getValue(LS.guild, "");
   const trim = (s) => (s || "").replace(/\s+/g, " ").trim();
 
-  // In-script action journal: the hover-panel diagnostics dumps it, so a
-  // failed attempt can be traced without any external tooling.
-  const trace = [];
-  const log = (s) => {
-    const line = new Date().toLocaleTimeString() + " " + s;
-    trace.push(line);
-    if (trace.length > 40) trace.shift();
-    return line;
-  };
+  // --- session log --------------------------------------------------------
+  // Everything the script does lands here: requests, responses, errors with
+  // stacks, captures, clicks. The panel's "Лог" tab shows it live; copy
+  // buttons hand it over as text or JSON.
 
-  // --- network -----------------------------------------------------------
+  const LOGS = []; // {ts, level, msg, data?}
+  const LOG_CAP = 400;
+  let logSeq = 0;
+  let activeTab = "queue"; // queue | log
+
+  function log(msg, level = "info", data) {
+    const entry = {
+      ts: new Date().toISOString(),
+      n: ++logSeq,
+      level,
+      msg: typeof msg === "string" ? msg : String(msg),
+    };
+    if (data !== undefined) {
+      entry.data = data instanceof Error ? { message: data.message, stack: data.stack } : data;
+    }
+    LOGS.push(entry);
+    if (LOGS.length > LOG_CAP) LOGS.shift();
+    if (activeTab === "log") renderPanel();
+    return entry;
+  }
+
+  function logErr(context, err) {
+    return log(context + ": " + (err && err.message ? err.message : String(err)), "err", {
+      stack: err && err.stack ? String(err.stack).split("\n").slice(0, 4).join("\n") : undefined,
+    });
+  }
+
+  function fmtTs(iso) {
+    return (iso || "").slice(11, 23);
+  }
+
+  function logsAsText() {
+    return LOGS.map(
+      (l) => `[${fmtTs(l.ts)}] [${l.level.toUpperCase()}] ${l.msg}` + (l.data ? ` | ${JSON.stringify(l.data)}` : "")
+    ).join("\n");
+  }
+
+  function logsAsJson() {
+    return JSON.stringify({ script: "dcbot-queue", version: "1.0.9", page: location.href, logs: LOGS }, null, 2);
+  }
+
+  // --- network ------------------------------------------------------------
 
   function api(method, path, body) {
-    log("запрос " + method + " " + path);
+    const t0 = performance.now();
+    log(`→ ${method} ${path}` + (body ? ` ${JSON.stringify(body).slice(0, 160)}` : ""));
     return new Promise((resolve, reject) => {
       GM.xmlHttpRequest({
         method,
@@ -70,18 +108,27 @@
         data: body ? JSON.stringify(body) : undefined,
         timeout: 20000,
         onload: (r) => {
-          log("ответ " + r.status + " на " + path);
+          const ms = Math.round(performance.now() - t0);
           let data = {};
           try {
             data = JSON.parse(r.responseText);
           } catch {
             /* non-JSON error body */
           }
-          if (r.status >= 200 && r.status < 300) resolve(data);
-          else reject(new Error(data.detail || "HTTP " + r.status));
+          if (r.status >= 200 && r.status < 300) {
+            log(`← ${r.status} ${path} (${ms} мс) ${JSON.stringify(data).slice(0, 160)}`);
+            resolve(data);
+          } else {
+            log(`← ${r.status} ${path} (${ms} мс) ${r.responseText.slice(0, 200)}`, "err");
+            reject(new Error(data.detail || "HTTP " + r.status));
+          }
         },
         onerror: (r) => {
-          log("СЕТЕВАЯ ОШИБКА на " + path + ": " + (r.error || "?") + " status=" + r.status);
+          log(
+            `← СЕТЕВАЯ ОШИБКА ${path}: status=${r.status} error=${r.error || "?"} — Tampermonkey не отправил запрос` +
+              " (меню Tampermonkey → настройки → этот скрипт → домены: адрес сервера должен быть разрешён)",
+            "err",
+          );
           reject(
             new Error(
               "Бот недоступен: " + getServer() +
@@ -89,7 +136,10 @@
             ),
           );
         },
-        ontimeout: () => reject(new Error("Таймаут запроса к боту")),
+        ontimeout: () => {
+          log(`← ТАЙМАУТ ${path} (20 с)`, "err");
+          reject(new Error("Таймаут запроса к боту"));
+        },
       });
     });
   }
@@ -113,6 +163,14 @@
     if (at >= 0) vkCaptured.splice(at, 1);
     vkCaptured.push(row);
     if (vkCaptured.length > VK_MAX_ITEMS) vkCaptured.shift();
+    // Every capture would flood the log on catalog prefetch: log the first
+    // few and the ones arriving after a pause (likely actual plays).
+    if (vkRemember._n === undefined) vkRemember._n = 0;
+    if (vkRemember._n < 5 || Date.now() - (vkRemember._last || 0) > 4000) {
+      vkRemember._last = Date.now();
+      vkRemember._n++;
+      log(`VK: захвачен трек ${[item.artist, item.title].filter(Boolean).join(" — ").slice(0, 60)}`);
+    }
   }
 
   function vkScan(value) {
@@ -166,6 +224,7 @@
     const W = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
     if (W.__dcbotVkHook) return;
     W.__dcbotVkHook = true;
+    log("VK: перехват fetch/XHR установлен");
     const origFetch = W.fetch;
     if (typeof origFetch === "function") {
       W.fetch = function (...args) {
@@ -323,7 +382,7 @@
         try {
           return fn();
         } catch (e) {
-          console.warn("[dcbot-queue] scraper failed:", e);
+          logErr("скрейп страницы упал", e);
           return { tracks: [], collections: [], artists: [] };
         }
       }
@@ -422,7 +481,7 @@
         try {
           return fn();
         } catch (e) {
-          console.warn("[dcbot-queue] extractor failed:", e);
+          logErr("экстрактор упал", e);
           return null;
         }
       }
@@ -433,16 +492,18 @@
   // --- queueing -----------------------------------------------------------
 
   async function sendQueue(body) {
-    log("sendQueue: " + body.source + " " + (body.title || body.query || "").slice(0, 60));
     if (!(await requireConfig())) return false;
     setPill("busy");
     try {
       const r = await api("POST", "/api/extension/queue/" + getGuild(), body);
       const where = GM_getValue(LS.guildName, "");
       const count = r.queued && r.queued > 1 ? ` (${r.queued} трек.)` : "";
-      toast("В очереди: " + (r.title || "") + count + (where ? " → " + where : ""));
+      const text = "В очереди: " + (r.title || "") + count + (where ? " → " + where : "");
+      log("успех: " + text);
+      toast(text);
       return true;
     } catch (e) {
+      logErr("отказ очереди", e);
       toast(String(e.message || e), true);
       return false;
     } finally {
@@ -450,31 +511,42 @@
     }
   }
 
-  async function requireConfig() {
+  function requireConfig() {
     if (!getKey()) {
-      toast("Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»", true);
-      return false;
+      const m = "Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»";
+      log(m, "warn");
+      toast(m, true);
+      return Promise.resolve(false);
     }
     if (!getGuild()) {
       // The common setup footgun: the guild prompt was cancelled. With a
       // single guild there is nothing to choose — pick it silently.
-      try {
-        const guilds = await api("GET", "/api/my/guilds");
-        if (guilds.length === 1) {
-          GM_setValue(LS.guild, guilds[0].id);
-          GM_setValue(LS.guildName, guilds[0].name);
-          return true;
-        }
-      } catch {}
-      toast("Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»", true);
-      return false;
+      return api("GET", "/api/my/guilds")
+        .then((guilds) => {
+          if (guilds.length === 1) {
+            GM_setValue(LS.guild, guilds[0].id);
+            GM_setValue(LS.guildName, guilds[0].name);
+            log("гильдия выбрана автоматически: " + guilds[0].name);
+            return true;
+          }
+          const m = "Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»";
+          log(m, "warn");
+          toast(m, true);
+          return false;
+        })
+        .catch((e) => {
+          logErr("автовыбор гильдии не удался", e);
+          toast(String(e.message || e), true);
+          return false;
+        });
     }
-    return true;
+    return Promise.resolve(true);
   }
 
   async function enqueueCurrent() {
-    if (!(await requireConfig())) return;
+    log("клик по пилюле, url=" + location.href);
     const row = extract();
+    log("экстрактор страницы: " + (row ? row.source + " " + (row.title || row.query) : "ничего"));
     if (!row) {
       const host = location.hostname.replace(/^www\./, "");
       toast(
@@ -501,14 +573,15 @@
   const CSS = `
     #dcbot-wrap{position:fixed;right:18px;bottom:18px;z-index:2147483647;display:flex;flex-direction:column;
       align-items:flex-end;gap:10px;font:400 13px/1.4 Roboto,system-ui,sans-serif}
-    #dcbot-panel{display:none;width:320px;max-height:46vh;background:#201a33;color:#e7e1f5;
+    #dcbot-panel{display:none;width:380px;max-height:52vh;background:#201a33;color:#e7e1f5;
       border:1px solid #453f63;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.55);overflow:hidden;
       flex-direction:column}
     #dcbot-panel.open{display:flex}
-    #dcbot-panel .dcbot-head{padding:9px 12px;font-weight:500;font-size:12px;color:#b7ace0;
-      border-bottom:1px solid #35305a;text-transform:uppercase;letter-spacing:.4px;display:flex;
-      justify-content:space-between;align-items:center}
-    #dcbot-panel .dcbot-body{overflow-y:auto;padding:4px 0 8px}
+    #dcbot-panel .dcbot-head{padding:6px 8px 6px 12px;font-size:12px;border-bottom:1px solid #35305a;
+      display:flex;gap:6px;align-items:center}
+    .dcbot-tab{padding:4px 10px;border-radius:8px;cursor:pointer;color:#8f83bd;user-select:none;white-space:nowrap}
+    .dcbot-tab.on{background:#3a2f63;color:#efe9ff;font-weight:500}
+    #dcbot-panel .dcbot-body{overflow-y:auto;padding:4px 0 8px;flex:1;min-height:0}
     #dcbot-panel .dcbot-cat{padding:7px 12px 3px;font-size:11px;font-weight:500;color:#8f83bd;
       text-transform:uppercase;letter-spacing:.5px}
     #dcbot-panel .dcbot-row{padding:6px 12px;cursor:pointer;display:block;white-space:nowrap;
@@ -516,6 +589,13 @@
     #dcbot-panel .dcbot-row:hover{background:#322a52}
     #dcbot-panel .dcbot-row .dcbot-kind{color:#8f83bd;font-size:11px;margin-left:6px}
     #dcbot-panel .dcbot-empty{padding:8px 12px;color:#8f83bd}
+    #dcbot-log{font:400 11px/1.5 ui-monospace,Consolas,monospace;word-break:break-all}
+    .dcbot-lrow{padding:2px 12px;border-bottom:1px solid #2a2444;white-space:pre-wrap}
+    .dcbot-lrow .lt{color:#6f6599}
+    .dcbot-lrow.err{color:#ff9aa8}
+    .dcbot-lrow.warn{color:#ffd08a}
+    #dcbot-logbar{display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid #35305a}
+    #dcbot-logbar .dcbot-tab{font-size:11px;padding:3px 8px}
     #dcbot-pill{display:flex;align-items:center;gap:6px;background:#1f1b2e;color:#e7e1f5;
       border:1px solid #453f63;border-radius:999px;padding:8px 14px;
       font:500 13px/1 Roboto,system-ui,sans-serif;cursor:pointer;user-select:none;
@@ -558,7 +638,7 @@
     const pill = document.createElement("div");
     pill.id = "dcbot-pill";
     pill.textContent = "＋ Queue";
-    pill.title = "Добавить трек страницы в очередь; наведи — треки со страницы";
+    pill.title = "Добавить трек страницы в очередь; наведи — треки со страницы и лог";
     pill.addEventListener("click", enqueueCurrent);
 
     wrap.appendChild(panel);
@@ -581,6 +661,18 @@
     panel.addEventListener("mouseenter", () => clearTimeout(hideTimer));
     pill.addEventListener("mouseleave", closeSoon);
     panel.addEventListener("mouseleave", closeSoon);
+    log("скрипт инициализирован, host=" + location.hostname);
+  }
+
+  function tabEl(label, tabId) {
+    const el = document.createElement("span");
+    el.className = "dcbot-tab" + (activeTab === tabId ? " on" : "");
+    el.textContent = label;
+    el.addEventListener("click", () => {
+      activeTab = tabId;
+      renderPanel();
+    });
+    return el;
   }
 
   function rowEl(label, kindTag, onClick) {
@@ -597,23 +689,71 @@
     return el;
   }
 
+  function copyLog(asJson) {
+    const text = asJson ? logsAsJson() : logsAsText();
+    try {
+      GM_setClipboard(text);
+      toast(asJson ? "Лог скопирован (JSON)" : "Лог скопирован (текст)");
+    } catch (e) {
+      // Clipboard permission refused: the manual way.
+      prompt("Скопируй лог вручную:", text);
+    }
+  }
+
   function renderPanel() {
     const panel = document.getElementById("dcbot-panel");
     if (!panel) return;
-    const body = document.createElement("div");
-    body.className = "dcbot-body";
-    const page = scrapePage();
 
     const head = document.createElement("div");
     head.className = "dcbot-head";
-    const title = document.createElement("span");
-    title.textContent = "На странице";
-    const hint = document.createElement("span");
-    hint.textContent = "клик — в очередь";
-    hint.style.color = "#6f6599";
-    head.appendChild(title);
-    head.appendChild(hint);
+    head.appendChild(tabEl("Треки", "queue"));
+    head.appendChild(tabEl("Лог (" + LOGS.length + ")", "log"));
 
+    if (activeTab === "log") {
+      const bar = document.createElement("div");
+      bar.id = "dcbot-logbar";
+      const bText = document.createElement("span");
+      bText.className = "dcbot-tab";
+      bText.textContent = "Копировать текст";
+      bText.addEventListener("click", () => copyLog(false));
+      const bJson = document.createElement("span");
+      bJson.className = "dcbot-tab";
+      bJson.textContent = "Копировать JSON";
+      bJson.addEventListener("click", () => copyLog(true));
+      const bClear = document.createElement("span");
+      bClear.className = "dcbot-tab";
+      bClear.textContent = "Очистить";
+      bClear.addEventListener("click", () => {
+        LOGS.length = 0;
+        log("лог очищен");
+        renderPanel();
+      });
+      bar.appendChild(bText);
+      bar.appendChild(bJson);
+      bar.appendChild(bClear);
+
+      const body = document.createElement("div");
+      body.className = "dcbot-body";
+      body.id = "dcbot-log";
+      if (!LOGS.length) {
+        const empty = document.createElement("div");
+        empty.className = "dcbot-empty";
+        empty.textContent = "Пока пусто: попробуй добавить трек — всё появится здесь.";
+        body.appendChild(empty);
+      }
+      for (const l of LOGS.slice().reverse()) {
+        const row = document.createElement("div");
+        row.className = "dcbot-lrow " + (l.level === "err" ? "err" : l.level === "warn" ? "warn" : "");
+        row.textContent = "[" + fmtTs(l.ts) + "] " + l.msg + (l.data ? "  ⋮ " + JSON.stringify(l.data) : "");
+        body.appendChild(row);
+      }
+      panel.replaceChildren(head, bar, body);
+      return;
+    }
+
+    const body = document.createElement("div");
+    body.className = "dcbot-body";
+    const page = scrapePage();
     if (page.tracks.length) {
       const cat = document.createElement("div");
       cat.className = "dcbot-cat";
@@ -622,7 +762,7 @@
       for (const t of page.tracks) {
         body.appendChild(
           rowEl(t.title || t.query, t.source ? t.source.toUpperCase() : undefined, () => {
-            log("клик по треку из панели: " + (t.title || t.query).slice(0, 50));
+            log("клик по треку из панели: " + (t.title || t.query).slice(0, 60));
             panel.classList.remove("open");
             sendQueue({
               query: t.query,
@@ -679,7 +819,15 @@
     panel.replaceChildren(head, body);
   }
 
-  // SPA sites navigate without reloads — keep the pill mounted.
+  // SPA sites navigate without reloads — keep the pill mounted and log the
+  // URL the script lives on now.
+  let lastUrl = location.href;
+  setInterval(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      log("переход: " + location.href);
+    }
+  }, 1500);
   const observer = new MutationObserver(() => ensureUi());
   observer.observe(document.documentElement, { childList: true, subtree: true });
   ensureUi();
@@ -729,7 +877,10 @@
   }
 
   function checkConnection() {
-    if (!requireConfig()) return;
+    if (!getKey()) {
+      toast("Ключ не задан", true);
+      return;
+    }
     api("GET", "/api/my/guilds")
       .then((guilds) => {
         const g = guilds.find((x) => x.id === getGuild());
@@ -738,48 +889,8 @@
       .catch((e) => toast(String(e.message || e), true));
   }
 
-  async function diagnostics() {
-    const L = [];
-    L.push("=== Discord Queue: диагностика ===");
-    L.push("Скрипт: v" + (typeof GM_info !== "undefined" && GM_info.script ? GM_info.script.version : "?") +
-      " (Tampermonkey " + (typeof GM_info !== "undefined" ? GM_info.version : "?") + ")");
-    L.push("Сервер: " + getServer());
-    L.push("Ключ: " + (getKey() ? getKey().slice(0, 8) + "… (" + getKey().length + " симв.)" : "НЕ ЗАДАН"));
-    L.push("Гильдия: " + (getGuild() || "не выбрана") +
-      (GM_getValue(LS.guildName, "") ? " (" + GM_getValue(LS.guildName, "") + ")" : ""));
-    L.push("Страница: " + location.href);
-    if (VK_HOST.test(location.hostname)) L.push("VK перехват: " + vkCaptured.length + " треков, " + vkCollections.length + " коллекций");
-    const result = await new Promise((resolve) => {
-      GM.xmlHttpRequest({
-        method: "GET",
-        url: getServer() + "/api/my/guilds",
-        headers: { Authorization: "Bearer " + getKey() },
-        timeout: 15000,
-        onload: (r) => {
-          let names = "";
-          try {
-            names = JSON.parse(r.responseText).map((x) => x.name).join(", ");
-          } catch {
-            names = r.responseText.slice(0, 120);
-          }
-          resolve("HTTP " + r.status + (names ? "; сервера бота: " + names : "; " + names));
-        },
-        onerror: (r) =>
-          resolve(
-            "СЕТЕВАЯ ОШИБКА (запрос не покинул браузер): status=" + r.status +
-            " error=" + (r.error || "?") +
-            " → Tampermonkey блокирует домен. Меню Tampermonkey → настройки → этот скрипт → раздел доменов: убери запреты на адрес сервера, либо удали скрипт и поставь заново со страницы /extension.",
-          ),
-        ontimeout: () => resolve("ТАЙМАУТ запроса (15 c)"),
-      });
-    });
-    L.push("GET /api/my/guilds → " + result);
-    L.push("--- журнал действий (свежее внизу) ---");
-    if (trace.length) L.push(trace.join("\n")); else L.push("пусто — попыток с момента загрузки страницы не было");
-    L.push("Пришли этот отчёт целиком.");
-    alert(L.join("\n"));
-  }
   GM_registerMenuCommand("Discord Queue: настройки", configure);
   GM_registerMenuCommand("Discord Queue: проверить связь", checkConnection);
-  GM_registerMenuCommand("Discord Queue: диагностика", diagnostics);
+  GM_registerMenuCommand("Discord Queue: скопировать лог (текст)", () => copyLog(false));
+  GM_registerMenuCommand("Discord Queue: скопировать лог (JSON)", () => copyLog(true));
 })();
