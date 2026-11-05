@@ -404,7 +404,7 @@
   // --- queueing -----------------------------------------------------------
 
   async function sendQueue(body) {
-    if (!requireConfig()) return false;
+    if (!(await requireConfig())) return false;
     setPill("busy");
     try {
       const r = await api("POST", "/api/extension/queue/" + getGuild(), body);
@@ -420,12 +420,22 @@
     }
   }
 
-  function requireConfig() {
+  async function requireConfig() {
     if (!getKey()) {
       toast("Ключ не задан: меню Tampermonkey → «Discord Queue: настройки»", true);
       return false;
     }
     if (!getGuild()) {
+      // The common setup footgun: the guild prompt was cancelled. With a
+      // single guild there is nothing to choose — pick it silently.
+      try {
+        const guilds = await api("GET", "/api/my/guilds");
+        if (guilds.length === 1) {
+          GM_setValue(LS.guild, guilds[0].id);
+          GM_setValue(LS.guildName, guilds[0].name);
+          return true;
+        }
+      } catch {}
       toast("Гильдия не выбрана: меню Tampermonkey → «Discord Queue: настройки»", true);
       return false;
     }
@@ -433,6 +443,7 @@
   }
 
   async function enqueueCurrent() {
+    if (!(await requireConfig())) return;
     const row = extract();
     if (!row) {
       const host = location.hostname.replace(/^www\./, "");
