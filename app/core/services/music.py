@@ -618,6 +618,10 @@ class MusicService:
             source = "direct"
             query = stream_url
         source = self._detect_source(query, source)
+        if source == "ym":
+            # The Lavalink Yandex plugin parses only music.yandex.com URLs;
+            # the Russian site and the users hand out music.yandex.ru links.
+            query = query.replace("music.yandex.ru", "music.yandex.com")
         meta = meta or {}
         items: list[QueueItem] = []
         title = ""

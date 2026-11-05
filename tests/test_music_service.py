@@ -1212,3 +1212,33 @@ async def test_userscript_stream_url_queues_direct_item(
     assert item.pending_url == "https://cs1-72v4.vkuser.net/stream.mp3?extra=signature"
     assert item.display_title == "Song"
     assert item.length == 30_000
+
+
+async def test_ym_enqueue_normalizes_ru_domain(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Lavalink Yandex plugin only parses music.yandex.com URLs; a .ru
+    link from the site or the userscript must be rewritten before load."""
+    player = FakePlayer()
+    music.get_player = lambda _gid: player  # type: ignore[method-assign]
+    seen: list[str] = []
+
+    async def fake_rest_load(query: str):
+        seen.append(query)
+        return [
+            {
+                "encoded": "abc",
+                "info": {
+                    "identifier": "123", "title": "Song", "author": "Artist",
+                    "length": 30_000, "position": 0, "uri": "https://music.yandex.com/track/123",
+                    "sourceName": "yandexmusic", "artworkUrl": None, "isSeekable": True, "isStream": False,
+                },
+                "pluginInfo": {},
+            }
+        ]
+
+    monkeypatch.setattr(music, "_lavalink_rest_load", fake_rest_load)
+
+    await music.enqueue(GUILD_ID, "https://music.yandex.ru/track/123", 1, "u", source="ym")
+
+    assert seen == ["https://music.yandex.com/track/123"]

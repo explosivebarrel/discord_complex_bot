@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord Council Bot — Queue
 // @namespace    dcbot-queue
-// @version      @@VERSION@@
+// @version      1.0.3
 // @description  Add tracks to the Discord Council Bot queue right from YouTube, Yandex Music, SoundCloud and VK pages.
 // @author       dcbot
 // @match        https://www.youtube.com/*
@@ -15,6 +15,7 @@
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_deleteValue
+// @grant        unsafeWindow
 // @connect      *
 // @connect      localhost
 // @run-at       document-idle
@@ -106,9 +107,20 @@
   }
 
   function extractYandex() {
-    const m = location.pathname.match(/^\/(album\/\d+\/)?track\/(\d+)/);
-    if (!m) return null;
-    return { query: location.origin + "/album/" + (m[1] ? m[1].replace(/\/$/, "") : "0") + "/track/" + m[2], source: "ym" };
+    // The server rewrites music.yandex.ru -> .com for the Lavalink plugin,
+    // so send whatever the user sees. Albums/playlists open as a preview.
+    const p = location.pathname;
+    const track = p.match(/^\/(album\/(\d+)\/)?track\/(\d+)/);
+    if (track) {
+      return {
+        query: location.origin + (track[2] ? "/album/" + track[2] : "") + "/track/" + track[3],
+        source: "ym",
+      };
+    }
+    if (/^\/album\/\d+/.test(p) || /^\/users\/\d+\/playlists\/\d+/.test(p) || /^\/playlists\//.test(p)) {
+      return { query: location.origin + p, source: "ym" };
+    }
+    return null;
   }
 
   function extractSoundCloud() {
@@ -116,37 +128,129 @@
     return { query: location.origin + location.pathname, source: "sc" };
   }
 
-  function extractVK() {
-    // Only music pages: the site has hundreds of non-music URLs.
-    const path = location.pathname;
-    const track = path.match(/audio(-?\d+)_(\d+)/);
-    if (track) {
-      return {
-        query: "https://vk.com/audio" + track[1] + "_" + track[2],
-        source: "vk",
-        title: document.title.replace(/\s*\|\s*VK.*$/i, "").trim() || undefined,
+  // --- VK: capture stream URLs from the page's own API traffic -----------
+  // The VK web player plays blob: URLs, so the only way to get a playable
+  // link is to hook the page's fetch/XHR and pick audio items out of the
+  // JSON payloads it loads. Items land in vkCaptured (newest last).
+
+  const vkCaptured = [];
+  const VK_MAX_ITEMS = 40;
+
+  function vkRemember(item) {
+    if (!item.url || !/^https?:\/\//.test(item.url) || /\.m3u8/i.test(item.url)) return;
+    if (!item.owner_id && !item.url) return;
+    const key = item.owner_id != null && item.id != null ? `${item.owner_id}_${item.id}` : item.url;
+    const row = { ...item, key, ms: Date.now() };
+    const at = vkCaptured.findIndex((x) => x.key === key);
+    if (at >= 0) vkCaptured.splice(at, 1);
+    vkCaptured.push(row);
+    if (vkCaptured.length > VK_MAX_ITEMS) vkCaptured.shift();
+  }
+
+  function vkScan(value) {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(vkScan);
+      return;
+    }
+    if (
+      typeof value.url === "string" &&
+      /\.mp3(\?|$)/.test(value.url) &&
+      (value.title || value.artist) &&
+      typeof value.url === "string" &&
+      value.url.length < 1200
+    ) {
+      vkRemember({
+        owner_id: value.owner_id ?? null,
+        id: value.id ?? null,
+        url: value.url.startsWith("//") ? "https:" + value.url : value.url,
+        title: (value.title || "").trim(),
+        artist: (value.artist || "").trim(),
+        duration: Number(value.duration) || 0,
+      });
+    }
+    for (const k in value) vkScan(value[k]);
+  }
+
+  function vkScanText(text) {
+    if (typeof text !== "string" || !text || text.length > 3_000_000) return;
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return; // HTML fragments / non-JSON payloads are skipped
+    }
+    vkScan(data);
+  }
+
+  function initVkHook() {
+    // The userscript runs in Tampermonkey's sandbox: the page's own
+    // fetch/XHR live on unsafeWindow.
+    const W = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+    if (W.__dcbotVkHook) return;
+    W.__dcbotVkHook = true;
+    const origFetch = W.fetch;
+    if (typeof origFetch === "function") {
+      W.fetch = function (...args) {
+        const p = origFetch.apply(this, args);
+        try {
+          p.then((res) => {
+            try {
+              const ct = String((res.headers && res.headers.get && res.headers.get("content-type")) || "");
+              if (!ct || ct.includes("json") || ct.includes("text")) {
+                res.clone().text().then(vkScanText).catch(() => {});
+              }
+            } catch {}
+          }).catch(() => {});
+        } catch {}
+        return p;
       };
     }
-    // The web player: best effort — grab the currently playing direct URL
-    // so the bot needs no VK token at all.
-    const player =
-      document.querySelector("#audio_global_player audio, .audio_player audio, audio[audio_id]") ||
-      (document.querySelector(".AudioPlayer__progress, .audio_page_player") ? document.querySelector("audio") : null);
-    const playing = Array.from(document.querySelectorAll("audio")).find(
-      (a) => a.src && (a.duration > 0 || !a.paused)
-    );
-    const audio = player && player.src ? player : playing;
-    if (!audio || !audio.src || audio.src.startsWith("blob:")) return null;
-    const titleEl =
-      document.querySelector(".audio_page_player_title_performer, .AudioPlayer__trackTitle") || null;
-    const row = {
+    const XHR = W.XMLHttpRequest;
+    if (XHR && XHR.prototype) {
+      const open = XHR.prototype.open;
+      const send = XHR.prototype.send;
+      XHR.prototype.open = function (method, url) {
+        this.__dcbotUrl = url;
+        return open.apply(this, arguments);
+      };
+      XHR.prototype.send = function () {
+        this.addEventListener("load", () => {
+          try {
+            if (/audio|method\/|al_audio/.test(String(this.__dcbotUrl || this.responseURL || ""))) {
+              vkScanText(this.responseText);
+            }
+          } catch {}
+        });
+        return send.apply(this, arguments);
+      };
+    }
+  }
+
+  function extractVK() {
+    const path = location.pathname;
+    const track = path.match(/audio(-?\d+)_(\d+)/);
+    let picked = null;
+    if (track) {
+      const owner = Number(track[1]);
+      const id = Number(track[2]);
+      picked = vkCaptured.find((x) => x.owner_id === owner && x.id === id) || null;
+    }
+    if (!picked && vkCaptured.length) {
+      // No permalink context (the player page): the track the page loaded
+      // most recently is the one being listened to.
+      picked = vkCaptured[vkCaptured.length - 1];
+    }
+    if (!picked) return null;
+    const title = [picked.artist, picked.title].filter(Boolean).join(" — ");
+    return {
       query: location.origin + location.pathname,
       source: "vk",
-      stream_url: audio.src,
-      title: (titleEl && titleEl.textContent.trim()) || document.title.replace(/\s*\|\s*VK.*$/i, "").trim(),
+      stream_url: picked.url,
+      title: title || undefined,
+      author: picked.artist || undefined,
+      length_ms: picked.duration ? picked.duration * 1000 : undefined,
     };
-    if (isFinite(audio.duration) && audio.duration > 0) row.length_ms = Math.round(audio.duration * 1000);
-    return row;
   }
 
   const EXTRACTORS = [
@@ -198,7 +302,7 @@
     el.textContent = text;
     el.className = "show" + (isErr ? " err" : "");
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => el.classList.remove("show"), 4000);
+    toast._t = setTimeout(() => el.classList.remove("show"), 5000);
   }
 
   function ensurePill() {
@@ -238,7 +342,13 @@
     if (!requireConfig()) return;
     const row = extract();
     if (!row) {
-      toast("На этой странице не найден трек или плейлист", true);
+      const host = location.hostname.replace(/^www\./, "");
+      toast(
+        /vk\.|vkontakte/.test(host)
+          ? "VK не отдал ссылку. Открой в VK любой трек (нажми play в плеере) и нажми кнопку ещё раз."
+          : "На этой странице не найден трек или плейлист",
+        true,
+      );
       return;
     }
     setPill("busy");
@@ -267,10 +377,12 @@
   observer.observe(document.documentElement, { childList: true, subtree: true });
   ensurePill();
 
+  const host = location.hostname.replace(/^www\./, "");
+  if (/^(vk\.com|m\.vk\.com|music\.vk\.com|vkontakte\.ru)$/.test(host)) initVkHook();
+
   // --- menu ---------------------------------------------------------------
 
   function ask(label, current) {
-    // prompt() inside userscripts is fine (no page code involved).
     const v = prompt(label, current);
     return v === null ? undefined : v.trim();
   }
