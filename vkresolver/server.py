@@ -54,9 +54,9 @@ app = FastAPI()
 
 
 def _looks_like_stream(url: str) -> bool:
-    host = urlsplit(url).netloc.rsplit(".", 2)[-2] + "." + urlsplit(url).netloc.rsplit(".", 1)[-1]
+    host = urlsplit(url).netloc.lower()
     # okcdn.ru / *.vkuser.net / *.vkuseraudio.net with signed query
-    if not ("okcdn.ru" in host or "vkuser" in host):
+    if "okcdn.ru" not in host and "vkuser" not in host:
         return False
     q = urlsplit(url).query
     return "expires=" in q and "sig=" in q
@@ -212,12 +212,12 @@ async def startup() -> None:
         st = json.load(open(SESSION_FILE, encoding="utf-8"))
         await state.browser_ctx.add_cookies(st.get("cookies", []))
         state.logged_in = True
-    # Warm the session; also validates the cookies early.
+    # Warm the session; also validates the cookies early. Logged-in audio
+    # pages keep the deep-link URL; anonymous ones bounce to login.
     page = await state.browser_ctx.new_page()
     try:
-        await page.goto("https://vk.ru/audio", wait_until="domcontentloaded", timeout=20000)
-        content = await page.content()
-        state.logged_in = "login" not in page.url and "vkontakte" not in content.lower()[:0]
+        await page.goto("https://vk.ru/audio", wait_until="load", timeout=25000)
+        state.logged_in = "login" not in page.url
     except Exception as exc:  # noqa: BLE001
         state.last_error = f"warmup: {exc}"
     await page.close()
