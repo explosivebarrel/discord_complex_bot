@@ -48,3 +48,4 @@ web/tsconfig.tsbuildinfo
 # VK browser session (never commit)
 tools/vk_spike/vk_profile/
 tools/vk_spike/spike_fail.png
+tools/vk_spike/last_stream_url.txt

@@ -21,9 +21,14 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Page, sync_playwright
 
 PROFILE = Path(__file__).parent / "vk_profile"
-STREAM_RE = re.compile(r"\.(m3u8|mp3|mp4|aac)(\?|$)", re.I)
-# Any audio-CDN URL, extension or not (HLS segments carry none).
-VK_CDN_RE = re.compile(r"https://[a-z0-9.-]*(?:vkuseraudio|vkuser)\.net/[^\"'\\\s<>]+", re.I)
+# A stream URL is host on the audio CDN with NO path and signed query
+# params (expires+sig) — extensions never appear, that fooled us twice.
+STREAM_URL_RE = re.compile(
+    r"https://[a-z0-9.-]*(?:vkuseraudio|vkuser)\.net/\?[^\"'\\\s<>]+"
+    r"|https://[a-z0-9.-]*okcdn\.ru/\?[^\"'\\\s<>]+",
+    re.I,
+)
+VK_CDN_RE = STREAM_URL_RE
 PLAY_SELECTORS = (
     '[data-testid="audiorow-tappable"]',
     ".audio_row__play",
@@ -33,7 +38,9 @@ PLAY_SELECTORS = (
 
 
 def is_stream_url(url: str) -> bool:
-    return ("vkuseraudio.net" in url or "vkuser.net" in url) and bool(STREAM_RE.search(url))
+    if not re.search(r"(?:vkuseraudio|vkuser)\.net|okcdn\.ru", urlsplit(url).netloc, re.I):
+        return False
+    return "expires=" in url and "sig=" in url
 
 
 def goto_track(page: Page, owner: str, aid: str, timeout_s: float = 30.0) -> None:
@@ -71,7 +78,7 @@ def scan_response(resp, captured: list, via: dict, stats: dict) -> None:
         return
     stats["scanned"] = stats.get("scanned", 0) + 1
     # JSON may escape slashes: https:\/\/... breaks naive URL regexes.
-    clean = body.replace("\\/", "/")
+    clean = body.replace("\\/", "/").replace("\\u0026", "&")
     found = 0
     for m in VK_CDN_RE.finditer(clean):
         url = m.group(0)
@@ -133,8 +140,9 @@ def capture_one(page: Page, captured: list, via: dict, stats: dict, pending: lis
     if got:
         print(f"    ПОЙМАНО за {got[0] - t0:.1f} с: {got[1][:180]}")
         print(f"      источник: {via.get(got[1], '?')}")
-        if ".m3u8" in got[1].lower():
-            print("      (HLS-манифест — lavaplayer играет его нативно)")
+        out = Path(__file__).parent / "last_stream_url.txt"
+        out.write_text(got[1], encoding="utf-8")
+        print(f"      полный URL сохранён: {out} (проверю его через Lavalink)")
         return
 
     print(f"    НЕ ПЕРЕХВАЧЕНО за {wait_s} с — трафик за окно:")
