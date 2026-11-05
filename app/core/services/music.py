@@ -936,29 +936,48 @@ class MusicService:
                 track._artwork = item.artwork  # noqa: SLF001
             return track
         if item.source == "vk":
-            token, ua = await self._vk_token()
             parsed = vk_music.parse_track_url(item.pending_url)
             if parsed is None:
                 raise MusicServiceError("This VK link is not a single track the bot can play.")
             track = None
-            # A signed URL can die between fetch and load; refetch once.
-            for attempt in range(2):
-                try:
-                    stream = await vk_music.stream_url(token, *parsed, ua=ua)
-                except VkMusicError as exc:
-                    raise MusicServiceError(str(exc)) from exc
-                track = await self._load_stream(stream)
-                if track is not None:
-                    break
-                if attempt + 1 < 2:
-                    await asyncio.sleep(1.0)
-            if track is None:
-                raise MusicServiceError("Could not load the VK stream. Try again in a moment.")
-            track._title = item.title or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
-            track._author = item.author or track.author  # noqa: SLF001
+            try:
+                token, ua = await self._vk_token()
+            except MusicServiceError:
+                pass  # no working token — the search fallback below plays instead
+            else:
+                # A signed URL can die between fetch and load; refetch once.
+                for attempt in range(2):
+                    try:
+                        stream = await vk_music.stream_url(token, *parsed, ua=ua)
+                    except VkMusicError as exc:
+                        logger.warning("VK stream resolve failed, falling back to search: %s", exc)
+                        break
+                    track = await self._load_stream(stream)
+                    if track is not None:
+                        break
+                    if attempt + 1 < 2:
+                        await asyncio.sleep(1.0)
+            if track is not None:
+                track._title = item.title or track.title  # noqa: SLF001 - Lavalink only sees the CDN filename
+                track._author = item.author or track.author  # noqa: SLF001
+                if item.artwork:
+                    track._artwork = item.artwork  # noqa: SLF001
+                return track
+            # The userscript queues metadata-only VK rows when the page's
+            # player never yields a stream link (paywall accounts, A/B UI).
+            # They must play even without a working VK token: search a
+            # substitute by the captured name.
+            query = " - ".join(x for x in (item.author, item.title) if x) or item.pending_url
+            result = await self._search_with_retry(query, "yt")
+            found = list(result.tracks) if isinstance(result, wavelink.Playlist) else list(result or [])
+            if not found:
+                raise MusicServiceError("Could not load the VK track. Try adding it again.")
+            sub = found[0]
+            sub._title = item.title or sub.title  # noqa: SLF001
+            sub._author = item.author or sub.author  # noqa: SLF001
             if item.artwork:
-                track._artwork = item.artwork  # noqa: SLF001
-            return track
+                sub._artwork = item.artwork  # noqa: SLF001
+            return sub
         loaded = await wavelink.Playable.search(item.pending_url)
         if isinstance(loaded, wavelink.Playlist) or not loaded:
             if item.source == "direct":

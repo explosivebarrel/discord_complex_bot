@@ -245,19 +245,8 @@
 
   function vkRemember(item) {
     if (!item.url || !/^https?:\/\//.test(item.url)) return;
-    if (/\.m3u8/i.test(item.url)) {
-      // Mobile VK hands out HLS for many tracks; the bot cannot play it.
-      // Silent drops made mobile look broken for no visible reason.
-      if (Date.now() - (vkRemember._m3u8Log || 0) > 5000) {
-        vkRemember._m3u8Log = Date.now();
-        log(
-          "VK: HLS-ссылка (m3u8) пропущена — бот не играет HLS: " +
-            [item.artist, item.title].filter(Boolean).join(" — ").slice(0, 60),
-          "warn",
-        );
-      }
-      return;
-    }
+    // m3u8 (HLS) is fine: lavaplayer plays it, so JSON payloads handing out
+    // HLS are captured like any other stream.
     const key = item.owner_id != null && item.id != null ? `${item.owner_id}_${item.id}` : item.url;
     const row = { ...item, key, ms: Date.now() };
     const at = vkCaptured.findIndex((x) => x.key === key);
@@ -283,7 +272,7 @@
     const hasId = value.owner_id != null && value.id != null;
     if (
       typeof value.url === "string" &&
-      /\.mp3(\?|$)/.test(value.url) &&
+      /\.(mp3|m3u8)(\?|$)/.test(value.url) &&
       value.url.length < 1200 &&
       (value.title || value.artist)
     ) {
@@ -914,13 +903,20 @@
         " | capture keys: " + vkCaptured.slice(-10).map((x) => x.key.slice(0, 60)).join(", "),
       "warn",
     );
-    const mobile = /m\.vk\.(ru|com)/.test(location.hostname);
-    const m = mobile
-      ? "VK не отдал ссылку: мобильный VK часто отдаёт HLS (бот его не играет) — добавь трек с десктопной vk.ru"
-      : "VK не отдал ссылку — включи трек вручную и попробуй ещё раз (лог: вкладка Лог)";
-    log(m, "warn");
-    toast(m, true);
-    return false;
+    // The player ignored the synthetic click (untrusted events, paywall
+    // accounts, A/B UI). Queue by metadata instead: the server holds the
+    // track as a pending vk item and fetches the stream itself at play
+    // time — no link from the page needed.
+    log("VK: ставлю по метаданным (ссылку перехватить не удалось)");
+    toast("Ссылку получить не удалось — добавил по названию");
+    return sendQueue({
+      query: row.query,
+      source: row.source,
+      title: row.title,
+      author: row.author,
+      length_ms: row.length_ms,
+      artwork: row.artwork,
+    });
   }
 
   async function enqueueCurrent() {

@@ -847,10 +847,21 @@ async def test_vk_resolve_item_loads_a_fresh_stream(
     assert track._author == "Artist"  # noqa: SLF001
 
 
-async def test_vk_resolve_rejects_hls(music: MusicService, monkeypatch: pytest.MonkeyPatch) -> None:
+class _StubPlayable:
+    def __init__(self) -> None:
+        self.title = "raw title"
+        self.author = "raw author"
+
+
+async def test_vk_resolve_hls_falls_back_to_search(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HLS-only streams (and any other VK API refusal) must not kill the
+    track: the userscript's metadata-only queues fall back to a search."""
     item = QueueItem(
         track=None, requested_by_id=1, requested_by_name="u", source="vk",
         pending_url="https://vk.com/audio1_2", title="Song", author="Artist",
+        artwork="art.png",
     )
     _vk_token_stub(music)
 
@@ -859,8 +870,41 @@ async def test_vk_resolve_rejects_hls(music: MusicService, monkeypatch: pytest.M
 
     monkeypatch.setattr(vk_music, "stream_url", hls_stream)
 
-    with pytest.raises(MusicServiceError):
-        await music._resolve_item(item)  # noqa: SLF001
+    async def fake_search(query: str, source: str):
+        assert query == "Artist - Song"
+        assert source == "yt"
+        return [_StubPlayable()]
+
+    monkeypatch.setattr(music, "_search_with_retry", fake_search)  # noqa: SLF001
+
+    track = await music._resolve_item(item)  # noqa: SLF001
+    assert track._title == "Song"  # noqa: SLF001
+    assert track._author == "Artist"  # noqa: SLF001
+    assert track._artwork == "art.png"  # noqa: SLF001
+
+
+async def test_vk_resolve_without_token_falls_back_to_search(
+    music: MusicService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = QueueItem(
+        track=None, requested_by_id=1, requested_by_name="u", source="vk",
+        pending_url="https://vk.com/audio1_2", title="Song", author="Artist",
+    )
+
+    async def no_token() -> tuple[str, str]:
+        raise MusicServiceError("VK Music is not configured. Set the access token in Settings.")
+
+    music._vk_token = no_token  # type: ignore[method-assign]
+
+    async def fake_search(query: str, source: str):
+        assert query == "Artist - Song"
+        return [_StubPlayable()]
+
+    monkeypatch.setattr(music, "_search_with_retry", fake_search)  # noqa: SLF001
+
+    track = await music._resolve_item(item)  # noqa: SLF001
+    assert track._title == "Song"  # noqa: SLF001
+    assert track._author == "Artist"  # noqa: SLF001
 
 
 async def test_vk_open_playlist_stores_deep_links(
