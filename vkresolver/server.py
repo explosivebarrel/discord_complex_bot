@@ -16,6 +16,7 @@ import os
 import random
 import re
 import time
+from collections import deque
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
@@ -27,6 +28,9 @@ SESSION_FILE = os.environ.get("SESSION_FILE", "/data/vk_session.json")
 # apart. The browser is indistinguishable from a user only while it
 # behaves like one.
 MIN_INTERVAL = float(os.environ.get("MIN_INTERVAL", "3.0"))
+# A human does not "listen" to 1200 tracks an hour; the ceiling keeps a
+# runaway queue from painting a bot-shaped pattern in VK's logs.
+HOURLY_LIMIT = int(os.environ.get("HOURLY_LIMIT", "40"))
 RESOLVE_TIMEOUT = float(os.environ.get("RESOLVE_TIMEOUT", "20"))
 
 CDN_HOST_RE = re.compile(r"(?:vkuseraudio|vkuser)\.net$|okcdn\.ru$", re.I)
@@ -47,6 +51,7 @@ class _State:
     cache: dict[tuple[int, int], tuple[str, float]] = {}
     last_error: str | None = None
     logged_in = False
+    hourly: deque[float] = deque()
 
 
 state = _State()
@@ -173,10 +178,17 @@ async def resolve(owner_id: int, audio_id: int) -> dict:
         hit = state.cache.get(key)
         if hit and hit[1] > time.time():
             return {"url": hit[0], "ms": 0, "via": "cache"}
-        # Human pacing between resolves.
-        wait = state.last_resolved + MIN_INTERVAL - time.time()
+        # Sliding-hour ceiling: a cache hit does not count, a page resolve does.
+        now = time.time()
+        while state.hourly and state.hourly[0] < now - 3600:
+            state.hourly.popleft()
+        if len(state.hourly) >= HOURLY_LIMIT:
+            raise RuntimeError(f"hourly_limit({HOURLY_LIMIT})")
+        # Human pacing between resolves, with jitter.
+        wait = state.last_resolved + MIN_INTERVAL * random.uniform(1.0, 1.6) - time.time()
         if wait > 0:
             await asyncio.sleep(wait)
+        state.hourly.append(time.time())
         t0 = time.time()
         try:
             url = await _resolve_once(owner_id, audio_id)
@@ -243,6 +255,8 @@ async def resolve_ep(body: dict) -> dict:
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="resolve timed out")
     except RuntimeError as exc:
+        if "hourly_limit" in str(exc):
+            raise HTTPException(status_code=429, detail=str(exc))
         code = 503 if "login" in str(exc) else 502
         raise HTTPException(status_code=code, detail=str(exc))
 
@@ -254,5 +268,7 @@ async def health() -> dict:
         "session": state.logged_in,
         "last_error": state.last_error,
         "cached_urls": fresh,
+        "resolves_last_hour": len(state.hourly),
+        "hourly_limit": HOURLY_LIMIT,
         "cooldown_left": max(0.0, state.last_resolved + MIN_INTERVAL - time.time()),
     }
