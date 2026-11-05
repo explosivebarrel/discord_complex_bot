@@ -202,13 +202,14 @@ def main() -> None:
 
         print("\n--- первый проход (холодная страница):")
         for owner, aid in targets:
-            capture_one(page, captured, via, all_reqs, owner, aid, wait_s=35)
+            capture_one(page, captured, via, stats, all_reqs, owner, aid, wait_s=35)
 
         if len(targets) > 1:
             print("\n--- повторный проход (тёплый браузер):")
             for owner, aid in targets:
-                capture_one(page, captured, via, all_reqs, owner, aid, wait_s=25)
+                capture_one(page, captured, via, stats, all_reqs, owner, aid, wait_s=25)
 
+        print(f"\n--- сканер ответов: {stats}")
         input("\n>>> Готово. Enter — закрыть браузер... ")
         ctx.close()
 
