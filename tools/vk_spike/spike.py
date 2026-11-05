@@ -100,7 +100,7 @@ def dump_traffic(all_reqs: list[tuple[float, str]]) -> None:
     print("    web.api методы: " + (", ".join(f"{m}×{n}" for m, n in methods.most_common(15)) or "нет"))
 
 
-def capture_one(page: Page, captured: list, via: dict, stats: dict,
+def capture_one(page: Page, captured: list, via: dict, stats: dict, pending: list,
                 all_reqs: list[tuple[float, str]], owner: str, aid: str,
                 wait_s: float) -> None:
     before = len(captured)
@@ -202,12 +202,12 @@ def main() -> None:
 
         print("\n--- первый проход (холодная страница):")
         for owner, aid in targets:
-            capture_one(page, captured, via, stats, all_reqs, owner, aid, wait_s=35)
+            capture_one(page, captured, via, stats, pending, all_reqs, owner, aid, wait_s=35)
 
         if len(targets) > 1:
             print("\n--- повторный проход (тёплый браузер):")
             for owner, aid in targets:
-                capture_one(page, captured, via, stats, all_reqs, owner, aid, wait_s=25)
+                capture_one(page, captured, via, stats, pending, all_reqs, owner, aid, wait_s=25)
 
         print(f"\n--- сканер ответов: {stats}")
         input("\n>>> Готово. Enter — закрыть браузер... ")
