@@ -22,6 +22,8 @@ from playwright.sync_api import Page, sync_playwright
 
 PROFILE = Path(__file__).parent / "vk_profile"
 STREAM_RE = re.compile(r"\.(m3u8|mp3|mp4|aac)(\?|$)", re.I)
+# Any audio-CDN URL, extension or not (HLS segments carry none).
+VK_CDN_RE = re.compile(r"https://[a-z0-9.-]*(?:vkuseraudio|vkuser)\.net/[^\"'\\\s<>]+", re.I)
 PLAY_SELECTORS = (
     '[data-testid="audiorow-tappable"]',
     ".audio_row__play",
@@ -54,37 +56,42 @@ def goto_track(page: Page, owner: str, aid: str, timeout_s: float = 30.0) -> Non
     print(f"    (навигация не устоялась, текущий URL: {page.url})")
 
 
-def dump_media_state(page: Page) -> None:
-    """Audio elements say where the bytes flow: a blob: src means MSE (the
-    real URL was fetched somewhere we must observe)."""
+def scan_response(resp, captured: list, via: dict) -> None:
+    """The web API hands out stream URLs in JSON bodies (the userscript
+    proves it on user pages) — scan every method response for them."""
+    u = resp.url
+    if "web.api.vk.ru/method/" not in u and "al_audio" not in u:
+        return
     try:
-        media = page.evaluate(
-            """() => [...document.querySelectorAll('audio,video')].map((a) => ({
-                tag: a.tagName.toLowerCase(),
-                src: (a.src || a.currentSrc || '').slice(0, 140),
-                t: a.currentTime, paused: a.paused,
-            }))"""
-        )
-        workers = page.workers
-        print(f"    media elements: {media or 'нет'}")
-        print(f"    web workers на странице: {len(workers)}")
-    except Exception as exc:  # noqa: BLE001 - diagnostics must never kill the run
-        print(f"    (не удалось опросить media: {exc})")
+        body = resp.text()
+    except Exception:  # noqa: BLE001 - bodies of streamed/failed responses
+        return
+    if not body or len(body) > 3_000_000:
+        return
+    for m in VK_CDN_RE.finditer(body):
+        url = m.group(0).replace("\\/", "/")
+        if url not in {c[1] for c in captured}:
+            captured.append((time.time(), url))
+            via[url] = urlsplit(u).path.rsplit("/", 1)[-1]
 
 
 def dump_traffic(all_reqs: list[tuple[float, str]]) -> None:
     hosts = Counter(urlsplit(u).netloc for _, u in all_reqs)
     print(f"    всего запросов за окно: {len(all_reqs)}")
-    for host, n in hosts.most_common(12):
+    for host, n in hosts.most_common(10):
         print(f"      {n:4d}  {host}")
-    hits = [u for _, u in all_reqs if re.search(r"audio|m3u8|mp3|stream|media|extra", u, re.I)]
-    for u in hits[:10]:
-        print(f"      >>> {u[:170]}")
-    if not hits:
-        print("      >>> ни одного URL с аудио-подсказками")
+    cdn = [u for _, u in all_reqs if "vkuser" in u]
+    print(f"    аудио-CDN запросов: {len(cdn)}")
+    for u in cdn[:5]:
+        print(f"      CDN >>> {u[:170]}")
+    methods = Counter(
+        urlsplit(u).path.rsplit("/", 1)[-1].split("?")[0]
+        for _, u in all_reqs if "web.api.vk.ru/method/" in u
+    )
+    print("    web.api методы: " + (", ".join(f"{m}×{n}" for m, n in methods.most_common(15)) or "нет"))
 
 
-def capture_one(page: Page, captured: list[tuple[float, str]],
+def capture_one(page: Page, captured: list, via: dict,
                 all_reqs: list[tuple[float, str]], owner: str, aid: str,
                 wait_s: float) -> None:
     before = len(captured)
@@ -110,14 +117,25 @@ def capture_one(page: Page, captured: list[tuple[float, str]],
         page.wait_for_timeout(500)
 
     if got:
-        print(f"    ПОЙМАНО за {got[0] - t0:.1f} с: {got[1][:160]}")
+        print(f"    ПОЙМАНО за {got[0] - t0:.1f} с: {got[1][:180]}")
+        print(f"      источник: {via.get(got[1], '?')}")
         if ".m3u8" in got[1].lower():
-            print("    (HLS-манифест — lavaplayer играет его нативно)")
+            print("      (HLS-манифест — lavaplayer играет его нативно)")
         return
 
     print(f"    НЕ ПЕРЕХВАЧЕНО за {wait_s} с — трафик за окно:")
     dump_traffic(all_reqs[traffic_before:])
-    dump_media_state(page)
+    try:
+        media = page.evaluate(
+            """() => [...document.querySelectorAll('audio,video')].map((a) => ({
+                tag: a.tagName.toLowerCase(),
+                src: (a.src || a.currentSrc || '').slice(0, 140),
+                t: a.currentTime, paused: a.paused,
+            }))"""
+        )
+        print(f"    media elements: {media or 'нет'} (video с okcdn = реклама)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"    (не удалось опросить media: {exc})")
     shot = Path(__file__).parent / "spike_fail.png"
     page.screenshot(path=str(shot), full_page=False)
     print(f"    скриншот состояния: {shot}")
@@ -148,9 +166,16 @@ def main() -> None:
         )
 
         captured: list[tuple[float, str]] = []
+        via: dict[str, str] = {}
         all_reqs: list[tuple[float, str]] = []
-        ctx.on("request", lambda req: all_reqs.append((time.time(), req.url))
-               or (captured.append((time.time(), req.url)) if is_stream_url(req.url) else None))
+
+        def on_request(req) -> None:
+            all_reqs.append((time.time(), req.url))
+            if is_stream_url(req.url):
+                captured.append((time.time(), req.url))
+
+        ctx.on("request", on_request)
+        ctx.on("response", lambda resp: scan_response(resp, captured, via))
         # CDP sees the same page from the protocol side; a mismatch between
         # the two channels means the request bypasses Playwright's view.
         cdp = ctx.new_cdp_session(page)
@@ -160,12 +185,12 @@ def main() -> None:
 
         print("\n--- первый проход (холодная страница):")
         for owner, aid in targets:
-            capture_one(page, captured, all_reqs, owner, aid, wait_s=20)
+            capture_one(page, captured, via, all_reqs, owner, aid, wait_s=35)
 
         if len(targets) > 1:
             print("\n--- повторный проход (тёплый браузер):")
             for owner, aid in targets:
-                capture_one(page, captured, all_reqs, owner, aid, wait_s=15)
+                capture_one(page, captured, via, all_reqs, owner, aid, wait_s=25)
 
         input("\n>>> Готово. Enter — закрыть браузер... ")
         ctx.close()
