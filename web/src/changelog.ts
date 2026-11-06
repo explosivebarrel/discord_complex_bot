@@ -9,6 +9,8 @@ export interface ChangelogBlock {
   version: string;
   /** ISO date of the block's last commit. */
   date: string;
+  /** The commit the version lands on (the block's last commit). */
+  commit: string;
   title: string;
   points: string[];
 }
@@ -16,6 +18,7 @@ export interface ChangelogBlock {
 export const CHANGELOG: ChangelogBlock[] = [
   {
     version: "v3.03.09",
+    commit: "fe12fb5",
     date: "2026-11-06",
     title: "VK browser sidecar and infrastructure",
     points: [
@@ -29,6 +32,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v3.02.00",
+    commit: "ec31ac9",
     date: "2026-11-05",
     title: "VK Music and the userscript plugin",
     points: [
@@ -39,6 +43,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v3.01.00",
+    commit: "f231860",
     date: "2026-11-05",
     title: "Liquid Glass v2: a two-pass WebGL scene",
     points: [
@@ -49,6 +54,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v3.00.00",
+    commit: "f4aaf9b",
     date: "2026-11-04",
     title: "Player redesign v2: tabs, artwork, live panel",
     points: [
@@ -61,6 +67,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v2.02.00",
+    commit: "55aa881",
     date: "2026-10-31",
     title: "Availability monitoring",
     points: [
@@ -71,6 +78,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v2.01.00",
+    commit: "e922da5",
     date: "2026-10-18",
     title: "Themes and the first Liquid Glass",
     points: [
@@ -81,6 +89,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v2.00.00",
+    commit: "dd3bb1d",
     date: "2026-10-17",
     title: "MD3 shell redesign (player and navigation)",
     points: [
@@ -91,6 +100,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v1.03.00",
+    commit: "8e89d44",
     date: "2026-10-09",
     title: "Playlists and persistence",
     points: [
@@ -101,6 +111,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v1.02.00",
+    commit: "dd40655",
     date: "2026-10-07",
     title: "Feature core",
     points: [
@@ -111,6 +122,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v1.01.00",
+    commit: "4983bbf",
     date: "2026-10-07",
     title: "Sources and the first MD3 redesign",
     points: [
@@ -120,6 +132,7 @@ export const CHANGELOG: ChangelogBlock[] = [
   },
   {
     version: "v1.00.00",
+    commit: "ef12d1d",
     date: "2026-10-06",
     title: "Core skeleton",
     points: [

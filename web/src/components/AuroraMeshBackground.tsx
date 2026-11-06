@@ -31,6 +31,7 @@ uniform float u_speed;
 uniform vec3 u_base;
 uniform vec4 u_blobs[${MAX_BLOBS}]; // xy anchor (uv), z radius, w weight
 uniform vec3 u_colors[${MAX_BLOBS}];
+uniform float u_bridges;
 float hash12(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
   p += dot(p, p + 34.345);
@@ -56,6 +57,12 @@ float fbm(vec2 p) {
   }
   return v;
 }
+// Neon bridges: hue-rotate a color around the gray axis (Rodrigues).
+vec3 hueShift(vec3 c, float a) {
+  const vec3 k = vec3(0.57735);
+  float ca = cos(a * 6.2831853);
+  return c * ca + cross(k, c) * sin(a * 6.2831853) + k * dot(k, c) * (1.0 - ca);
+}
 void main() {
   float aspect = u_res.x / max(u_res.y, 1.0);
   vec2 p = vec2(v_uv.x, 1.0 - v_uv.y) * vec2(aspect, 1.0);
@@ -64,6 +71,7 @@ void main() {
     fbm(p * 1.6 + vec2(0.0, u_time * 0.07 * u_speed)),
     fbm(p * 1.6 + vec2(5.2, -u_time * 0.06 * u_speed))) - 0.5);
   vec3 col = u_base;
+  vec2 centers[${MAX_BLOBS}];
   for (int i = 0; i < ${MAX_BLOBS}; i++) {
     vec4 bp = u_blobs[i];
     if (bp.w < 0.005) continue;
@@ -75,9 +83,47 @@ void main() {
       + 0.20 * vec2(
         sin(t * (0.14 + 0.05 * fi) + fi * 2.3) + 0.5 * sin(t * (0.043 + 0.012 * fi) + fi),
         cos(t * (0.11 + 0.04 * fi) + fi * 1.9));
+    centers[i] = c;
     float rad = bp.z * (1.0 + 0.10 * sin(t * 0.21 + fi * 1.3));
     float d = length((p - c) / max(rad, 0.05));
     col = mix(col, u_colors[i], exp(-d * d * 2.8) * bp.w * u_intensity);
+  }
+  // Neon bridges: when two blobs drift close, a bright saturated ridge
+  // grows between them (hue-shifted mid-color of the pair). Its presence,
+  // thickness and brightness all ride on how close the pair got.
+  if (u_bridges > 0.001) {
+    for (int i = 0; i < ${MAX_BLOBS}; i++) {
+      vec4 bi = u_blobs[i];
+      if (bi.w < 0.005) continue;
+      for (int j = 0; j < ${MAX_BLOBS}; j++) {
+        if (j <= i) continue;
+        vec4 bj = u_blobs[j];
+        if (bj.w < 0.005) continue;
+        vec2 ci = centers[i];
+        vec2 cj = centers[j];
+        vec2 ab = cj - ci;
+        float dist = max(length(ab), 0.0001);
+        float touch = (bi.z + bj.z) * 1.45; // bridging begins within this gap
+        float near = 1.0 - smoothstep(touch * 0.25, touch, dist);
+        if (near < 0.01) continue;
+        // Capsule over the segment between the two centers.
+        vec2 dir = ab / dist;
+        float tt = clamp(dot(p - ci, dir), 0.0, dist);
+        float d = length(p - (ci + dir * tt));
+        // The ridge thickens as the pair closes in.
+        float width = min(bi.z, bj.z) * (0.30 + 0.34 * (1.0 - near));
+        float ridge = exp(-(d * d) / (width * width));
+        // Soft fade near the centers (the blobs themselves cover those).
+        float ends = clamp(4.0 * tt * (dist - tt) / (dist * dist), 0.0, 1.0);
+        float strength = near * near * (0.35 + 0.65 * ends) * u_bridges * u_intensity;
+        // Mid-color of the pair, hue-rotated so the bridge reads as its own
+        // color, then saturated and lifted for the neon look.
+        vec3 neon = hueShift((u_colors[i] + u_colors[j]) * 0.5, 0.10);
+        float mx = max(neon.r, max(neon.g, neon.b));
+        neon = neon / max(mx, 0.05) * (0.7 + 0.6 * mx);
+        col += neon * ridge * strength;
+      }
+    }
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -159,6 +205,7 @@ export function AuroraMeshBackground() {
     const uBase = gl.getUniformLocation(prog, "u_base");
     const uBlobs = gl.getUniformLocation(prog, "u_blobs");
     const uColors = gl.getUniformLocation(prog, "u_colors");
+    const uBridges = gl.getUniformLocation(prog, "u_bridges");
     // Base = the theme background the CSS aurora sits on (tokens.surface).
     const [br, bg, bb] = hexRgb(scheme.tokens.surface);
     gl.uniform3f(uBase, br, bg, bb);
@@ -181,6 +228,7 @@ export function AuroraMeshBackground() {
       gl.uniform1f(uTime, phase);
       gl.uniform1f(uIntensity, tuningRef.current.intensity);
       gl.uniform1f(uSpeed, tuningRef.current.speed);
+      gl.uniform1f(uBridges, tuningRef.current.bridges);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     const onVisibility = () => {

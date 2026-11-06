@@ -157,6 +157,16 @@ function ChangelogTab() {
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
                 {block.date}
               </Typography>
+              <Typography
+                variant="caption"
+                component="a"
+                href={`https://github.com/explosivebarrel/discord_complex_bot/commit/${block.commit}`}
+                target="_blank"
+                rel="noreferrer"
+                sx={{ color: "text.secondary", fontFamily: "monospace", textDecoration: "none" }}
+              >
+                {block.commit}
+              </Typography>
             </Stack>
             <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>{block.title}</Typography>
             <Stack spacing={0.5} sx={{ pl: 2 }}>

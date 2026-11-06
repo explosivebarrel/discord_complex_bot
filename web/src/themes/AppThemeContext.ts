@@ -74,9 +74,11 @@ export interface AuroraTuning {
   mesh: boolean;
   intensity: number;
   speed: number;
+  /** Neon bridges between close blobs (0 = off). WebGL mesh only. */
+  bridges: number;
 }
 
-export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1 };
+export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1, bridges: 0 };
 
 export function getAuroraTuning(raw: string | null): AuroraTuning {
   try {

@@ -274,6 +274,18 @@ function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () =>
           <>
             {slider("Blob intensity", "intensity", 0.4, 1.4, 0.05)}
             {slider("Drift speed", "speed", 0.4, 2, 0.1)}
+            <FormControlLabel
+              sx={{ px: 1 }}
+              control={
+                <Switch
+                  checked={auroraTuning.bridges > 0}
+                  onChange={(_, v) => tune({ bridges: v ? 0.6 : 0 })}
+                />
+              }
+              label="Neon bridges between close blobs"
+            />
+            {auroraTuning.bridges > 0 &&
+              slider("Bridge glow", "bridges", 0.15, 1, 0.05)}
           </>
         )}
       </DialogContent>
