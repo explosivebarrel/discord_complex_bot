@@ -241,7 +241,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
 function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { auroraTuning, setAuroraTuning } = useAppTheme();
   const tune = (patch: Partial<AuroraTuning>) => setAuroraTuning({ ...auroraTuning, ...patch });
-  const slider = (label: string, key: "intensity" | "speed", min: number, max: number, step: number) => (
+  const slider = (label: string, key: "intensity" | "speed" | "bridges", min: number, max: number, step: number) => (
     <Box sx={{ px: 1 }}>
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         {label}
