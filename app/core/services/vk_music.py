@@ -51,7 +51,8 @@ _PAGE_SIZE = 100
 VK_HOSTS = ("vk.com", "vk.ru", "vkontakte.ru", "m.vk.com", "music.vk.com", "music.vk.ru")
 
 _TRACK_RE = re.compile(
-    r"(?:vk\.com|vk\.ru|vkontakte\.ru|music\.vk\.com|music\.vk\.ru)/audio(\d+)_(\d+)", re.IGNORECASE
+    # Community tracks carry a negative owner: audio-2001636042_74636042.
+    r"(?:vk\.com|vk\.ru|vkontakte\.ru|music\.vk\.com|music\.vk\.ru)/audio(-?\d+)_(\d+)", re.IGNORECASE
 )
 _PLAYLIST_RE = re.compile(
     r"(?:vk\.com|vk\.ru|vkontakte\.ru|music\.vk\.com|music\.vk\.ru)/(?:playlist|album)/(-?\d+)_(\d+)",

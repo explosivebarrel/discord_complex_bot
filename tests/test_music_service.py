@@ -761,8 +761,16 @@ def test_vk_playlist_url_detection(music: MusicService) -> None:
     assert music._is_playlist_url("https://music.vk.com/playlist/123_45") is True  # noqa: SLF001
     assert music._is_playlist_url("https://vk.com/album/123_45") is True  # noqa: SLF001
     assert music._is_playlist_url("https://vk.com/audio123_456") is False  # noqa: SLF001
+    assert music._is_playlist_url("https://vk.com/audio-2001636042_74636042") is False  # noqa: SLF001
     assert music.looks_like_playlist("https://vk.com/audios123", "vk") is True
     assert music.looks_like_playlist("https://vk.com/audio123_456", "vk") is False
+
+
+def test_vk_track_url_parses_negative_owner() -> None:
+    """Community tracks carry a negative owner: most VK music, and every
+    metadata-only queue entry the userscript builds."""
+    assert vk_music.parse_track_url("https://vk.ru/audio-2001636042_74636042") == (-2001636042, 74636042)
+    assert vk_music.parse_track_url("https://vk.com/audio123_456") == (123, 456)
 
 
 async def test_vk_enqueue_plain_text_takes_first_search_hit(
