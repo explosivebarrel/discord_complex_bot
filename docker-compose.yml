@@ -47,6 +47,11 @@ services:
     # No published port: the web container is the front door (see below).
 
   web:
+    # Rebuild WITHOUT touching the bot's voice: the bare `up` reconciles
+    # dependencies and recreates dcbot-app whenever its config hash changed
+    # (the panel writes tokens into .env) — that drops voice channels.
+    # Frontend deploys must be:
+    #   docker compose up -d --no-deps --build web
     build: ./web
     container_name: dcbot-web
     restart: unless-stopped
