@@ -105,10 +105,10 @@ def _stream_from_json(body: str, owner_id: int, audio_id: int) -> tuple[str | No
     try:
         data = json.loads(body.replace("\\/", "/").replace("\\u0026", "&"))
     except Exception:  # noqa: BLE001 - non-JSON bodies
-        return None
+        return None, None
     rows = data.get("response") if isinstance(data, dict) else None
     if not isinstance(rows, list):
-        return None
+        return None, None
     for row in rows:
         if not isinstance(row, dict) or row.get("owner_id") != owner_id or row.get("id") != audio_id:
             continue
