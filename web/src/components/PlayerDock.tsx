@@ -151,19 +151,25 @@ export function PlayerDock({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // Full WebGL glass: the dock and the FAB are scene islands — the lens is
-  // painted beneath their transparent DOM; CSS glass stays the fallback.
-  // The gate tracks the dock being MOUNTED (the early return hides it while
-  // `state` exists but is idle and disconnected): `!!state` alone flips true
-  // on the first idle poll, the glass registration then never re-runs when
-  // the dock finally mounts, and the scene keeps no glass on it. The FAB is
-  // a frosted panel by default (the small lens reads badly on a 60px disc);
-  // the lens is a settings toggle.
+  // Full WebGL glass: the dock and the FAB-lens are scene islands — the
+  // lens is painted beneath their transparent DOM; CSS glass stays the
+  // fallback. The gate tracks the dock being MOUNTED (the early return
+  // hides it while `state` exists but is idle and disconnected): `!!state`
+  // alone flips true on the first idle poll, the glass registration then
+  // never re-runs when the dock finally mounts, and the scene keeps no
+  // glass on it. The FAB's frost mode is NOT a scene island: the canvas
+  // sits beneath every DOM layer, so its frost could only blur the
+  // procedural backdrop — never the dock, the seek line or the cards.
+  // backdrop-filter on the button blurs exactly what is rendered beneath
+  // it. Registering the frost panel also used to haunt the dock: its lens
+  // samples sceneUpTo, which included the FAB slab, baking a ghost ring
+  // of the button into the dock's refraction.
   const { glassWebgl, glassTuning } = useAppTheme();
   const dockMounted = !!state && (!!current || state.connected);
-  const fabKind = glassTuning.fabFrost ? "panel" : "lens";
-  const fabTint = glassTuning.fabFrost ? glassTuning.fabTint : glassTuning.lensTint;
-  const fabTintAlpha = glassTuning.fabFrost ? glassTuning.fabTintAlpha : glassTuning.lensTintAlpha;
+  const fabFrost = glassTuning.fabFrost;
+  const fabKind = fabFrost ? "panel" : "lens";
+  const fabTint = fabFrost ? glassTuning.fabTint : glassTuning.lensTint;
+  const fabTintAlpha = fabFrost ? glassTuning.fabTintAlpha : glassTuning.lensTintAlpha;
   useGlassIsland(
     dockRef,
     { radius: 20, kind: "lens" },
@@ -172,7 +178,7 @@ export function PlayerDock({
   useGlassIsland(
     fabRef,
     { radius: 30, kind: fabKind, blur: glassTuning.fabBlur },
-    glassWebgl && dockMounted,
+    glassWebgl && dockMounted && !fabFrost,
   );
   // Layout mode from the dock's own width: below ~680px (sidebars open on
   // a small screen) one row cannot fit cover + title + transport + actions,
@@ -360,16 +366,30 @@ export function PlayerDock({
                 position: "relative",
                 ...(t.surface.islands
                     ? glassWebgl
-                    ? {
-                        // The scene paints the round glass (frost or lens,
-                        // per the settings toggle) beneath the transparent
-                        // button; the tint matches the canvas shading.
-                        bgcolor: alpha(fabTint, fabTintAlpha),
-                        zIndex: 2,
-                        color: t.palette.m3.onSurface,
-                        "&:hover": { bgcolor: alpha(fabTint, Math.min(fabTintAlpha + 0.15, 1)) },
-                        "&.Mui-disabled": { bgcolor: alpha(fabTint, fabTintAlpha * 0.7), color: t.palette.m3.onSurface, opacity: 0.5 },
-                      }
+                    ? (fabFrost
+                      ? {
+                          // CSS frost: backdrop-filter blurs everything
+                          // beneath the button — dock DOM, seek line, the
+                          // canvas lens and backdrop alike.
+                          bgcolor: alpha(fabTint, fabTintAlpha),
+                          backdropFilter: `blur(${glassTuning.fabBlur}px)`,
+                          WebkitBackdropFilter: `blur(${glassTuning.fabBlur}px)`,
+                          boxShadow: `inset 0 1px 0 ${alpha("#FFFFFF", 0.25)}`,
+                          zIndex: 2,
+                          color: t.palette.m3.onSurface,
+                          "&:hover": { bgcolor: alpha(fabTint, Math.min(fabTintAlpha + 0.15, 1)) },
+                          "&.Mui-disabled": { bgcolor: alpha(fabTint, fabTintAlpha * 0.7), color: t.palette.m3.onSurface, opacity: 0.5 },
+                        }
+                      : {
+                          // The scene paints the refracting lens beneath
+                          // the transparent button; the tint matches the
+                          // canvas shading.
+                          bgcolor: alpha(fabTint, fabTintAlpha),
+                          zIndex: 2,
+                          color: t.palette.m3.onSurface,
+                          "&:hover": { bgcolor: alpha(fabTint, Math.min(fabTintAlpha + 0.15, 1)) },
+                          "&.Mui-disabled": { bgcolor: alpha(fabTint, fabTintAlpha * 0.7), color: t.palette.m3.onSurface, opacity: 0.5 },
+                        })
                     : {
                         // Liquid-glass FAB: translucent tint; the glyph
                         // stays sharp above the frosted disc.

@@ -220,7 +220,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
                 label="Frosted play button (panel frost instead of the lens)"
               />
             ))}
-            {slider("Play button blur, px", "fabBlur", 6, 44, 1)}
+            {slider("Play button blur, px", "fabBlur", 1, 44, 1)}
             {tintRow("Play button tint", "fabTint", "fabTintAlpha")}
             {slider("Lens strength — peak rim refraction, px", "maxDisp", 0, 36, 1)}
             {slider("Lens band — rim thickness, px", "bezel", 6, 40, 1)}
