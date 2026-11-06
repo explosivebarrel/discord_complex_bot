@@ -111,8 +111,8 @@ export function NotificationsPopover({
         ) : (
           <List disablePadding>
             {items.map((n) => (
-              <ListItemButton key={`${n.id}-${n.created_at}`} disableGutters sx={{ borderRadius: 2, alignItems: "flex-start", py: 1 }}>
-                <ListItemIcon sx={{ minWidth: 36, pt: 0.25 }}>
+              <ListItemButton key={`${n.id}-${n.created_at}`} disableGutters sx={{ borderRadius: 1.5, alignItems: "flex-start", py: 1 }}>
+                <ListItemIcon sx={{ minWidth: 36, pl: 1, pt: 0.25 }}>
                   <MsIcon
                     name={CATEGORY_ICON[n.category] ?? "info"}
                     fontSize={20}
@@ -122,7 +122,17 @@ export function NotificationsPopover({
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>{n.title}</Typography>
                   {n.body && (
-                    <Typography variant="caption" sx={{ color: "text.secondary", display: "block" }}>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "text.secondary",
+                        display: "block",
+                        // Stack traces and error dumps carry long unbroken
+                        // tokens: wrap them instead of stretching the card.
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
                       {n.body}
                     </Typography>
                   )}
