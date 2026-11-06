@@ -53,6 +53,17 @@ const float NEON_BRIGHT = 0.35;        // brightness lift after the rotation
 const float BRIDGE_GAIN = 0.7;         // overall ray brightness
 const float HOTSPOT_SIZE = 0.05;       // contact-point core size (squared falloff)
 const float HOTSPOT_GAIN = 0.35;       // contact-point brightness
+// --- Backdrop and blob tuning ---
+const float WARP_AMOUNT = 0.30;        // domain-warp strength (the "liquid" look)
+const float WARP_SCALE = 1.6;          // noise frequency of the warp field
+const float WARP_DRIFT = 0.07;         // how fast the warp field crawls (x u_speed)
+const float BLOB_WANDER = 0.20;        // sub-blob drift radius around the anchor
+const float BLOB_FREQ_BASE = 0.14;     // wander frequency of the first sub-blob
+const float BLOB_FREQ_STEP = 0.05;     // wander frequency step per sub-blob
+const float BLOB_BREATHE = 0.10;       // radius breathing amplitude
+const float BLOB_FALLOFF = 2.8;        // gaussian edge softness (higher = tighter)
+const float BRIDGE_MOTION_TILT = 0.45; // how much the fan leans toward the pair's motion
+const float BRIDGE_AXIS_NORMAL = 0.75; // ...versus how much it stays on the gap normal
 float hash12(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
   p += dot(p, p + 34.345);
@@ -88,9 +99,9 @@ void main() {
   float aspect = u_res.x / max(u_res.y, 1.0);
   vec2 p = vec2(v_uv.x, 1.0 - v_uv.y) * vec2(aspect, 1.0);
   // Liquid warp, a notch stronger than the glass mesh.
-  p += 0.30 * (vec2(
-    fbm(p * 1.6 + vec2(0.0, u_time * 0.07 * u_speed)),
-    fbm(p * 1.6 + vec2(5.2, -u_time * 0.06 * u_speed))) - 0.5);
+  p += WARP_AMOUNT * (vec2(
+    fbm(p * WARP_SCALE + vec2(0.0, u_time * WARP_DRIFT * u_speed)),
+    fbm(p * WARP_SCALE + vec2(5.2, -u_time * WARP_DRIFT * u_speed))) - 0.5);
   vec3 col = u_base;
   vec2 centers[${MAX_BLOBS}];
   vec2 centersPrev[${MAX_BLOBS}];
@@ -102,17 +113,17 @@ void main() {
     // Each sub-blob wanders around its family anchor with two harmonics
     // (unlike the glass mesh's single orbits) and the radius breathes.
     vec2 c = bp.xy * vec2(aspect, 1.0)
-      + 0.20 * vec2(
-        sin(t * (0.14 + 0.05 * fi) + fi * 2.3) + 0.5 * sin(t * (0.043 + 0.012 * fi) + fi),
+      + BLOB_WANDER * vec2(
+        sin(t * (BLOB_FREQ_BASE + BLOB_FREQ_STEP * fi) + fi * 2.3) + 0.5 * sin(t * (0.043 + 0.012 * fi) + fi),
         cos(t * (0.11 + 0.04 * fi) + fi * 1.9));
     centers[i] = c;
     centersPrev[i] = bp.xy * vec2(aspect, 1.0)
-      + 0.20 * vec2(
-        sin((t - 0.18) * (0.14 + 0.05 * fi) + fi * 2.3) + 0.5 * sin((t - 0.18) * (0.043 + 0.012 * fi) + fi),
+      + BLOB_WANDER * vec2(
+        sin((t - 0.18) * (BLOB_FREQ_BASE + BLOB_FREQ_STEP * fi) + fi * 2.3) + 0.5 * sin((t - 0.18) * (0.043 + 0.012 * fi) + fi),
         cos((t - 0.18) * (0.11 + 0.04 * fi) + fi * 1.9));
-    float rad = bp.z * (1.0 + 0.10 * sin(t * 0.21 + fi * 1.3));
+    float rad = bp.z * (1.0 + BLOB_BREATHE * sin(t * 0.21 + fi * 1.3));
     float d = length((p - c) / max(rad, 0.05));
-    col = mix(col, u_colors[i], exp(-d * d * 2.8) * bp.w * u_intensity);
+    col = mix(col, u_colors[i], exp(-d * d * BLOB_FALLOFF) * bp.w * u_intensity);
   }
   // God rays: when two blobs drift close, light cones spray out of the
   // contact zone between their surfaces - a fan of discrete rays with a
@@ -142,7 +153,7 @@ void main() {
         vec2 n = vec2(-dir.y, dir.x);
         vec2 vpair = (centers[i] + centers[j]) - (centersPrev[i] + centersPrev[j]);
         n = dot(n, vpair) < 0.0 ? -n : n;
-        vec2 axis = normalize(n * 0.75 + normalize(vpair + vec2(0.0001, 0.0001)) * 0.45);
+        vec2 axis = normalize(n * BRIDGE_AXIS_NORMAL + normalize(vpair + vec2(0.0001, 0.0001)) * BRIDGE_MOTION_TILT);
         float rnd = hash12(vec2(float(i) * 13.7, float(j) * 7.1));
         // Cone window around the axis, then discrete rays: an angular comb
         // plus fbm streaks - the dust lit up inside the beam.
