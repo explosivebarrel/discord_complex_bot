@@ -20,6 +20,7 @@ import { useAvailability, useSystemStatus } from "../queries";
 import { useBotName } from "../useMeta";
 import { AvailabilityCharts, SERVICE_LABELS } from "../components/AvailabilityCharts";
 import { useStatusPalette } from "../components/statusColors";
+import { BOT_VERSION, CHANGELOG } from "../changelog";
 
 type Status = number | null;
 
@@ -129,6 +130,9 @@ function AboutTab() {
       <Typography variant="body2" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         {ok ? "The bot is online." : "The bot is offline — check the Availability tab for details."}
       </Typography>
+      <Typography variant="caption" sx={{ color: "text.secondary" }}>
+        Panel and bot version: {BOT_VERSION} — the history lives in the Changelog tab.
+      </Typography>
     </Stack>
   );
 }
@@ -141,6 +145,33 @@ const TERMS: string[] = [
   "Guild administrators control which panel sections their members can see and use. You are responsible for the content queued under your account and for the commands issued in your guilds.",
   "Abuse of the panel or the bot (spam, flooding sources, attempts to break access control) may lead to a ban from the panel or removal of the bot from a guild.",
 ];
+
+function ChangelogTab() {
+  return (
+    <Stack spacing={2}>
+      {CHANGELOG.map((block) => (
+        <Card key={block.version}>
+          <CardContent>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: "baseline", mb: 1 }}>
+              <Typography variant="h6" component="div">{block.version}</Typography>
+              <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                {block.date}
+              </Typography>
+            </Stack>
+            <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.5 }}>{block.title}</Typography>
+            <Stack spacing={0.5} sx={{ pl: 2 }}>
+              {block.points.map((point, i) => (
+                <Typography key={i} variant="body2" component="div" sx={{ display: "list-item", color: "text.secondary" }}>
+                  {point}
+                </Typography>
+              ))}
+            </Stack>
+          </CardContent>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
 
 function TermsTab() {
   return (
@@ -177,6 +208,7 @@ export function AboutPage() {
           <Tabs value={tab} onChange={(_, v: number) => selectTab(v)}>
             <Tab label="About" />
             <Tab label="Availability" />
+            <Tab label="Changelog" />
             <Tab label="Terms" />
           </Tabs>
         </Card>
@@ -203,7 +235,8 @@ export function AboutPage() {
         </Card>
       )}
       {tab === 1 && <AvailabilityTab />}
-      {tab === 2 && (
+      {tab === 2 && <ChangelogTab />}
+      {tab === 3 && (
         <Card>
           <CardContent>
             <TermsTab />
