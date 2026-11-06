@@ -72,6 +72,7 @@ void main() {
     fbm(p * 1.6 + vec2(5.2, -u_time * 0.06 * u_speed))) - 0.5);
   vec3 col = u_base;
   vec2 centers[${MAX_BLOBS}];
+  vec2 centersPrev[${MAX_BLOBS}];
   for (int i = 0; i < ${MAX_BLOBS}; i++) {
     vec4 bp = u_blobs[i];
     if (bp.w < 0.005) continue;
@@ -84,13 +85,19 @@ void main() {
         sin(t * (0.14 + 0.05 * fi) + fi * 2.3) + 0.5 * sin(t * (0.043 + 0.012 * fi) + fi),
         cos(t * (0.11 + 0.04 * fi) + fi * 1.9));
     centers[i] = c;
+    centersPrev[i] = bp.xy * vec2(aspect, 1.0)
+      + 0.20 * vec2(
+        sin((t - 0.18) * (0.14 + 0.05 * fi) + fi * 2.3) + 0.5 * sin((t - 0.18) * (0.043 + 0.012 * fi) + fi),
+        cos((t - 0.18) * (0.11 + 0.04 * fi) + fi * 1.9));
     float rad = bp.z * (1.0 + 0.10 * sin(t * 0.21 + fi * 1.3));
     float d = length((p - c) / max(rad, 0.05));
     col = mix(col, u_colors[i], exp(-d * d * 2.8) * bp.w * u_intensity);
   }
-  // Neon bridges: when two blobs drift close, a bright saturated ridge
-  // grows between them (hue-shifted mid-color of the pair). Its presence,
-  // thickness and brightness all ride on how close the pair got.
+  // God rays: when two blobs drift close, light cones spray out of the
+  // contact zone between their surfaces - a fan of discrete rays with a
+  // dusty haze, per-ray brightness, hue-rotated mid-color of the pair.
+  // The fan points along the gap normal, tilted toward the pair's motion;
+  // ray length and brightness ride on how close the pair got.
   if (u_bridges > 0.001) {
     for (int i = 0; i < ${MAX_BLOBS}; i++) {
       vec4 bi = u_blobs[i];
@@ -104,24 +111,38 @@ void main() {
         vec2 ab = cj - ci;
         float dist = max(length(ab), 0.0001);
         float touch = (bi.z + bj.z) * 1.45; // bridging begins within this gap
-        float near = 1.0 - smoothstep(touch * 0.25, touch, dist);
-        if (near < 0.01) continue;
-        // Capsule over the segment between the two centers.
+        float near = 1.0 - smoothstep(touch * 0.2, touch, dist);
+        if (near < 0.02) continue;
         vec2 dir = ab / dist;
-        float tt = clamp(dot(p - ci, dir), 0.0, dist);
-        float d = length(p - (ci + dir * tt));
-        // The ridge thickens as the pair closes in.
-        float width = min(bi.z, bj.z) * (0.30 + 0.34 * (1.0 - near));
-        float ridge = exp(-(d * d) / (width * width));
-        // Soft fade near the centers (the blobs themselves cover those).
-        float ends = clamp(4.0 * tt * (dist - tt) / (dist * dist), 0.0, 1.0);
-        float strength = near * near * (0.35 + 0.65 * ends) * u_bridges * u_intensity;
-        // Mid-color of the pair, hue-rotated so the bridge reads as its own
-        // color, then saturated and lifted for the neon look.
+        // Contact point: halfway through the gap between the surfaces.
+        vec2 origin = ci + dir * (bi.z + max(dist - bi.z - bj.z, 0.0) * 0.5);
+        // Fan axis: the gap normal (light leaks sideways out of the gap),
+        // tilted toward where the pair is drifting.
+        vec2 n = vec2(-dir.y, dir.x);
+        vec2 vpair = (centers[i] + centers[j]) - (centersPrev[i] + centersPrev[j]);
+        n = dot(n, vpair) < 0.0 ? -n : n;
+        vec2 axis = normalize(n * 0.75 + normalize(vpair + vec2(0.0001, 0.0001)) * 0.45);
+        float rnd = hash12(vec2(float(i) * 13.7, float(j) * 7.1));
+        // Cone window around the axis, then discrete rays: an angular comb
+        // plus fbm streaks - the dust lit up inside the beam.
+        vec2 op = p - origin;
+        float r = length(op);
+        float ang = atan(op.y, op.x) - atan(axis.y, axis.x);
+        ang = mod(ang + 3.14159265, 6.2831853) - 3.14159265;
+        float fan = smoothstep(1.45, 0.6, abs(ang));
+        if (fan < 0.01 || r > (bi.z + bj.z) * 3.4) continue;
+        float lobes = pow(0.5 + 0.5 * cos(ang * 14.0 + rnd * 40.0), 2.6);
+        float dust = fbm(vec2(ang * 7.0 + rnd * 31.0, r * 2.6 - u_time * u_speed * 0.5));
+        float L = (bi.z + bj.z) * (0.7 + 2.4 * near) * (0.75 + 0.5 * rnd);
+        float beam = fan * (0.30 + 0.70 * lobes) * (0.45 + 0.55 * dust) * exp(-r / max(L, 0.05));
+        float strength = near * near * u_bridges * u_intensity;
         vec3 neon = hueShift((u_colors[i] + u_colors[j]) * 0.5, 0.10);
         float mx = max(neon.r, max(neon.g, neon.b));
         neon = neon / max(mx, 0.05) * (0.7 + 0.6 * mx);
-        col += neon * ridge * strength;
+        col += neon * beam * strength;
+        // Hot contact point where the surfaces almost touch.
+        float hd = length(p - origin);
+        col += neon * exp(-(hd * hd) / (min(bi.z, bj.z) * min(bi.z, bj.z) * 0.05)) * near * near * u_bridges * u_intensity * 0.5;
       }
     }
   }

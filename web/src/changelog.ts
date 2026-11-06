@@ -3,7 +3,7 @@
  * large feature blocks, ZZ for daily fixes. The current version is the
  * last entry of CHANGELOG; bump it with every release commit.
  */
-export const BOT_VERSION = "v3.03.09";
+export const BOT_VERSION = "v3.03.10";
 
 export interface ChangelogBlock {
   version: string;
@@ -16,6 +16,15 @@ export interface ChangelogBlock {
 }
 
 export const CHANGELOG: ChangelogBlock[] = [
+  {
+    version: "v3.03.10",
+    commit: "ab3c6f1",
+    date: "2026-11-06",
+    title: "VK browser sidecar and infrastructure",
+    points: [
+      "Aurora mesh: neon god-ray cones between close blobs (dusty fan of discrete rays from the contact point) replacing the glow capsule",
+    ],
+  },
   {
     version: "v3.03.09",
     commit: "fe12fb5",
