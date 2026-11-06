@@ -32,6 +32,27 @@ uniform vec3 u_base;
 uniform vec4 u_blobs[${MAX_BLOBS}]; // xy anchor (uv), z radius, w weight
 uniform vec3 u_colors[${MAX_BLOBS}];
 uniform float u_bridges;
+// --- God-ray tuning: GLSL const globals are compile-time constants, ---
+// --- the compiler inlines them, so this costs nothing at runtime    ---
+const float BRIDGE_GAP_FACTOR = 1.45;  // rays start when the gap < sum of radii * this
+const float BRIDGE_RAMP = 0.2;         // lower = the rays snap on more sharply
+const float BRIDGE_MIN_NEAR = 0.02;    // pairs closer than this are skipped entirely
+const float FAN_OUTER = 0.95;          // cone outer half-angle, radians
+const float FAN_CORE = 0.3;            // fully lit inside this half-angle
+const float RAY_COMB = 14.0;           // angular comb frequency (how many rays)
+const float RAY_SHARPNESS = 2.6;       // higher = thinner, crisper rays
+const float RAY_LEN_BASE = 0.55;       // ray length at zero proximity
+const float RAY_LEN_NEAR = 1.3;        // extra length at full proximity
+const float RAY_LEN_JITTER = 0.5;      // per-pair length variation
+const float RAY_CUTOFF = 2.1;          // hard range limit, in summed radii
+const float RAY_HAZE = 0.30;           // brightness of the haze between rays
+const float RAY_DUST_FLOOR = 0.45;     // floor of the fbm dust modulation
+const float HUE_SHIFT = 0.10;          // ray color rotation from the pair mid-color
+const float NEON_SAT = 0.45;           // saturation lift after the rotation
+const float NEON_BRIGHT = 0.35;        // brightness lift after the rotation
+const float BRIDGE_GAIN = 0.7;         // overall ray brightness
+const float HOTSPOT_SIZE = 0.05;       // contact-point core size (squared falloff)
+const float HOTSPOT_GAIN = 0.35;       // contact-point brightness
 float hash12(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
   p += dot(p, p + 34.345);
@@ -110,9 +131,9 @@ void main() {
         vec2 cj = centers[j];
         vec2 ab = cj - ci;
         float dist = max(length(ab), 0.0001);
-        float touch = (bi.z + bj.z) * 1.45; // bridging begins within this gap
-        float near = 1.0 - smoothstep(touch * 0.2, touch, dist);
-        if (near < 0.02) continue;
+        float touch = (bi.z + bj.z) * BRIDGE_GAP_FACTOR; // bridging begins within this gap
+        float near = 1.0 - smoothstep(touch * BRIDGE_RAMP, touch, dist);
+        if (near < BRIDGE_MIN_NEAR) continue;
         vec2 dir = ab / dist;
         // Contact point: halfway through the gap between the surfaces.
         vec2 origin = ci + dir * (bi.z + max(dist - bi.z - bj.z, 0.0) * 0.5);
@@ -129,20 +150,20 @@ void main() {
         float r = length(op);
         float ang = atan(op.y, op.x) - atan(axis.y, axis.x);
         ang = mod(ang + 3.14159265, 6.2831853) - 3.14159265;
-        float fan = smoothstep(0.95, 0.3, abs(ang));
-        if (fan < 0.01 || r > (bi.z + bj.z) * 2.1) continue;
-        float lobes = pow(0.5 + 0.5 * cos(ang * 14.0 + rnd * 40.0), 2.6);
+        float fan = smoothstep(FAN_OUTER, FAN_CORE, abs(ang));
+        if (fan < 0.01 || r > (bi.z + bj.z) * RAY_CUTOFF) continue;
+        float lobes = pow(0.5 + 0.5 * cos(ang * RAY_COMB + rnd * 40.0), RAY_SHARPNESS);
         float dust = fbm(vec2(ang * 7.0 + rnd * 31.0, r * 2.6 - u_time * u_speed * 0.5));
-        float L = (bi.z + bj.z) * (0.55 + 1.3 * near) * (0.75 + 0.5 * rnd);
-        float beam = fan * (0.30 + 0.70 * lobes) * (0.45 + 0.55 * dust) * exp(-r / max(L, 0.05));
+        float L = (bi.z + bj.z) * (RAY_LEN_BASE + RAY_LEN_NEAR * near) * (0.75 + RAY_LEN_JITTER * rnd);
+        float beam = fan * ((1.0 - RAY_HAZE) + RAY_HAZE * lobes) * (RAY_DUST_FLOOR + (1.0 - RAY_DUST_FLOOR) * dust) * exp(-r / max(L, 0.05));
         float strength = near * near * u_bridges * u_intensity;
-        vec3 neon = hueShift((u_colors[i] + u_colors[j]) * 0.5, 0.10);
+        vec3 neon = hueShift((u_colors[i] + u_colors[j]) * 0.5, HUE_SHIFT);
         float mx = max(neon.r, max(neon.g, neon.b));
-        neon = neon / max(mx, 0.05) * (0.45 + 0.35 * mx);
-        col += neon * beam * strength * 0.7;
+        neon = neon / max(mx, 0.05) * (NEON_SAT + NEON_BRIGHT * mx);
+        col += neon * beam * strength * BRIDGE_GAIN;
         // Hot contact point where the surfaces almost touch.
         float hd = length(p - origin);
-        col += neon * exp(-(hd * hd) / (min(bi.z, bj.z) * min(bi.z, bj.z) * 0.05)) * near * near * u_bridges * u_intensity * 0.35;
+        col += neon * exp(-(hd * hd) / (min(bi.z, bj.z) * min(bi.z, bj.z) * HOTSPOT_SIZE)) * near * near * u_bridges * u_intensity * HOTSPOT_GAIN;
       }
     }
   }
