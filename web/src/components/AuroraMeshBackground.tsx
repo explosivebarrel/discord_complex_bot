@@ -129,20 +129,20 @@ void main() {
         float r = length(op);
         float ang = atan(op.y, op.x) - atan(axis.y, axis.x);
         ang = mod(ang + 3.14159265, 6.2831853) - 3.14159265;
-        float fan = smoothstep(1.45, 0.6, abs(ang));
-        if (fan < 0.01 || r > (bi.z + bj.z) * 3.4) continue;
+        float fan = smoothstep(0.95, 0.3, abs(ang));
+        if (fan < 0.01 || r > (bi.z + bj.z) * 2.1) continue;
         float lobes = pow(0.5 + 0.5 * cos(ang * 14.0 + rnd * 40.0), 2.6);
         float dust = fbm(vec2(ang * 7.0 + rnd * 31.0, r * 2.6 - u_time * u_speed * 0.5));
-        float L = (bi.z + bj.z) * (0.7 + 2.4 * near) * (0.75 + 0.5 * rnd);
+        float L = (bi.z + bj.z) * (0.55 + 1.3 * near) * (0.75 + 0.5 * rnd);
         float beam = fan * (0.30 + 0.70 * lobes) * (0.45 + 0.55 * dust) * exp(-r / max(L, 0.05));
         float strength = near * near * u_bridges * u_intensity;
         vec3 neon = hueShift((u_colors[i] + u_colors[j]) * 0.5, 0.10);
         float mx = max(neon.r, max(neon.g, neon.b));
-        neon = neon / max(mx, 0.05) * (0.7 + 0.6 * mx);
-        col += neon * beam * strength;
+        neon = neon / max(mx, 0.05) * (0.45 + 0.35 * mx);
+        col += neon * beam * strength * 0.7;
         // Hot contact point where the surfaces almost touch.
         float hd = length(p - origin);
-        col += neon * exp(-(hd * hd) / (min(bi.z, bj.z) * min(bi.z, bj.z) * 0.05)) * near * near * u_bridges * u_intensity * 0.5;
+        col += neon * exp(-(hd * hd) / (min(bi.z, bj.z) * min(bi.z, bj.z) * 0.05)) * near * near * u_bridges * u_intensity * 0.35;
       }
     }
   }
