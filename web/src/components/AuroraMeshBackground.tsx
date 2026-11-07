@@ -49,9 +49,9 @@ const float RAY_DUST_FLOOR = 0.55;  // floor of the fbm dust modulation
 const float RAY_RISE = 0.22;        // transparent center, then the ray fades in
 const float RAY_LEN_BASE = 5.5;     // ray length, in blob radii (3-6x)
 const float RAY_LEN_JITTER = 0.35;  // per-event length variation
-const float RAY_GAIN = 1.3;          // overall beam brightness
-const float NEON_SAT = 0.75;        // saturation lift after the rotation
-const float NEON_BRIGHT = 0.8;      // brightness lift after the rotation
+const float RAY_GAIN = 1.0;          // overall beam brightness
+const float NEON_SAT = 0.65;        // saturation lift after the rotation
+const float NEON_BRIGHT = 0.55;     // brightness lift after the rotation
 // --- Backdrop and blob tuning ---
 const float WARP_AMOUNT = 0.30;        // domain-warp strength (the "liquid" look)
 const float WARP_SCALE = 1.6;          // noise frequency of the warp field
