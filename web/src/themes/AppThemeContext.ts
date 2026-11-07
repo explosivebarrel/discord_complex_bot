@@ -82,7 +82,7 @@ export interface AuroraTuning {
   rayRate: number;
 }
 
-export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1, rays: 0.7, rayLength: 1, rayRate: 1 };
+export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1, rays: 0.9, rayLength: 1.3, rayRate: 0.75 };
 
 export function getAuroraTuning(raw: string | null): AuroraTuning {
   try {

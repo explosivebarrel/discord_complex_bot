@@ -44,13 +44,13 @@ const float RAY_FAN_CORE = 0.45;    // fully lit inside this half-angle
 const float RAY_COMB = 9.0;         // angular comb frequency (how many rays)
 const float RAY_SHARPNESS = 2.2;    // higher = thinner, crisper rays
 const float RAY_HAZE = 0.30;        // brightness of the haze between rays
-const float RAY_DUST_FLOOR = 0.45;  // floor of the fbm dust modulation
+const float RAY_DUST_FLOOR = 0.55;  // floor of the fbm dust modulation
 const float RAY_RISE = 0.22;        // transparent center, then the ray fades in
-const float RAY_LEN_BASE = 1.15;    // ray length, in blob radii
+const float RAY_LEN_BASE = 1.65;    // ray length, in blob radii
 const float RAY_LEN_JITTER = 0.35;  // per-event length variation
 const float HUE_SHIFT = 0.10;       // ray color rotation from the blob color
-const float NEON_SAT = 0.45;        // saturation lift after the rotation
-const float NEON_BRIGHT = 0.35;     // brightness lift after the rotation
+const float NEON_SAT = 0.6;         // saturation lift after the rotation
+const float NEON_BRIGHT = 0.55;     // brightness lift after the rotation
 // --- Backdrop and blob tuning ---
 const float WARP_AMOUNT = 0.30;        // domain-warp strength (the "liquid" look)
 const float WARP_SCALE = 1.6;          // noise frequency of the warp field
@@ -151,7 +151,7 @@ void main() {
       // Transparent at the center, full brightness mid-ray, gone at the tip.
       float tt = r / L;
       float radial = smoothstep(RAY_RISE, RAY_RISE + 0.22, tt)
-        * (1.0 - smoothstep(0.55, 1.0, tt));
+        * (1.0 - smoothstep(0.72, 1.0, tt));
       float lobes = pow(0.5 + 0.5 * cos(ang * RAY_COMB + evRnd * 40.0), RAY_SHARPNESS);
       float dust = fbm(vec2(ang * 6.0 + evRnd * 31.0, r * 2.4 - u_time * u_speed * 0.5));
       float beam = fan * ((1.0 - RAY_HAZE) + RAY_HAZE * lobes)
