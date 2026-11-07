@@ -481,6 +481,8 @@ export function PlayerPage() {
     <PlayerDock
       state={state}
       volume={volume ?? 100}
+      effect={state.effect ?? "none"}
+      onEffectChange={(name) => act(() => api.setEffect(gid, name))}
       onVolumeChange={setVolume}
       onVolumeCommit={(v) => act(() => api.volume(gid, v))}
       onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}

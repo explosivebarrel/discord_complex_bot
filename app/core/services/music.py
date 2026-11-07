@@ -132,6 +132,9 @@ class MusicService:
         self.bot = bot
         self.db = db
         self.config = config
+        # Active fun-effect per guild (Lavalink keeps the filters themselves
+        # on the player until changed; this only remembers the name).
+        self.effects: dict[int, str] = {}
         self.queues: dict[int, deque[QueueItem]] = {}
         self.current_items: dict[int, QueueItem] = {}
         # Session history per guild, oldest last. The Previous button and the
@@ -1067,12 +1070,72 @@ class MusicService:
             return None
         return loaded[0]
 
+    # --- fun effects: Lavalink filter presets ---
+
+    EFFECT_PRESETS: dict[str, str] = {
+        "none": "Clear",
+        "nightcore": "Nightcore",
+        "slowed": "Slowed",
+        "chipmunk": "Chipmunk",
+        "deep": "Deep voice",
+        "bass": "Bass boost",
+        "underwater": "Underwater",
+        "8d": "8D audio",
+        "robot": "Robot",
+        "karaoke": "Karaoke",
+    }
+
+    def _effect_filters(self, preset: str) -> wavelink.Filters | None:
+        """Build the filter payload; None clears everything back to plain."""
+        f = wavelink.Filters()
+        if preset == "nightcore":
+            f.timescale.set(speed=1.25, pitch=1.22)
+        elif preset == "slowed":
+            f.timescale.set(speed=0.82, pitch=0.85)
+        elif preset == "chipmunk":
+            f.timescale.set(speed=1.3, pitch=1.7)
+        elif preset == "deep":
+            f.timescale.set(pitch=0.7)
+        elif preset == "bass":
+            f.equalizer.set(bands=[{"band": n, "gain": g} for n, g in ((0, 0.5), (1, 0.45), (2, 0.3), (3, 0.15))])
+        elif preset == "underwater":
+            f.low_pass.set(smoothing=250.0)
+            f.tremolo.set(frequency=2.0, depth=0.3)
+        elif preset == "8d":
+            f.rotation.set(rotationHz=0.15)
+        elif preset == "robot":
+            f.vibrato.set(frequency=8.0, depth=0.9)
+            f.tremolo.set(frequency=6.0, depth=0.5)
+        elif preset == "karaoke":
+            f.karaoke.set(level=1.0, monoLevel=1.0, filterBand=220.0, filterWidth=100.0)
+        else:
+            return None
+        return f
+
+    async def set_effect(self, guild_id: int, name: str) -> None:
+        if name not in self.EFFECT_PRESETS:
+            raise MusicServiceError("Unknown effect.")
+        player = self.get_player(guild_id)
+        if player is None:
+            raise MusicServiceError("Bot is not connected to a voice channel.")
+        # set_filters(None) clears the payload; a fresh Filters() resets all
+        # filters back to neutral, which is exactly the plain playback.
+        await player.set_filters(self._effect_filters(name), seek=True)
+        self.effects[guild_id] = name
+
     async def _play_item(self, guild_id: int, item: QueueItem) -> None:
         player = self.get_player(guild_id)
         if player is None:
             raise MusicServiceError("Bot is not connected to a voice channel.")
         track = await self._resolve_item(item)
         item.track = track
+        # Stream-type telemetry: the x2-speed reports need to be matched
+        # against what the source actually handed out (mp3 vs aac/hls).
+        logger.info(
+            "Play %r [%s] %s",
+            item.display_title[:48], item.source,
+            (getattr(track, "uri", "") or getattr(item, "pending_url", "") or "")[:110],
+        )
         await player.play(track)
         # Recent is written when the track STARTS: a song that is playing
         # right now has been played recently. The autoplay radio stays out.
@@ -1866,6 +1929,7 @@ class MusicService:
             "channel_id": str(player.channel.id) if player is not None and player.channel else None,
             "channel_name": player.channel.name if player is not None and player.channel else None,
             "volume": player.volume if player is not None else 100,
+            "effect": self.effects.get(guild_id, "none"),
             "playing": bool(player is not None and player.playing),
             "repeat": self.repeat_modes.get(guild_id, "off"),
             "current": current,

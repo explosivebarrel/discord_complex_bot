@@ -881,7 +881,10 @@
       const exact = pm
         ? findCapture(Number(pm[1]), Number(pm[2]))
         : vkCaptured.find((x) => x.key === row.key);
-      const fresh = [...vkCaptured].reverse().find((x) => x.ms >= startedAt && x.url);
+      // HE-AAC streams decode at half sample rate (the x2 chipmunk):
+      // among the fresh captures prefer the mp3 the player also fetched.
+      const freshAll = [...vkCaptured].reverse().filter((x) => x.ms >= startedAt && x.url);
+      const fresh = freshAll.find((x) => /\.mp3/i.test(x.url)) || freshAll[0];
       const cap = (exact && exact.url ? exact : null) || fresh;
       if (cap && cap.url) {
         log("VK: ссылка получена за " + Math.round((Date.now() - startedAt) / 100) / 10 + " с");

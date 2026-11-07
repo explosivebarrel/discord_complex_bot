@@ -632,6 +632,24 @@ async def shuffle_queue(
     return {"shuffled": shuffled}
 
 
+class EffectBody(BaseModel):
+    name: str
+
+
+@router.post("/effects")
+async def set_effect(
+    guild_id: int,
+    body: EffectBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+) -> dict[str, Any]:
+    try:
+        await music.set_effect(guild_id, body.name)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"effect": body.name}
+
+
 @router.post("/queue/jump")
 async def jump_queued(
     guild_id: int,

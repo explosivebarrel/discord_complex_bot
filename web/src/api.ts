@@ -130,6 +130,7 @@ export interface PlayerState {
   /** Guild setting: the channel the panel preselects while not connected. */
   default_voice_channel_id?: string | null;
   volume: number;
+  effect?: string;
   playing: boolean;
   repeat: "off" | "one" | "all";
   current: TrackInfo | null;
@@ -610,6 +611,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ volume }),
     }).then((r) => handle<{ volume: number }>(r)),
+
+  setEffect: (guildId: string, name: string) =>
+    fetch(`/api/guilds/${guildId}/player/effects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then((r) => handle<{ effect: string }>(r)),
 
   seek: (guildId: string, position: number) =>
     fetch(`/api/guilds/${guildId}/player/seek`, {

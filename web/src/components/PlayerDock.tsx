@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Chip, CircularProgress, IconButton, LinearProgress, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Chip, CircularProgress, IconButton, LinearProgress, ListItemIcon, ListItemText, Menu, MenuItem, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
+import { IconCheck as Check, IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
@@ -95,9 +95,24 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
  * button is a raised MD3 FAB; the track progress is a thin seek line along
  * the dock's top edge.
  */
+const EFFECTS: Array<[string, string]> = [
+  ["none", "Clear"],
+  ["nightcore", "Nightcore"],
+  ["slowed", "Slowed"],
+  ["chipmunk", "Chipmunk"],
+  ["deep", "Deep voice"],
+  ["bass", "Bass boost"],
+  ["underwater", "Underwater"],
+  ["8d", "8D audio"],
+  ["robot", "Robot"],
+  ["karaoke", "Karaoke"],
+];
+
 export function PlayerDock({
   state,
   volume,
+  effect = "none",
+  onEffectChange,
   onVolumeChange,
   onVolumeCommit,
   onPauseToggle,
@@ -113,6 +128,8 @@ export function PlayerDock({
 }: {
   state: PlayerState | null;
   volume: number;
+  effect?: string;
+  onEffectChange?: (name: string) => void;
   onVolumeChange: (v: number) => void;
   onVolumeCommit: (v: number) => void;
   onPauseToggle: () => void;
@@ -136,6 +153,7 @@ export function PlayerDock({
   const [livePos, setLivePos] = useState(0);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [effectsAnchor, setEffectsAnchor] = useState<HTMLElement | null>(null);
   // The dock's measured width also drives the row-vs-stack layout decision.
   const dockRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -454,6 +472,38 @@ export function PlayerDock({
             {repeat === "one" ? <RepeatOne /> : <Repeat />}
           </IconButton>
         </Tooltip>
+        <Tooltip title={`Sound effects: ${EFFECTS.find(([id]) => id === effect)?.[1] ?? "Clear"}`}>
+          <IconButton
+            onClick={(e) => setEffectsAnchor(e.currentTarget)}
+            aria-label="Sound effects"
+            sx={effect !== "none" ? { color: "primary.main" } : { color: "text.secondary" }}
+          >
+            <GraphicEq />
+          </IconButton>
+        </Tooltip>
+        <Menu
+          open={!!effectsAnchor}
+          anchorEl={effectsAnchor}
+          onClose={() => setEffectsAnchor(null)}
+          anchorOrigin={{ vertical: "top", horizontal: "right" }}
+          transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+        >
+          {EFFECTS.map(([id, label]) => (
+            <MenuItem
+              key={id}
+              selected={id === effect}
+              onClick={() => {
+                setEffectsAnchor(null);
+                onEffectChange?.(id);
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 32 }}>
+                {id === effect ? <Check fontSize={18} /> : null}
+              </ListItemIcon>
+              <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
+            </MenuItem>
+          ))}
+        </Menu>
         <Tooltip title="Stop and clear the queue">
           <span>
             <IconButton onClick={onStop} disabled={!current && !state.queue.length} sx={{ color: "error.main" }}>
