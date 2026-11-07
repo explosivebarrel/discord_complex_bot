@@ -31,28 +31,26 @@ uniform float u_speed;
 uniform vec3 u_base;
 uniform vec4 u_blobs[${MAX_BLOBS}]; // xy anchor (uv), z radius, w weight
 uniform vec3 u_colors[${MAX_BLOBS}];
-uniform float u_bridges;
-// --- God-ray tuning: GLSL const globals are compile-time constants, ---
+uniform float u_rays;      // ray glow strength (0 = off)
+uniform float u_rayLength; // ray length multiplier
+uniform float u_rayRate;   // how often events fire (cycle speed multiplier)
+// --- Sun-ray tuning: GLSL const globals are compile-time constants, ---
 // --- the compiler inlines them, so this costs nothing at runtime    ---
-const float BRIDGE_GAP_FACTOR = 1.45;  // rays start when the gap < sum of radii * this
-const float BRIDGE_RAMP = 0.2;         // lower = the rays snap on more sharply
-const float BRIDGE_MIN_NEAR = 0.02;    // pairs closer than this are skipped entirely
-const float FAN_OUTER = 0.95;          // cone outer half-angle, radians
-const float FAN_CORE = 0.3;            // fully lit inside this half-angle
-const float RAY_COMB = 14.0;           // angular comb frequency (how many rays)
-const float RAY_SHARPNESS = 2.6;       // higher = thinner, crisper rays
-const float RAY_LEN_BASE = 0.55;       // ray length at zero proximity
-const float RAY_LEN_NEAR = 1.3;        // extra length at full proximity
-const float RAY_LEN_JITTER = 0.5;      // per-pair length variation
-const float RAY_CUTOFF = 2.1;          // hard range limit, in summed radii
-const float RAY_HAZE = 0.30;           // brightness of the haze between rays
-const float RAY_DUST_FLOOR = 0.45;     // floor of the fbm dust modulation
-const float HUE_SHIFT = 0.10;          // ray color rotation from the pair mid-color
-const float NEON_SAT = 0.45;           // saturation lift after the rotation
-const float NEON_BRIGHT = 0.35;        // brightness lift after the rotation
-const float BRIDGE_GAIN = 0.7;         // overall ray brightness
-const float HOTSPOT_SIZE = 0.05;       // contact-point core size (squared falloff)
-const float HOTSPOT_GAIN = 0.35;       // contact-point brightness
+const float RAY_EVENT_PERIOD = 9.0; // seconds between a blob's ray events
+const float RAY_ACTIVE = 0.38;      // share of the cycle the rays are visible
+const float RAY_ENV_IN = 0.30;      // fade-in share of the active window
+const float RAY_FAN_OUTER = 1.25;   // fan outer half-angle, radians
+const float RAY_FAN_CORE = 0.45;    // fully lit inside this half-angle
+const float RAY_COMB = 9.0;         // angular comb frequency (how many rays)
+const float RAY_SHARPNESS = 2.2;    // higher = thinner, crisper rays
+const float RAY_HAZE = 0.30;        // brightness of the haze between rays
+const float RAY_DUST_FLOOR = 0.45;  // floor of the fbm dust modulation
+const float RAY_RISE = 0.22;        // transparent center, then the ray fades in
+const float RAY_LEN_BASE = 1.15;    // ray length, in blob radii
+const float RAY_LEN_JITTER = 0.35;  // per-event length variation
+const float HUE_SHIFT = 0.10;       // ray color rotation from the blob color
+const float NEON_SAT = 0.45;        // saturation lift after the rotation
+const float NEON_BRIGHT = 0.35;     // brightness lift after the rotation
 // --- Backdrop and blob tuning ---
 const float WARP_AMOUNT = 0.30;        // domain-warp strength (the "liquid" look)
 const float WARP_SCALE = 1.6;          // noise frequency of the warp field
@@ -89,7 +87,7 @@ float fbm(vec2 p) {
   }
   return v;
 }
-// Neon bridges: hue-rotate a color around the gray axis (Rodrigues).
+// Ray color: hue-rotate around the gray axis (Rodrigues rotation).
 vec3 hueShift(vec3 c, float a) {
   const vec3 k = vec3(0.57735);
   float ca = cos(a * 6.2831853);
@@ -104,7 +102,6 @@ void main() {
     fbm(p * WARP_SCALE + vec2(5.2, -u_time * WARP_DRIFT * u_speed))) - 0.5);
   vec3 col = u_base;
   vec2 centers[${MAX_BLOBS}];
-  vec2 centersPrev[${MAX_BLOBS}];
   for (int i = 0; i < ${MAX_BLOBS}; i++) {
     vec4 bp = u_blobs[i];
     if (bp.w < 0.005) continue;
@@ -117,65 +114,52 @@ void main() {
         sin(t * (BLOB_FREQ_BASE + BLOB_FREQ_STEP * fi) + fi * 2.3) + 0.5 * sin(t * (0.043 + 0.012 * fi) + fi),
         cos(t * (0.11 + 0.04 * fi) + fi * 1.9));
     centers[i] = c;
-    centersPrev[i] = bp.xy * vec2(aspect, 1.0)
-      + BLOB_WANDER * vec2(
-        sin((t - 0.18) * (BLOB_FREQ_BASE + BLOB_FREQ_STEP * fi) + fi * 2.3) + 0.5 * sin((t - 0.18) * (0.043 + 0.012 * fi) + fi),
-        cos((t - 0.18) * (0.11 + 0.04 * fi) + fi * 1.9));
     float rad = bp.z * (1.0 + BLOB_BREATHE * sin(t * 0.21 + fi * 1.3));
     float d = length((p - c) / max(rad, 0.05));
     col = mix(col, u_colors[i], exp(-d * d * BLOB_FALLOFF) * bp.w * u_intensity);
   }
-  // God rays: when two blobs drift close, light cones spray out of the
-  // contact zone between their surfaces - a fan of discrete rays with a
-  // dusty haze, per-ray brightness, hue-rotated mid-color of the pair.
-  // The fan points along the gap normal, tilted toward the pair's motion;
-  // ray length and brightness ride on how close the pair got.
-  if (u_bridges > 0.001) {
+  // Sun rays: every blob occasionally grows a fan of light cones from its
+  // center - transparent at the center, brightening along the ray, fading
+  // at the tip (the cartoon-sun look). Events are scheduled per blob by a
+  // hash of the cycle index, so they fire at different times, not all at
+  // once. Color: the blob's own color, hue-rotated.
+  if (u_rays > 0.001) {
     for (int i = 0; i < ${MAX_BLOBS}; i++) {
-      vec4 bi = u_blobs[i];
-      if (bi.w < 0.005) continue;
-      for (int j = 0; j < ${MAX_BLOBS}; j++) {
-        if (j <= i) continue;
-        vec4 bj = u_blobs[j];
-        if (bj.w < 0.005) continue;
-        vec2 ci = centers[i];
-        vec2 cj = centers[j];
-        vec2 ab = cj - ci;
-        float dist = max(length(ab), 0.0001);
-        float touch = (bi.z + bj.z) * BRIDGE_GAP_FACTOR; // bridging begins within this gap
-        float near = 1.0 - smoothstep(touch * BRIDGE_RAMP, touch, dist);
-        if (near < BRIDGE_MIN_NEAR) continue;
-        vec2 dir = ab / dist;
-        // Contact point: halfway through the gap between the surfaces.
-        vec2 origin = ci + dir * (bi.z + max(dist - bi.z - bj.z, 0.0) * 0.5);
-        // Fan axis: the gap normal (light leaks sideways out of the gap),
-        // tilted toward where the pair is drifting.
-        vec2 n = vec2(-dir.y, dir.x);
-        vec2 vpair = (centers[i] + centers[j]) - (centersPrev[i] + centersPrev[j]);
-        n = dot(n, vpair) < 0.0 ? -n : n;
-        vec2 axis = normalize(n * BRIDGE_AXIS_NORMAL + normalize(vpair + vec2(0.0001, 0.0001)) * BRIDGE_MOTION_TILT);
-        float rnd = hash12(vec2(float(i) * 13.7, float(j) * 7.1));
-        // Cone window around the axis, then discrete rays: an angular comb
-        // plus fbm streaks - the dust lit up inside the beam.
-        vec2 op = p - origin;
-        float r = length(op);
-        float ang = atan(op.y, op.x) - atan(axis.y, axis.x);
-        ang = mod(ang + 3.14159265, 6.2831853) - 3.14159265;
-        float fan = smoothstep(FAN_OUTER, FAN_CORE, abs(ang));
-        if (fan < 0.01 || r > (bi.z + bj.z) * RAY_CUTOFF) continue;
-        float lobes = pow(0.5 + 0.5 * cos(ang * RAY_COMB + rnd * 40.0), RAY_SHARPNESS);
-        float dust = fbm(vec2(ang * 7.0 + rnd * 31.0, r * 2.6 - u_time * u_speed * 0.5));
-        float L = (bi.z + bj.z) * (RAY_LEN_BASE + RAY_LEN_NEAR * near) * (0.75 + RAY_LEN_JITTER * rnd);
-        float beam = fan * ((1.0 - RAY_HAZE) + RAY_HAZE * lobes) * (RAY_DUST_FLOOR + (1.0 - RAY_DUST_FLOOR) * dust) * exp(-r / max(L, 0.05));
-        float strength = near * near * u_bridges * u_intensity;
-        vec3 neon = hueShift((u_colors[i] + u_colors[j]) * 0.5, HUE_SHIFT);
-        float mx = max(neon.r, max(neon.g, neon.b));
-        neon = neon / max(mx, 0.05) * (NEON_SAT + NEON_BRIGHT * mx);
-        col += neon * beam * strength * BRIDGE_GAIN;
-        // Hot contact point where the surfaces almost touch.
-        float hd = length(p - origin);
-        col += neon * exp(-(hd * hd) / (min(bi.z, bj.z) * min(bi.z, bj.z) * HOTSPOT_SIZE)) * near * near * u_bridges * u_intensity * HOTSPOT_GAIN;
-      }
+      vec4 bp = u_blobs[i];
+      if (bp.w < 0.005) continue;
+      float fi = float(i);
+      // Event schedule: a hash-desynced cycle per blob; the rays are only
+      // alive during the first RAY_ACTIVE share of it, with soft in/out.
+      float cyc = u_time * u_speed * u_rayRate / RAY_EVENT_PERIOD
+        + hash12(vec2(fi, 3.7)) * 10.0;
+      float ev = fract(cyc);
+      if (ev > RAY_ACTIVE) continue;
+      float env = smoothstep(0.0, RAY_ENV_IN, ev)
+        * (1.0 - smoothstep(RAY_ACTIVE - RAY_ENV_IN, RAY_ACTIVE, ev));
+      if (env < 0.003) continue;
+      float evRnd = hash12(vec2(floor(cyc) * 7.13, fi * 5.1));
+      float baseAng = evRnd * 6.2831853; // random fan direction per event
+      float L = bp.z * RAY_LEN_BASE * u_rayLength
+        * (1.0 - RAY_LEN_JITTER + RAY_LEN_JITTER * 2.0 * evRnd);
+      vec2 op = p - centers[i];
+      float r = length(op);
+      if (r > L) continue;
+      float ang = atan(op.y, op.x) - baseAng;
+      ang = mod(ang + 3.14159265, 6.2831853) - 3.14159265;
+      float fan = smoothstep(RAY_FAN_OUTER, RAY_FAN_CORE, abs(ang));
+      if (fan < 0.01) continue;
+      // Transparent at the center, full brightness mid-ray, gone at the tip.
+      float tt = r / L;
+      float radial = smoothstep(RAY_RISE, RAY_RISE + 0.22, tt)
+        * (1.0 - smoothstep(0.55, 1.0, tt));
+      float lobes = pow(0.5 + 0.5 * cos(ang * RAY_COMB + evRnd * 40.0), RAY_SHARPNESS);
+      float dust = fbm(vec2(ang * 6.0 + evRnd * 31.0, r * 2.4 - u_time * u_speed * 0.5));
+      float beam = fan * ((1.0 - RAY_HAZE) + RAY_HAZE * lobes)
+        * (RAY_DUST_FLOOR + (1.0 - RAY_DUST_FLOOR) * dust) * radial;
+      vec3 neon = hueShift(u_colors[i], HUE_SHIFT);
+      float mx = max(neon.r, max(neon.g, neon.b));
+      neon = neon / max(mx, 0.05) * (NEON_SAT + NEON_BRIGHT * mx);
+      col += neon * beam * env * u_rays * u_intensity;
     }
   }
   gl_FragColor = vec4(col, 1.0);
@@ -258,7 +242,9 @@ export function AuroraMeshBackground() {
     const uBase = gl.getUniformLocation(prog, "u_base");
     const uBlobs = gl.getUniformLocation(prog, "u_blobs");
     const uColors = gl.getUniformLocation(prog, "u_colors");
-    const uBridges = gl.getUniformLocation(prog, "u_bridges");
+    const uRays = gl.getUniformLocation(prog, "u_rays");
+    const uRayLength = gl.getUniformLocation(prog, "u_rayLength");
+    const uRayRate = gl.getUniformLocation(prog, "u_rayRate");
     // Base = the theme background the CSS aurora sits on (tokens.surface).
     const [br, bg, bb] = hexRgb(scheme.tokens.surface);
     gl.uniform3f(uBase, br, bg, bb);
@@ -281,7 +267,9 @@ export function AuroraMeshBackground() {
       gl.uniform1f(uTime, phase);
       gl.uniform1f(uIntensity, tuningRef.current.intensity);
       gl.uniform1f(uSpeed, tuningRef.current.speed);
-      gl.uniform1f(uBridges, tuningRef.current.bridges);
+      gl.uniform1f(uRays, tuningRef.current.rays);
+      gl.uniform1f(uRayLength, tuningRef.current.rayLength);
+      gl.uniform1f(uRayRate, tuningRef.current.rayRate);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     const onVisibility = () => {

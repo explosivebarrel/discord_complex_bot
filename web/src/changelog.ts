@@ -22,7 +22,7 @@ export const CHANGELOG: ChangelogBlock[] = [
     date: "2026-11-06",
     title: "VK browser sidecar and infrastructure",
     points: [
-      "Aurora mesh: neon god-ray cones between close blobs (dusty fan of discrete rays from the contact point) replacing the glow capsule",
+      "Aurora mesh: god rays from blob centers - per-blob scheduled events, transparent core, dusty fading rays; mesh-only settings (glow / length / frequency)",
     ],
   },
   {

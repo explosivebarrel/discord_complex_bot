@@ -241,7 +241,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
 function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { auroraTuning, setAuroraTuning } = useAppTheme();
   const tune = (patch: Partial<AuroraTuning>) => setAuroraTuning({ ...auroraTuning, ...patch });
-  const slider = (label: string, key: "intensity" | "speed" | "bridges", min: number, max: number, step: number) => (
+  const slider = (label: string, key: "intensity" | "speed" | "rays" | "rayLength" | "rayRate", min: number, max: number, step: number) => (
     <Box sx={{ px: 1 }}>
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         {label}
@@ -278,14 +278,19 @@ function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () =>
               sx={{ px: 1 }}
               control={
                 <Switch
-                  checked={auroraTuning.bridges > 0}
-                  onChange={(_, v) => tune({ bridges: v ? 0.6 : 0 })}
+                  checked={auroraTuning.rays > 0}
+                  onChange={(_, v) => tune({ rays: v ? 0.7 : 0 })}
                 />
               }
-              label="Neon bridges between close blobs"
+              label="God rays from blobs"
             />
-            {auroraTuning.bridges > 0 &&
-              slider("Bridge glow", "bridges", 0.15, 1, 0.05)}
+            {auroraTuning.rays > 0 && (
+              <>
+                {slider("Ray glow", "rays", 0.15, 1, 0.05)}
+                {slider("Ray length", "rayLength", 0.5, 2, 0.1)}
+                {slider("Ray frequency", "rayRate", 0.3, 2, 0.1)}
+              </>
+            )}
           </>
         )}
       </DialogContent>
