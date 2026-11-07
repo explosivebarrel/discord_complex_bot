@@ -241,7 +241,7 @@ function GlassSettingsDialog({ open, onClose }: { open: boolean; onClose: () => 
 function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { auroraTuning, setAuroraTuning } = useAppTheme();
   const tune = (patch: Partial<AuroraTuning>) => setAuroraTuning({ ...auroraTuning, ...patch });
-  const slider = (label: string, key: "intensity" | "speed" | "rays" | "rayLength" | "rayRate", min: number, max: number, step: number) => (
+  const slider = (label: string, key: "intensity" | "speed" | "rays" | "rayLength" | "rayRate" | "hueShift", min: number, max: number, step: number) => (
     <Box sx={{ px: 1 }}>
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         {label}
@@ -289,6 +289,7 @@ function AuroraSettingsDialog({ open, onClose }: { open: boolean; onClose: () =>
                 {slider("Ray glow", "rays", 0.15, 1, 0.05)}
                 {slider("Ray length", "rayLength", 0.5, 2, 0.1)}
                 {slider("Ray frequency", "rayRate", 0.3, 2, 0.1)}
+                {slider("Ray hue shift (half circle = 0.5)", "hueShift", -0.5, 0.5, 0.01)}
               </>
             )}
           </>

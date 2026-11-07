@@ -34,6 +34,7 @@ uniform vec3 u_colors[${MAX_BLOBS}];
 uniform float u_rays;      // ray glow strength (0 = off)
 uniform float u_rayLength; // ray length multiplier
 uniform float u_rayRate;   // how often events fire (cycle speed multiplier)
+uniform float u_hueShift;  // ray hue rotation, in full turns (0.5 = 180 degrees)
 // --- Sun-ray tuning: GLSL const globals are compile-time constants, ---
 // --- the compiler inlines them, so this costs nothing at runtime    ---
 const float RAY_EVENT_PERIOD = 11.0; // seconds between a blob's ray events
@@ -48,7 +49,6 @@ const float RAY_DUST_FLOOR = 0.55;  // floor of the fbm dust modulation
 const float RAY_RISE = 0.22;        // transparent center, then the ray fades in
 const float RAY_LEN_BASE = 5.5;     // ray length, in blob radii (3-6x)
 const float RAY_LEN_JITTER = 0.35;  // per-event length variation
-const float HUE_SHIFT = 0.10;       // ray color rotation from the blob color
 const float RAY_GAIN = 1.3;          // overall beam brightness
 const float NEON_SAT = 0.75;        // saturation lift after the rotation
 const float NEON_BRIGHT = 0.8;      // brightness lift after the rotation
@@ -157,7 +157,7 @@ void main() {
       float dust = fbm(vec2(ang * 6.0 + evRnd * 31.0, r * 0.9 - u_time * u_speed * 0.5));
       float beam = fan * ((1.0 - RAY_HAZE) + RAY_HAZE * lobes)
         * (RAY_DUST_FLOOR + (1.0 - RAY_DUST_FLOOR) * dust) * radial;
-      vec3 neon = hueShift(u_colors[i], HUE_SHIFT);
+      vec3 neon = hueShift(u_colors[i], u_hueShift);
       float mx = max(neon.r, max(neon.g, neon.b));
       neon = neon / max(mx, 0.05) * (NEON_SAT + NEON_BRIGHT * mx);
       col += neon * beam * env * u_rays * u_intensity * RAY_GAIN;
@@ -246,6 +246,7 @@ export function AuroraMeshBackground() {
     const uRays = gl.getUniformLocation(prog, "u_rays");
     const uRayLength = gl.getUniformLocation(prog, "u_rayLength");
     const uRayRate = gl.getUniformLocation(prog, "u_rayRate");
+    const uHueShift = gl.getUniformLocation(prog, "u_hueShift");
     // Base = the theme background the CSS aurora sits on (tokens.surface).
     const [br, bg, bb] = hexRgb(scheme.tokens.surface);
     gl.uniform3f(uBase, br, bg, bb);
@@ -271,6 +272,7 @@ export function AuroraMeshBackground() {
       gl.uniform1f(uRays, tuningRef.current.rays);
       gl.uniform1f(uRayLength, tuningRef.current.rayLength);
       gl.uniform1f(uRayRate, tuningRef.current.rayRate);
+      gl.uniform1f(uHueShift, tuningRef.current.hueShift);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
     const onVisibility = () => {

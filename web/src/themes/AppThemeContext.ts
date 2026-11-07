@@ -80,9 +80,11 @@ export interface AuroraTuning {
   rayLength: number;
   /** Event frequency multiplier. */
   rayRate: number;
+  /** Ray hue rotation, in full turns (0.5 = 180 degrees). */
+  hueShift: number;
 }
 
-export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1, rays: 0.9, rayLength: 1.3, rayRate: 0.75 };
+export const DEFAULT_AURORA_TUNING: AuroraTuning = { mesh: false, intensity: 1, speed: 1, rays: 0.9, rayLength: 1.3, rayRate: 0.75, hueShift: 0.1 };
 
 export function getAuroraTuning(raw: string | null): AuroraTuning {
   try {
