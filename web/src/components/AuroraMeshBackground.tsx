@@ -46,7 +46,7 @@ const float RAY_COMB = 6.0;         // angular comb frequency (beam structure)
 const float RAY_SHARPNESS = 1.8;    // higher = thinner, crisper rays
 const float RAY_HAZE = 0.30;        // brightness of the haze between rays
 const float RAY_DUST_FLOOR = 0.55;  // floor of the fbm dust modulation
-const float RAY_RISE = 0.22;        // transparent center, then the ray fades in
+const float RAY_RISE = 0.12;        // transparent center, then the ray fades in
 const float RAY_LEN_BASE = 5.5;     // ray length, in blob radii (3-6x)
 const float RAY_LEN_JITTER = 0.35;  // per-event length variation
 const float RAY_GAIN = 1.0;          // overall beam brightness
@@ -151,7 +151,7 @@ void main() {
       if (fan < 0.01) continue;
       // Transparent at the center, full brightness mid-ray, gone at the tip.
       float tt = r / L;
-      float radial = smoothstep(RAY_RISE, RAY_RISE + 0.22, tt)
+      float radial = smoothstep(RAY_RISE, RAY_RISE + 0.15, tt)
         * (1.0 - smoothstep(0.72, 1.0, tt));
       float lobes = pow(0.5 + 0.5 * cos(ang * RAY_COMB + evRnd * 40.0), RAY_SHARPNESS);
       float dust = fbm(vec2(ang * 6.0 + evRnd * 31.0, r * 0.9 - u_time * u_speed * 0.5));
