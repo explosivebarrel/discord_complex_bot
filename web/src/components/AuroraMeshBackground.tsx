@@ -36,21 +36,22 @@ uniform float u_rayLength; // ray length multiplier
 uniform float u_rayRate;   // how often events fire (cycle speed multiplier)
 // --- Sun-ray tuning: GLSL const globals are compile-time constants, ---
 // --- the compiler inlines them, so this costs nothing at runtime    ---
-const float RAY_EVENT_PERIOD = 9.0; // seconds between a blob's ray events
-const float RAY_ACTIVE = 0.38;      // share of the cycle the rays are visible
-const float RAY_ENV_IN = 0.30;      // fade-in share of the active window
-const float RAY_FAN_OUTER = 1.25;   // fan outer half-angle, radians
-const float RAY_FAN_CORE = 0.45;    // fully lit inside this half-angle
-const float RAY_COMB = 9.0;         // angular comb frequency (how many rays)
-const float RAY_SHARPNESS = 2.2;    // higher = thinner, crisper rays
+const float RAY_EVENT_PERIOD = 11.0; // seconds between a blob's ray events
+const float RAY_ACTIVE = 0.72;      // share of the cycle the rays are visible
+const float RAY_ENV_IN = 0.35;      // fade-in share of the active window
+const float RAY_FAN_OUTER = 0.38;   // fan outer half-angle, radians (~20 deg)
+const float RAY_FAN_CORE = 0.12;    // fully lit inside this half-angle
+const float RAY_COMB = 6.0;         // angular comb frequency (beam structure)
+const float RAY_SHARPNESS = 1.8;    // higher = thinner, crisper rays
 const float RAY_HAZE = 0.30;        // brightness of the haze between rays
 const float RAY_DUST_FLOOR = 0.55;  // floor of the fbm dust modulation
 const float RAY_RISE = 0.22;        // transparent center, then the ray fades in
-const float RAY_LEN_BASE = 1.65;    // ray length, in blob radii
+const float RAY_LEN_BASE = 5.5;     // ray length, in blob radii (3-6x)
 const float RAY_LEN_JITTER = 0.35;  // per-event length variation
 const float HUE_SHIFT = 0.10;       // ray color rotation from the blob color
-const float NEON_SAT = 0.6;         // saturation lift after the rotation
-const float NEON_BRIGHT = 0.55;     // brightness lift after the rotation
+const float RAY_GAIN = 1.3;          // overall beam brightness
+const float NEON_SAT = 0.75;        // saturation lift after the rotation
+const float NEON_BRIGHT = 0.8;      // brightness lift after the rotation
 // --- Backdrop and blob tuning ---
 const float WARP_AMOUNT = 0.30;        // domain-warp strength (the "liquid" look)
 const float WARP_SCALE = 1.6;          // noise frequency of the warp field
@@ -153,13 +154,13 @@ void main() {
       float radial = smoothstep(RAY_RISE, RAY_RISE + 0.22, tt)
         * (1.0 - smoothstep(0.72, 1.0, tt));
       float lobes = pow(0.5 + 0.5 * cos(ang * RAY_COMB + evRnd * 40.0), RAY_SHARPNESS);
-      float dust = fbm(vec2(ang * 6.0 + evRnd * 31.0, r * 2.4 - u_time * u_speed * 0.5));
+      float dust = fbm(vec2(ang * 6.0 + evRnd * 31.0, r * 0.9 - u_time * u_speed * 0.5));
       float beam = fan * ((1.0 - RAY_HAZE) + RAY_HAZE * lobes)
         * (RAY_DUST_FLOOR + (1.0 - RAY_DUST_FLOOR) * dust) * radial;
       vec3 neon = hueShift(u_colors[i], HUE_SHIFT);
       float mx = max(neon.r, max(neon.g, neon.b));
       neon = neon / max(mx, 0.05) * (NEON_SAT + NEON_BRIGHT * mx);
-      col += neon * beam * env * u_rays * u_intensity;
+      col += neon * beam * env * u_rays * u_intensity * RAY_GAIN;
     }
   }
   gl_FragColor = vec4(col, 1.0);
