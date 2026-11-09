@@ -141,6 +141,7 @@ export function PlayerDock({
   onToggleFavorite,
   playlistTrack,
   onOpenNowPlaying,
+  onOpenLyrics,
 }: {
   state: PlayerState | null;
   volume: number;
@@ -161,6 +162,9 @@ export function PlayerDock({
   playlistTrack?: PlaylistTrackRef | null;
   /** Opens the full-screen now-playing view (click on artwork or title). */
   onOpenNowPlaying?: () => void;
+  /** Opens the now-playing view with the lyrics column visible (the
+      "Lyrics" row of the more-sheet). */
+  onOpenLyrics?: () => void;
 }) {
   const current = state?.current;
   const paused = !!current?.paused;
@@ -604,8 +608,8 @@ export function PlayerDock({
                   secondary={sleepRemaining ? `${Math.max(1, Math.round(sleepRemaining / 60))} min left` : "Off"}
                 />
               </ListItemButton>
-              {current && onOpenNowPlaying && (
-                <ListItemButton onClick={() => { closeMore(); onOpenNowPlaying(); }}>
+              {current && (onOpenLyrics || onOpenNowPlaying) && (
+                <ListItemButton onClick={() => { closeMore(); (onOpenLyrics ?? onOpenNowPlaying)?.(); }}>
                   <ListItemIcon sx={{ minWidth: 40 }}>
                     <Lyrics />
                   </ListItemIcon>

@@ -7,6 +7,7 @@ import {
   IconFavorite as Favorite,
   IconGraphicEq as GraphicEq,
   IconKeyboardArrowDown as KeyboardArrowDown,
+  IconLyrics as LyricsIcon,
   IconPause as Pause,
   IconPlayArrow as PlayArrow,
   IconRepeat as Repeat,
@@ -43,6 +44,9 @@ export function NowPlayingScreen({
   onShuffleQueue,
   onMenu,
   onClose,
+  /** Push from the dock's "Lyrics" row: open the screen with the lyrics
+      column visible. */
+  openLyrics = false,
 }: {
   state: PlayerState;
   gid: string;
@@ -57,6 +61,7 @@ export function NowPlayingScreen({
   /** Opens the shared track context menu (the "…" button). */
   onMenu: (e: React.MouseEvent) => void;
   onClose: () => void;
+  openLyrics?: boolean;
 }) {
   const current = state.current;
   const paused = !!current?.paused;
@@ -65,6 +70,9 @@ export function NowPlayingScreen({
   const repeat = state.repeat ?? "off";
   // Advance the progress line locally between 3-second polls (same as the dock).
   const [livePos, setLivePos] = useState(0);
+  const [dragMs, setDragMs] = useState<number | null>(null);
+  const dragRef = useRef(false);
+  const position = Math.min(livePos, current?.length ?? 0);
   // Lyrics: fetched once per track uri; synced lines follow the position.
   const lyricsQuery = useQuery({
     queryKey: ["lyrics", current?.uri ?? ""],
@@ -73,25 +81,37 @@ export function NowPlayingScreen({
     staleTime: Infinity,
   });
   const synced: [number, string][] = lyricsQuery.data?.synced ?? [];
+  const hasLyrics = synced.length > 0 || !!lyricsQuery.data?.plain;
+  // Yandex-style lyrics column: hidden by default, opened with the Lyrics
+  // button (or pushed from the dock row).
+  const [lyricsOpen, setLyricsOpen] = useState(false);
+  useEffect(() => {
+    if (openLyrics) setLyricsOpen(true);
+  }, [openLyrics]);
+  // No lyrics at all: the toggle has nothing to show, close the column.
+  useEffect(() => {
+    if (lyricsQuery.isSuccess && !hasLyrics) setLyricsOpen(false);
+  }, [lyricsQuery.isSuccess, hasLyrics]);
+  const posSec = position / 1000;
   const activeLine = (() => {
-    const pos = (current?.position ?? 0) / 1000;
     let idx = -1;
     for (let i = 0; i < synced.length; i++) {
-      if (synced[i][0] <= pos) idx = i;
+      if (synced[i][0] <= posSec) idx = i;
       else break;
     }
     return idx;
   })();
+  // Countdown to the first line while the intro is still playing.
+  const countdown =
+    synced.length > 0 && activeLine === -1 ? Math.max(1, Math.ceil(synced[0][0] - posSec)) : null;
   const lyricsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
+    if (!lyricsOpen) return;
     const box = lyricsRef.current;
     if (!box) return;
     const active = box.querySelector<HTMLElement>("[data-active='true']");
     if (active) active.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [activeLine]);
-  const [dragMs, setDragMs] = useState<number | null>(null);
-  const dragRef = useRef(false);
-  const position = Math.min(livePos, current?.length ?? 0);
+  }, [activeLine, lyricsOpen]);
 
   useEffect(() => {
     if (!current || paused || isLive) return;
@@ -158,17 +178,46 @@ export function NowPlayingScreen({
         }}
       />
 
-      {/* Collapse chevron, top right like Yandex Music. */}
-      <Tooltip title="Back to the player">
-        <IconButton
-          onClick={onClose}
-          aria-label="Close now playing"
-          sx={{ position: "absolute", top: 24, right: 28, color: "#fff", bgcolor: "rgba(255,255,255,.12)", "&:hover": { bgcolor: "rgba(255,255,255,.22)" } }}
-        >
-          <KeyboardArrowDown />
-        </IconButton>
-      </Tooltip>
+      {/* Collapse chevron + lyrics toggle, top right like Yandex Music. */}
+      <Stack direction="row" spacing={1} sx={{ position: "absolute", top: 24, right: 28, zIndex: 2 }}>
+        {hasLyrics && (
+          <Tooltip title={lyricsOpen ? "Hide lyrics" : "Show lyrics"}>
+            <IconButton
+              onClick={() => setLyricsOpen((o) => !o)}
+              aria-label="Toggle lyrics"
+              sx={{
+                color: "#fff",
+                bgcolor: lyricsOpen ? "primary.main" : "rgba(255,255,255,.12)",
+                "&:hover": { bgcolor: lyricsOpen ? "primary.main" : "rgba(255,255,255,.22)", filter: "brightness(1.1)" },
+              }}
+            >
+              <LyricsIcon />
+            </IconButton>
+          </Tooltip>
+        )}
+        <Tooltip title="Back to the player">
+          <IconButton
+            onClick={onClose}
+            aria-label="Close now playing"
+            sx={{ color: "#fff", bgcolor: "rgba(255,255,255,.12)", "&:hover": { bgcolor: "rgba(255,255,255,.22)" } }}
+          >
+            <KeyboardArrowDown />
+          </IconButton>
+        </Tooltip>
+      </Stack>
 
+      <Box
+        sx={{
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: { xs: 3, md: 6 },
+          flexWrap: "wrap",
+          width: "100%",
+          px: { xs: 2, md: 6 },
+        }}
+      >
       <Stack spacing={2.5} sx={{ alignItems: "center", maxWidth: 560, px: 3, position: "relative", mt: -4 }}>
         {/* Cover with the transport revealed on hover / touch. */}
         <Box
@@ -269,64 +318,6 @@ export function NowPlayingScreen({
             <Typography variant="caption" sx={{ color: "rgba(255,255,255,.7)", fontVariantNumeric: "tabular-nums", width: 44, textAlign: "right" }}>
               {fmt(dragMs ?? position)}
             </Typography>
-  {(() => {
-    if (lyricsQuery.isLoading) {
-      return (
-        <Typography variant="body2" sx={{ color: "text.secondary", textAlign: "center" }}>
-          Looking for lyrics…
-        </Typography>
-      );
-    }
-    if (synced.length > 0) {
-      return (
-        <Box
-          ref={lyricsRef}
-          sx={{
-            maxHeight: 180,
-            overflowY: "auto",
-            width: "100%",
-            px: 1,
-            maskImage: "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
-            WebkitMaskImage: "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
-          }}
-        >
-          {synced.map(([sec, text], i) => (
-            <Typography
-              key={i}
-              data-active={i === activeLine}
-              onClick={() => typeof onSeek === "function" && onSeek(Math.round(sec * 1000))}
-              sx={{
-                textAlign: "center",
-                cursor: "pointer",
-                py: 0.25,
-                fontSize: i === activeLine ? "body1.fontSize" : "body2.fontSize",
-                fontWeight: i === activeLine ? 600 : 400,
-                color: i === activeLine ? "text.primary" : "text.secondary",
-                opacity: i === activeLine ? 1 : 0.55,
-                transition: "all .25s",
-              }}
-            >
-              {text}
-            </Typography>
-          ))}
-        </Box>
-      );
-    }
-    if (lyricsQuery.data?.plain) {
-      return (
-        <Box sx={{ maxHeight: 180, overflowY: "auto", width: "100%", px: 1 }}>
-          <Typography variant="body2" sx={{ color: "text.secondary", whiteSpace: "pre-wrap", textAlign: "center" }}>
-            {lyricsQuery.data.plain}
-          </Typography>
-        </Box>
-      );
-    }
-    return (
-      <Typography variant="caption" sx={{ color: "text.secondary", textAlign: "center" }}>
-        No lyrics found for this track.
-      </Typography>
-    );
-  })()}
             <Box
               sx={{ flex: 1, py: 1, cursor: "pointer", touchAction: "none" }}
               onPointerDown={(e) => {
@@ -367,6 +358,76 @@ export function NowPlayingScreen({
           </Stack>
         )}
       </Stack>
+
+      {/* Lyrics column, Yandex-Music style: big bold lines on the right,
+          the active one lit up; a countdown until the first line starts. */}
+      {lyricsOpen && (
+        <Box
+          ref={lyricsRef}
+          sx={{
+            flex: "1 1 380px",
+            maxWidth: 640,
+            height: "min(76vh, 760px)",
+            overflowY: "auto",
+            px: 3,
+            py: "30vh 0 40vh",
+            maskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
+            WebkitMaskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
+          }}
+        >
+          {lyricsQuery.isLoading ? (
+            <Typography sx={{ textAlign: "center", color: "rgba(255,255,255,.55)", fontSize: 22 }}>
+              Looking for lyrics…
+            </Typography>
+          ) : synced.length > 0 ? (
+            <>
+              {countdown !== null && (
+                <Typography
+                  sx={{
+                    textAlign: "center",
+                    color: "#fff",
+                    fontSize: "clamp(28px, 3vw, 40px)",
+                    fontWeight: 700,
+                    mb: 5,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {countdown}
+                </Typography>
+              )}
+              {synced.map(([sec, text], i) => (
+                <Typography
+                  key={i}
+                  data-active={i === activeLine}
+                  onClick={() => onSeek(Math.round(sec * 1000))}
+                  sx={{
+                    textAlign: "center",
+                    cursor: "pointer",
+                    color: "#fff",
+                    py: 1.4,
+                    fontSize: i === activeLine ? "clamp(24px, 2.6vw, 34px)" : "clamp(19px, 2vw, 27px)",
+                    fontWeight: i === activeLine ? 700 : 600,
+                    opacity: i === activeLine ? 1 : 0.32,
+                    transition: "all .25s",
+                    "&:hover": { opacity: i === activeLine ? 1 : 0.55 },
+                  }}
+                >
+                  {text}
+                </Typography>
+              ))}
+            </>
+          ) : lyricsQuery.data?.plain ? (
+            <Typography sx={{ textAlign: "center", color: "rgba(255,255,255,.8)", whiteSpace: "pre-wrap", fontSize: 20, lineHeight: 1.7 }}>
+              {lyricsQuery.data.plain}
+            </Typography>
+          ) : (
+            <Typography sx={{ textAlign: "center", color: "rgba(255,255,255,.5)", fontSize: 18 }}>
+              No lyrics found for this track.
+            </Typography>
+          )}
+        </Box>
+      )}
+      </Box>
     </Box>,
     document.body,
   );

@@ -145,6 +145,9 @@ export function PlayerPage() {
   const [plBusy, setPlBusy] = useState(false);
   const [volume, setVolume] = useState<number | null>(null);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  // The dock's "Lyrics" row opens the now-playing screen with the lyrics
+  // column already visible.
+  const [npOpenLyrics, setNpOpenLyrics] = useState(false);
   const [saveQueueOpen, setSaveQueueOpen] = useState(false);
   const [saveQueueName, setSaveQueueName] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
@@ -521,6 +524,14 @@ export function PlayerPage() {
       onSeek={(p) => act(() => api.seek(gid, p))}
       onRepeatCycle={cycleRepeat}
       onOpenNowPlaying={state?.current ? () => setNowPlayingOpen(true) : undefined}
+      onOpenLyrics={
+        state?.current
+          ? () => {
+              setNpOpenLyrics(true);
+              setNowPlayingOpen(true);
+            }
+          : undefined
+      }
       favorite={!!state?.current && favorites.some((f) => f.uri === state.current?.uri)}
       onToggleFavorite={state?.current ? () => toggleFavorite(state.current as TrackInfo) : undefined}
       playlistTrack={
@@ -1237,7 +1248,11 @@ export function PlayerPage() {
               }),
             )
           }
-          onClose={() => setNowPlayingOpen(false)}
+          onClose={() => {
+            setNowPlayingOpen(false);
+            setNpOpenLyrics(false);
+          }}
+          openLyrics={npOpenLyrics}
         />
       )}
     </AppShell>
