@@ -392,7 +392,10 @@ export function NowPlayingScreen({
             maxWidth: 640,
             height: "min(76vh, 760px)",
             overflowY: "auto",
-            px: 3,
+            overflowX: "hidden",
+            // Wide horizontal padding: the active line scales up 12% and
+            // the extra width must stay inside the container, not clip.
+            px: 7,
             ...(synced.length > 0
               ? {
                   py: "30vh 0 40vh",
@@ -439,7 +442,7 @@ export function NowPlayingScreen({
                     fontSize: "clamp(19px, 2vw, 27px)",
                     fontWeight: 600,
                     opacity: i === activeLine ? 1 : 0.32,
-                    transform: i === activeLine ? "scale(1.18)" : "scale(1)",
+                    transform: i === activeLine ? "scale(1.12)" : "scale(1)",
                     transformOrigin: "center",
                     transition: "all .25s",
                     "&:hover": { opacity: i === activeLine ? 1 : 0.55 },
