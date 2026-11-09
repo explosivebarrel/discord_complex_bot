@@ -9,14 +9,16 @@ type IconProps = { fontSize?: number | string; className?: string; sx?: SxProps<
 // and translates the legacy fontSize="small" to 20px. className must be
 // forwarded: MUI clones icon elements with wrapper classes (Chip etc.).
 //
-// Rebuilding the subset after adding a glyph here (icon ligatures live in
-// the rlig feature; a naive --glyphs-file subset keeps glyphs but the
-// WOFF2 output drops glyph names, so prune GSUB first):
-//   1. names=$(grep -o 'ic("[a-z_0-9]*")' icons.tsx | sed 's/ic("//;s/")//' | sort -u)
-//   2. prune the full font's GSUB rlig lookups to ligature glyphs from
-//      that list (fontTools: filter ligatures by LigGlyph), save a temp ttf
-//   3. pyftsubset temp.ttf --glyphs-file=names --layout-features='*' --flavor=woff2
-//      -> web/public/fonts/material-symbols-rounded-subset.woff2
+// Rebuilding the subset after adding a glyph here: DO NOT subset locally
+// with pyftsubset — it silently drops the rlig ligature lookups and every
+// icon renders as raw text. Use tools-side .zcode/tmp/build_font_subset.py
+// (downloads a ready subset from Google Fonts css2 with icon_names=...,
+// that output keeps ligatures intact). Then bump ?v= in main.tsx.
+//   1. refresh .zcode/tmp/icon_names.txt from the ic("...")/name="..."
+//      occurrences (see the script docstring), validate against the
+//      Material Symbols codepoints file
+//   2. python .zcode/tmp/build_font_subset.py
+//   3. bump ?v=N in main.tsx
 const ic = (name: string, fill = true) => {
   const Component = ({ fontSize = 24, className, sx }: IconProps) => (
     <MsIcon name={name} fontSize={fontSize === "small" ? 20 : fontSize} fill={fill} className={className} sx={sx} />
