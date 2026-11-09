@@ -87,7 +87,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
               fontDisplay: "block",
               // The font is served immutable for a year: bump ?v= on every
               // subset rebuild, or clients keep the old file for a year.
-              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=10") format("woff2")',
+              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=11") format("woff2")',
             },
           }}
         />
