@@ -85,7 +85,9 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
               fontStyle: "normal",
               fontWeight: "100 700",
               fontDisplay: "block",
-              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=8") format("woff2")',
+              // The font is served immutable for a year: bump ?v= on every
+              // subset rebuild, or clients keep the old file for a year.
+              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=9") format("woff2")',
             },
           }}
         />
