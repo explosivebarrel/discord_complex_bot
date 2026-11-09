@@ -18,8 +18,9 @@ import pytest
 from fastapi import FastAPI
 
 from app.api import deps
-from app.api.routers import admin, favorites, user_playlists
+from app.api.routers import admin, auth, favorites, user_playlists
 from app.api.routers import player as player_router_module
+from app.api.discord_oauth import DiscordAPIError, DiscordUnreachableError
 from app.core.services.music import MusicService, MusicServiceError, QueueItem
 
 from tests.conftest import make_track
@@ -114,6 +115,7 @@ async def api(config, db) -> AsyncIterator[tuple[httpx.AsyncClient, MusicService
     app.state.oauth = SimpleNamespace()  # the access mock bypasses Discord lookups
     app.include_router(player_router_module.router)
     app.include_router(player_router_module.root_router)
+    app.include_router(auth.router)
     app.include_router(admin.router)
     app.include_router(favorites.router)
     app.include_router(user_playlists.router)
@@ -344,3 +346,32 @@ async def test_skip_respects_vote_threshold(api) -> None:
     data = resp.json()
     assert data["skipped"] is True
     assert data["needed"] >= 1
+
+
+async def test_guilds_503_when_discord_unreachable(api) -> None:
+    """A network outage to Discord must answer 503 (the panel shows a
+    retry banner), never 500 — and must not kill the session."""
+    client, _, _ = api
+
+    async def _unreachable(*_args: Any, **_kwargs: Any) -> Any:
+        raise DiscordUnreachableError("Discord is unreachable right now.")
+
+    client._transport.app.state.oauth.fetch_guilds = _unreachable  # type: ignore[attr-defined]
+    client._transport.app.state.oauth.refresh_token = _unreachable  # type: ignore[attr-defined]
+    resp = await client.get("/api/auth/guilds")
+    assert resp.status_code == 503, resp.text
+    assert "unreachable" in resp.json()["detail"].lower()
+
+
+async def test_guilds_401_when_discord_rejects_token(api) -> None:
+    """A genuine token rejection still expires the session: the SPA starts
+    a new login (the historic behavior, kept)."""
+    client, _, _ = api
+
+    async def _rejected(*_args: Any, **_kwargs: Any) -> Any:
+        raise DiscordAPIError("Discord API error")
+
+    client._transport.app.state.oauth.fetch_guilds = _rejected  # type: ignore[attr-defined]
+    client._transport.app.state.oauth.refresh_token = _rejected  # type: ignore[attr-defined]
+    resp = await client.get("/api/auth/guilds")
+    assert resp.status_code == 401, resp.text

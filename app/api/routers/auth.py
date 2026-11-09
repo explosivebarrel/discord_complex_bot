@@ -140,6 +140,12 @@ async def my_guilds(
     except SessionExpiredError as exc:
         # The SPA starts a new login when it sees 401.
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except DiscordAPIError as exc:
+        # A network/Discord outage must not 500: the panel shows a retry
+        # banner instead of a dead page.
+        raise HTTPException(
+            status_code=503, detail="Discord is unreachable right now. Try again in a moment."
+        ) from exc
     bot_guild_ids = {g.id for g in bot.guilds}
     result = []
     for g in user_guilds:

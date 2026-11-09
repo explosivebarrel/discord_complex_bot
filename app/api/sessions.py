@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from app.api.discord_oauth import DiscordAPIError
+from app.api.discord_oauth import DiscordAPIError, DiscordUnreachableError
 
 if TYPE_CHECKING:
     from app.api.deps import CurrentUser
@@ -65,6 +65,10 @@ async def refresh_session_token(oauth: DiscordOAuthClient, db: Database, user: C
             raise SessionExpiredError("The session has no refresh token.")
         try:
             payload = await oauth.refresh_token(user.refresh_token)
+        except DiscordUnreachableError:
+            # An outage is not a dead session: let it bubble so the caller
+            # answers 503 instead of logging the user out.
+            raise
         except DiscordAPIError as exc:
             raise SessionExpiredError("Discord rejected the refresh token. Log in again.") from exc
         user.access_token = payload["access_token"]

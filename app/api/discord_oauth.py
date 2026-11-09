@@ -17,6 +17,24 @@ class DiscordAPIError(Exception):
     pass
 
 
+class DiscordUnreachableError(DiscordAPIError):
+    """The network to Discord is down (timeout, TLS reset, DNS).
+
+    Distinct from a plain DiscordAPIError: a rejection means the token is
+    bad (session must expire), an outage means "try again" — the session
+    must survive it."""
+
+
+async def _map_network_errors(aw: Any) -> Any:
+    """A dead network (TLS reset, DNS, timeout) must surface as
+    DiscordUnreachableError, not as an unhandled httpx error that turns
+    every authed route into a 500."""
+    try:
+        return await aw
+    except httpx.HTTPError as exc:
+        raise DiscordUnreachableError("Discord is unreachable right now.") from exc
+
+
 class DiscordOAuthClient:
     """Helper for the Discord OAuth2 Authorization Code flow and for Discord REST requests."""
 
@@ -54,7 +72,7 @@ class DiscordOAuthClient:
     async def _token_request(self, data: dict[str, Any]) -> dict[str, Any]:
         basic = httpx.BasicAuth(self.config.discord_client_id, self.config.discord_client_secret)
         async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{API_BASE}/oauth2/token", data=data, auth=basic)
+            resp = await _map_network_errors(client.post(f"{API_BASE}/oauth2/token", data=data, auth=basic))
         if resp.status_code != 200:
             logger.warning("Discord token request failed: %s %s", resp.status_code, resp.text)
             raise DiscordAPIError("Failed to exchange the authorization code.")
@@ -64,7 +82,7 @@ class DiscordOAuthClient:
     async def _get(path: str, access_token: str) -> Any:
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{API_BASE}{path}", headers=headers, timeout=15.0)
+            resp = await _map_network_errors(client.get(f"{API_BASE}{path}", headers=headers, timeout=15.0))
         if resp.status_code != 200:
             logger.warning("Discord API %s failed: %s", path, resp.status_code)
             raise DiscordAPIError(f"Discord API error on {path}")
