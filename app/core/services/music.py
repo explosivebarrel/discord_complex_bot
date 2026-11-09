@@ -1116,24 +1116,33 @@ class MusicService:
                 title=item.display_title[:256],
                 color=discord.Color.from_str("#D0BCFF"),
             )
+            # The artist gets the author slot above the title; the title
+            # stays the loudest line of the card.
             if item.author:
-                embed.description = f"by **{item.author}**"
+                embed.set_author(name=item.author[:256])
             if item.artwork:
                 embed.set_thumbnail(url=item.artwork)
             embed.add_field(
                 name="Up next",
-                value=(queue[0].display_title[:100] if queue else "Queue is empty"),
+                value=(queue[0].display_title[:200] if queue else "*Queue is empty — add tracks from the panel*"),
                 inline=False,
             )
             minutes, seconds = divmod(total // 1000, 60)
-            embed.add_field(
-                name="Queue",
-                value=f"{len(queue)} track(s) · {minutes}:{seconds:02d}",
-                inline=True,
-            )
+            total_str = f"{minutes // 60}:{minutes % 60:02d}:{seconds:02d}" if minutes >= 60 else f"{minutes}:{seconds:02d}"
             src = {"yt": "YouTube", "sc": "SoundCloud", "vk": "VK", "ym": "Yandex Music",
-                   "local": "Local library", "direct": "VK (userscript)"}
-            embed.set_footer(text=f"Source: {src.get(item.source, item.source)}")
+                   "local": "Local library", "direct": "VK (userscript)", "radio": "Radio", "archive": "Archive.org"}
+            embed.add_field(name="Queue", value=f"{len(queue)} track(s) · {total_str}", inline=True)
+            # An unknown source (old snapshots) must not render an empty line.
+            embed.add_field(name="Source", value=src.get(item.source, "Unknown") or "Unknown", inline=True)
+            footer_bits: list[str] = []
+            length_ms = item.length or (item.track.length if item.track else 0)
+            if 0 < length_ms < 9_223_372_036_854_775_807:
+                lm, ls = divmod(length_ms // 1000, 60)
+                footer_bits.append(f"{lm}:{ls:02d}")
+            if item.requested_by_name:
+                footer_bits.append(f"requested by {item.requested_by_name}")
+            if footer_bits:
+                embed.set_footer(text=" · ".join(footer_bits))
             from app.bot.np import NowPlayingView
 
             view = NowPlayingView()

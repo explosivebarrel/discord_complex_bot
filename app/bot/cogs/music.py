@@ -127,20 +127,25 @@ class MusicCog(commands.Cog):
         queue = state.get("queue") or []
         total = sum((t.get("length") or 0) for t in queue)
         minutes, seconds = divmod(total // 1000, 60)
+        total_str = f"{minutes // 60}:{minutes % 60:02d}:{seconds:02d}" if minutes >= 60 else f"{minutes}:{seconds:02d}"
         embed = discord.Embed(title=current["title"][:256], color=discord.Color.from_str("#D0BCFF"))
         if current.get("author"):
-            embed.description = f"by **{current['author']}**"
+            embed.set_author(name=current["author"][:256])
         if current.get("artwork"):
             embed.set_thumbnail(url=current["artwork"])
         embed.add_field(
             name="Up next",
-            value=(queue[0]["title"][:100] if queue else "Queue is empty"),
+            value=(queue[0]["title"][:200] if queue else "*Queue is empty — add tracks from the panel*"),
             inline=False,
         )
-        embed.add_field(name="Queue", value=f"{len(queue)} track(s) · {minutes}:{seconds:02d}", inline=True)
+        src = {"yt": "YouTube", "sc": "SoundCloud", "vk": "VK", "ym": "Yandex Music",
+               "local": "Local library", "direct": "VK (userscript)", "radio": "Radio", "archive": "Archive.org"}
+        embed.add_field(name="Queue", value=f"{len(queue)} track(s) · {total_str}", inline=True)
+        embed.add_field(name="Source", value=src.get(current.get("source"), "Unknown") or "Unknown", inline=True)
         pos, length = current["position"] // 1000, current["length"] // 1000
         embed.set_footer(text=f"{pos // 60}:{pos % 60:02d} / {length // 60}:{length % 60:02d}")
-        await interaction.response.send_message(embed=embed, view=NowPlayingView())
+        paused = bool(current.get("paused"))
+        await interaction.response.send_message(embed=embed, view=NowPlayingView(paused=paused))
 
     @app_commands.command(name="sleep", description="Fade the music out and pause after N minutes")
     @app_commands.describe(minutes="Minutes until the fade-out; omit to cancel the timer")
