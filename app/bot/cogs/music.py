@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Literal
 
 import discord
@@ -21,6 +22,11 @@ class MusicCog(commands.Cog):
 
     def __init__(self, bot: ComplexBot) -> None:
         self.bot = bot
+        # Dedup of track-end events: a skip near a track's natural end makes
+        # Lavalink fire both "stopped" (from player.stop()) and "finished"
+        # (the natural end) for the SAME track. Two play_next calls race and
+        # eat extra queue entries, so the second event is dropped.
+        self._last_track_end: dict[int, tuple[str, float]] = {}
 
     async def _join_requester(self, interaction: discord.Interaction) -> wavelink.Player:
         assert interaction.guild is not None
@@ -204,6 +210,16 @@ class MusicCog(commands.Cog):
         guild_id = payload.player.guild.id
         if payload.reason in ("replaced", "cleanup"):
             return
+        # The same track ending twice within a couple of seconds is the
+        # stop()+natural-end race, not two real track ends.
+        track_key = str(getattr(payload.track, "identifier", "") or "")
+        now = time.monotonic()
+        last = self._last_track_end.get(guild_id)
+        if track_key and last is not None and last[0] == track_key and now - last[1] < 2.0:
+            logger.info("Dropping duplicate track-end (%s) for guild %s", payload.reason, guild_id)
+            return
+        if track_key:
+            self._last_track_end[guild_id] = (track_key, now)
         # A source that dies early (expired CDN link, connection reset)
         # reports a plain "finished": Lavalink sees the stream EOF and the
         # queue moves on with no exception anywhere. Compare the stopped

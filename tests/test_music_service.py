@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import asyncio
 from collections import deque
+from types import SimpleNamespace
 
 import pytest
 
@@ -1412,3 +1413,40 @@ def test_effect_presets_build(music: MusicService) -> None:
     for name in music.EFFECT_PRESETS:  # noqa: SLF001
         music._effect_filters(name)  # noqa: SLF001 - must not raise for any preset
     assert music._effect_filters("nope") is None  # noqa: SLF001
+
+
+async def test_play_next_drops_duplicate_while_resolving(music: MusicService) -> None:
+    """A skip near the natural end makes Lavalink fire stopped+finished for
+    the SAME track. While the first play_next is still resolving (current
+    has no track yet), a second call must not eat queue entries."""
+    music.get_player = lambda _gid: SimpleNamespace(playing=False)  # type: ignore[method-assign]
+    music.queues[GUILD_ID] = deque([QueueItem(make_track("Next"), 1, "tester"), QueueItem(make_track("After"), 1, "tester")])
+    music.current_items[GUILD_ID] = QueueItem(track=None, requested_by_id=1, pending_url="x", title="Resolving")
+    result = await music.play_next(GUILD_ID, "finished")
+    assert result is None
+    assert [i.display_title for i in music.queues[GUILD_ID]] == ["Next", "After"]
+
+
+async def test_play_next_repeat_one_also_guarded_while_resolving(music: MusicService) -> None:
+    """repeat=one replays current.track — with a resolve in flight that
+    would be play(None); the guard must fire before the repeat branch."""
+    music.get_player = lambda _gid: SimpleNamespace(playing=False)  # type: ignore[method-assign]
+    music.set_repeat(GUILD_ID, "one")
+    music.current_items[GUILD_ID] = QueueItem(track=None, requested_by_id=1, pending_url="x", title="Resolving")
+    result = await music.play_next(GUILD_ID, "finished")
+    assert result is None
+
+
+async def test_play_next_dead_entry_recursion_clears_current(music: MusicService) -> None:
+    """A failed resolve recurses into play_next; the dead item must be
+    popped first or the in-flight guard stalls the whole queue."""
+    async def dead_resolve(_item):  # type: ignore[no-untyped-def]
+        raise MusicServiceError("dead link")
+
+    music._resolve_item = dead_resolve  # type: ignore[method-assign]
+    music.get_player = lambda _gid: SimpleNamespace(playing=True)  # type: ignore[method-assign]
+    fill_queue(music, ["A", "B"])
+    result = await music.play_next(GUILD_ID)
+    assert result is None
+    assert len(music.queues[GUILD_ID]) == 0
+    assert music.current_items.get(GUILD_ID) is None

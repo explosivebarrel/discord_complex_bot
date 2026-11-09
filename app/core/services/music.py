@@ -1255,6 +1255,13 @@ class MusicService:
         if player is None:
             return None
         current = self.current_items.get(guild_id)
+        # An unresolved current means a resolve is already in flight: a
+        # natural end event can race a skip (stop() fires "stopped" right
+        # before the natural "finished"). The first event drives the queue;
+        # a second play_next here would eat extra queue entries — drop it.
+        # The recursion paths below pop current_items first on purpose.
+        if current is not None and current.track is None:
+            return None
         if reason == "finished" and self.repeat_modes.get(guild_id) == "one" and current is not None:
             # Replay the same track; the queue stays as it is. An explicit
             # skip ("stopped") still moves to the next track.
@@ -1285,7 +1292,9 @@ class MusicService:
             window, next_index = self._expand_marker(item)
             if not window:
                 # The playlist session expired; drop the marker and move on.
-                self.current_items[guild_id] = item
+                # current_items is cleared so the in-flight guard in the
+                # recursive call does not treat the marker as a resolve.
+                self.current_items.pop(guild_id, None)
                 return await self.play_next(guild_id, reason)
             # Splice the window where the marker stood: tracks queued after it
             # keep their order, the new marker follows its own window.
@@ -1308,6 +1317,8 @@ class MusicService:
             track = await self._resolve_item(item)
         except MusicServiceError as exc:
             # A dead entry must not stop the queue; report it and move on.
+            # current_items is cleared so the in-flight guard in the
+            # recursive call does not treat the dead item as a resolve.
             self.record_error(str(exc), {"guild_id": guild_id, "title": item.display_title})
             await self.notify(
                 guild_id,
@@ -1315,6 +1326,7 @@ class MusicService:
                 "Track skipped",
                 f'"{item.display_title}" — {exc}',
             )
+            self.current_items.pop(guild_id, None)
             return await self.play_next(guild_id, reason)
         item.track = track
         try:
