@@ -174,7 +174,14 @@ function ExternalPlaylistView({
               </Tooltip>
             )}
             <Tooltip title="Close">
-              <IconButton size="small" onClick={onClose} aria-label="Close external playlist" sx={{ borderRadius: "50%" }}>
+              {/* A fixed square: the row stretches children, and a stretched
+                  small IconButton turns borderRadius:50% into an oval. */}
+              <IconButton
+                size="small"
+                onClick={onClose}
+                aria-label="Close external playlist"
+                sx={{ width: 34, height: 34, flexShrink: 0, alignSelf: "center", borderRadius: "50%" }}
+              >
                 <DeleteOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
