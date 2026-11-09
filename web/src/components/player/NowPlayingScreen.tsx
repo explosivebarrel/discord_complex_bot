@@ -424,9 +424,10 @@ export function NowPlayingScreen({
                     color: "#fff",
                     fontSize: "clamp(28px, 3vw, 40px)",
                     fontWeight: 700,
-                    // The column's 30vh top padding already lands the
-                    // number below the viewport top; no extra offset needed
-                    // now that the padding actually applies.
+                    // The column's 30vh top padding is for the scrolling
+                    // lines; the number itself sits higher — pull it up
+                    // out of that padding so the gap above it stays small.
+                    mt: "-12vh",
                     mb: 5,
                     fontVariantNumeric: "tabular-nums",
                   }}
