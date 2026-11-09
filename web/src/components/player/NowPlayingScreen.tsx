@@ -360,7 +360,10 @@ export function NowPlayingScreen({
       </Stack>
 
       {/* Lyrics column, Yandex-Music style: big bold lines on the right,
-          the active one lit up; a countdown until the first line starts. */}
+          the active one lit up; a countdown until the first line starts.
+          The fade mask and the huge vertical padding exist to center the
+          synced line while scrolling — plain (unsynced) text reads better
+          without them. */}
       {lyricsOpen && (
         <Box
           ref={lyricsRef}
@@ -370,9 +373,13 @@ export function NowPlayingScreen({
             height: "min(76vh, 760px)",
             overflowY: "auto",
             px: 3,
-            py: "30vh 0 40vh",
-            maskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
-            WebkitMaskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
+            ...(synced.length > 0
+              ? {
+                  py: "30vh 0 40vh",
+                  maskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
+                  WebkitMaskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
+                }
+              : { py: 3 }),
           }}
         >
           {lyricsQuery.isLoading ? (

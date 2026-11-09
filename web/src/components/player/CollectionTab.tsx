@@ -174,7 +174,7 @@ function ExternalPlaylistView({
               </Tooltip>
             )}
             <Tooltip title="Close">
-              <IconButton size="small" onClick={onClose} aria-label="Close external playlist">
+              <IconButton size="small" onClick={onClose} aria-label="Close external playlist" sx={{ borderRadius: "50%" }}>
                 <DeleteOutlined fontSize="small" />
               </IconButton>
             </Tooltip>
