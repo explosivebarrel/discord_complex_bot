@@ -431,10 +431,16 @@ export function NowPlayingScreen({
                     textAlign: "center",
                     cursor: "pointer",
                     color: "#fff",
-                    py: 1.4,
-                    fontSize: i === activeLine ? "clamp(24px, 2.6vw, 34px)" : "clamp(19px, 2vw, 27px)",
-                    fontWeight: i === activeLine ? 700 : 600,
+                    py: 1.6,
+                    // Identical font metrics for every line: the wrap point
+                    // never moves, so activating a long line cannot reflow
+                    // it onto a second row. The karaoke emphasis is a
+                    // transform (visual only, no layout) + opacity.
+                    fontSize: "clamp(19px, 2vw, 27px)",
+                    fontWeight: 600,
                     opacity: i === activeLine ? 1 : 0.32,
+                    transform: i === activeLine ? "scale(1.18)" : "scale(1)",
+                    transformOrigin: "center",
                     transition: "all .25s",
                     "&:hover": { opacity: i === activeLine ? 1 : 0.55 },
                   }}
