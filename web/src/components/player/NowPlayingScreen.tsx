@@ -225,7 +225,20 @@ export function NowPlayingScreen({
           px: { xs: 2, md: 6 },
         }}
       >
-      <Stack spacing={2.5} sx={{ alignItems: "center", maxWidth: 560, px: 3, position: "relative", mt: -4 }}>
+      <Stack
+        spacing={2.5}
+        sx={{
+          alignItems: "center",
+          maxWidth: 560,
+          px: 3,
+          position: "relative",
+          mt: -4,
+          // Narrow screens: with the lyrics column open the stacked cover
+          // block only pushes the lyrics below the fold — show the lyrics
+          // alone (the top-right controls stay).
+          display: { xs: lyricsOpen ? "none" : "flex", md: "flex" },
+        }}
+      >
         {/* Cover with the transport revealed on hover / touch. */}
         <Box
           sx={{
