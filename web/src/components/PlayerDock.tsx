@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { IconArrowBack as ArrowBack, IconBedtime as Bedtime, IconCheck as Check, IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconLyrics as Lyrics, IconMoreHoriz as MoreHoriz, IconPause as Pause, IconPlayArrow as PlayArrow, IconPlaylistAdd as PlaylistAdd, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
@@ -191,19 +191,32 @@ export function PlayerDock({
   };
   // The dock's measured width also drives the row-vs-stack layout decision.
   const dockRef = useRef<HTMLDivElement | null>(null);
+  const dockRoRef = useRef<ResizeObserver | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  const attachDock = (el: HTMLDivElement | null) => {
+  // Stable ref callback: a fresh closure here would make React detach and
+  // re-attach the ref on EVERY render, and each attach would synchronously
+  // measure offsetWidth and setState mid-commit. During a sheet/popover
+  // transition (animated content width + a websocket push) those nested
+  // commits exceed React's update-depth limit and crash the whole tree
+  // (error #185). Same-size updates still bail out via the functional form.
+  const attachDock = useCallback((el: HTMLDivElement | null) => {
     dockRef.current = el;
-    if (el) setSize((p) => (p && p.w === el.offsetWidth && p.h === el.offsetHeight ? p : { w: el.offsetWidth, h: el.offsetHeight }));
-  };
-  const fabRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    const el = dockRef.current;
+    dockRoRef.current?.disconnect();
+    dockRoRef.current = null;
     if (!el) return;
-    const ro = new ResizeObserver(() => setSize({ w: el.offsetWidth, h: el.offsetHeight }));
+    const measure = () =>
+      setSize((p) => {
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        return p && p.w === w && p.h === h ? p : { w, h };
+      });
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    dockRoRef.current = ro;
   }, []);
+  useEffect(() => () => dockRoRef.current?.disconnect(), []);
+  const fabRef = useRef<HTMLButtonElement | null>(null);
   // Full WebGL glass: the dock and the FAB-lens are scene islands — the
   // lens is painted beneath their transparent DOM; CSS glass stays the
   // fallback. The gate tracks the dock being MOUNTED (the early return
