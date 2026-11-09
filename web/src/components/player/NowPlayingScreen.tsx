@@ -424,10 +424,9 @@ export function NowPlayingScreen({
                     color: "#fff",
                     fontSize: "clamp(28px, 3vw, 40px)",
                     fontWeight: 700,
-                    // Pushed below the natural scroll start: on entry the
-                    // number sits noticeably lower than the line flow, so
-                    // the eye lands on it first.
-                    mt: "14vh",
+                    // The column's 30vh top padding already lands the
+                    // number below the viewport top; no extra offset needed
+                    // now that the padding actually applies.
                     mb: 5,
                     fontVariantNumeric: "tabular-nums",
                   }}
