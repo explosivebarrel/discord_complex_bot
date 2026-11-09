@@ -151,6 +151,11 @@ export function NowPlayingScreen({
         zIndex: (t) => t.zIndex.appBar + 5,
         overflow: "hidden",
         display: "grid",
+        // The column track must be the container, not the content's
+        // max-content: with placeItems center an auto track grew to the
+        // wrapper's fit-content width and pushed the layout off-screen
+        // on phones.
+        gridTemplateColumns: "minmax(0, 1fr)",
         placeItems: "center",
       }}
     >
@@ -233,6 +238,10 @@ export function NowPlayingScreen({
           px: 3,
           position: "relative",
           mt: -4,
+          // Narrow screens: take the full container width. With the
+          // max-content 560px layout the centered flex overflowed to the
+          // right and clipped the title (the "shifted right" bug).
+          width: { xs: "100%", md: "auto" },
           // Narrow screens: with the lyrics column open the stacked cover
           // block only pushes the lyrics below the fold — show the lyrics
           // alone (the top-right controls stay).
@@ -322,8 +331,8 @@ export function NowPlayingScreen({
           </Box>
         </Box>
 
-        <Box sx={{ textAlign: "center", maxWidth: 520 }}>
-          <Typography variant="h5" noWrap sx={{ color: "#fff", fontWeight: 500 }}>
+        <Box sx={{ textAlign: "center", maxWidth: 520, width: "100%", minWidth: 0 }}>
+          <Typography variant="h5" noWrap sx={{ color: "#fff", fontWeight: 500, maxWidth: "100%" }}>
             {current.title}
           </Typography>
           <Typography variant="body1" noWrap sx={{ color: "rgba(255,255,255,.72)" }}>
