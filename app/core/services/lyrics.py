@@ -16,7 +16,8 @@ import httpx
 from app.core.db.database import Database
 
 _LRC_LINE = re.compile(r"\[(\d+):(\d+(?:[.:]\d+)?)\](.*)")
-_API = "https://lrclib.net/api/get"
+_API_GET = "https://lrclib.net/api/get"
+_API_SEARCH = "https://lrclib.net/api/search"
 
 
 def parse_lrc(raw: str) -> list[list[Any]]:
@@ -38,6 +39,21 @@ def _cache_key(artist: str, title: str) -> str:
     return Database.lyrics_key(artist, title)
 
 
+def _pick_record(records: list[dict[str, Any]], duration_s: int) -> dict[str, Any] | None:
+    """Best record from /api/search: synced beats plain, then the closest
+    duration wins (different releases of the same track carry their own
+    synced LRC files)."""
+    if not records:
+        return None
+    return min(
+        records,
+        key=lambda r: (
+            0 if r.get("syncedLyrics") else 1,
+            abs((r.get("duration") or 0) - duration_s),
+        ),
+    )
+
+
 async def fetch_lyrics(db: Database, artist: str, title: str, duration_s: int) -> dict[str, Any] | None:
     """Cached lyrics for a track, or None when LRCLIB has nothing."""
     if not artist.strip() or not title.strip():
@@ -46,22 +62,38 @@ async def fetch_lyrics(db: Database, artist: str, title: str, duration_s: int) -
     cached = await db.get_lyrics(key)
     if cached is not None:
         return cached
-    params = {
-        "artist_name": artist.strip(),
-        "track_name": title.strip(),
-        "album_name": "",
-        "duration": max(duration_s, 1),
-    }
+    headers = {"User-Agent": "discord-complex-bot/1.0"}
     try:
-        async with httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "discord-complex-bot/1.0"}) as client:
-            resp = await client.get(_API, params=params)
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+            get_resp = await client.get(
+                _API_GET,
+                params={
+                    "artist_name": artist.strip(),
+                    "track_name": title.strip(),
+                    "album_name": "",
+                    "duration": max(duration_s, 1),
+                },
+            )
+            synced_raw = plain = None
+            if get_resp.status_code == 200:
+                data = get_resp.json()
+                synced_raw, plain = data.get("syncedLyrics"), data.get("plainLyrics")
+            if not synced_raw:
+                # The exact lookup misses far too often (duration mismatches,
+                # differently spelled releases): the fuzzy search also finds
+                # records WITH synced lyrics for tracks /api/get returned
+                # plain-only or nothing for.
+                search_resp = await client.get(
+                    _API_SEARCH,
+                    params={"track_name": title.strip(), "artist_name": artist.strip()},
+                )
+                if search_resp.status_code == 200:
+                    best = _pick_record(search_resp.json(), duration_s)
+                    if best is not None:
+                        synced_raw = synced_raw or best.get("syncedLyrics")
+                        plain = plain or best.get("plainLyrics")
     except Exception:  # noqa: BLE001 - lyrics are decorative
         return None
-    if resp.status_code != 200:
-        return None
-    data = resp.json()
-    synced_raw = data.get("syncedLyrics")
-    plain = data.get("plainLyrics")
     result: dict[str, Any] | None = None
     if synced_raw:
         synced = parse_lrc(synced_raw)
@@ -69,6 +101,9 @@ async def fetch_lyrics(db: Database, artist: str, title: str, duration_s: int) -
             result = {"synced": synced, "plain": plain}
     elif plain:
         result = {"synced": [], "plain": plain}
-    if result is not None:
-        await db.save_lyrics(key, result)
+    else:
+        # Cache the miss too: a track without lyrics would otherwise hit
+        # LRCLIB on every single play.
+        result = {"synced": [], "plain": ""}
+    await db.save_lyrics(key, result)
     return result

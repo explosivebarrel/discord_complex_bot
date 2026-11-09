@@ -1478,3 +1478,17 @@ async def test_play_next_survives_crashing_resolve(music: MusicService) -> None:
     assert track.title == "OK 3"
     assert len(music.queues[GUILD_ID]) == 0
     assert music.current_items[GUILD_ID].track is track
+
+
+def test_lyrics_record_pick_prefers_synced_then_duration() -> None:
+    from app.core.services.lyrics import _pick_record
+
+    records = [
+        {"syncedLyrics": None, "plainLyrics": "a", "duration": 223},
+        {"syncedLyrics": "[00:01] x", "plainLyrics": "b", "duration": 260},
+        {"syncedLyrics": "[00:02] y", "plainLyrics": "c", "duration": 225},
+    ]
+    # Synced beats plain; among synced the closest duration wins.
+    assert _pick_record(records, 224)["syncedLyrics"] == "[00:02] y"
+    assert _pick_record([], 224) is None
+    assert _pick_record([{"syncedLyrics": None, "plainLyrics": "a", "duration": 999}], 224)["plainLyrics"] == "a"
