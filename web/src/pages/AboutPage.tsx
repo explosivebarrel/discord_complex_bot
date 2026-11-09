@@ -84,7 +84,7 @@ function AvailabilityTab() {
               {Object.entries(status.data.statuses).map(([key, value]) => (
                 <StatusRow key={key} label={SERVICE_LABELS[key] ?? key} value={value} palette={palette} />
               ))}
-              <StatusRow label="Discord bot" value={status.data.bot_ready ? 2 : 0} palette={palette} />
+              {/* The bot itself is the discord_gateway probe — no extra row. */}
             </Box>
           ) : (
             <Typography variant="body2" sx={{ color: "text.secondary" }}>
