@@ -3,7 +3,7 @@
  * large feature blocks, ZZ for daily fixes. The current version is the
  * last entry of CHANGELOG; bump it with every release commit.
  */
-export const BOT_VERSION = "v3.04.00";
+export const BOT_VERSION = "v3.05.00";
 
 export interface ChangelogBlock {
   version: string;
@@ -16,6 +16,24 @@ export interface ChangelogBlock {
 }
 
 export const CHANGELOG: ChangelogBlock[] = [
+  {
+    version: "v3.05.00",
+    commit: "0999ffb",
+    date: "2026-11-10",
+    title: "Playback stability, lyrics rework and the dock 'more' sheet",
+    points: [
+      "Dock rework: transport, favorites and repeat stay in the main row; effects, sleep timer, lyrics and add-to-playlist moved into a 'more' sheet sliding up from the bottom (Stop is back in the main row)",
+      "Lyrics rework: two-column now-playing in the Yandex Music style - a toggle next to the collapse chevron, a countdown until the first line, a large highlighted active line; unsynced text renders without the fade mask",
+      "Queue engine hardening: a track whose source cannot be loaded (expired VK / okcdn links, loadType errors) no longer dead-locks the queue via the in-flight guard - it is skipped with a notification and playback moves on",
+      "'Track ended early' detection: streams that die mid-play (previously silent 'finished' events) are reported through notifications, measured by the wall clock since the track started",
+      "Skip race fixed: duplicate track-end events (player.stop() racing the natural end) no longer advance the queue by several tracks at once",
+      "Fixed the 500 on every panel enqueue (a trailing comma made a model default a tuple) and 500s during Discord outages: /auth/guilds answers 503 and sessions survive instead of being logged out",
+      "Icon subset rebuilt from every string literal in the frontend (103 glyphs): ternary and map-driven names like arrow_menu_* no longer break after a rebuild; the build script verifies ligature coverage itself",
+      "Liquid Glass home page: section-button lenses register correctly (the render-time ref check kept them off) and the Open player pill carries a neon accent glow while the shader warms up",
+      "API integration test suite for the panel contract (enqueue shapes, player actions, settings roundtrip, outage handling) - 127 tests green",
+      "Polish: round close button in external playlists, x1.5 speed visible in the effects list",
+    ],
+  },
   {
     version: "v3.04.00",
     commit: "4de343c",
