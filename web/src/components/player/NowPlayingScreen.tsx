@@ -398,7 +398,13 @@ export function NowPlayingScreen({
             px: 7,
             ...(synced.length > 0
               ? {
-                  py: "30vh 0 40vh",
+                  // Explicit longhands: the `py: "a b c"` shorthand is
+                  // invalid for MUI's py (it applies one value to both
+                  // sides) and was silently dropped. The generous tail
+                  // lets the last lines scroll up out of the bottom fade,
+                  // same as the countdown offset at the top.
+                  paddingTop: "30vh",
+                  paddingBottom: "55vh",
                   maskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
                   WebkitMaskImage: "linear-gradient(to bottom, transparent, black 12%, black 85%, transparent)",
                 }
