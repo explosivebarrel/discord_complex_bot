@@ -523,20 +523,17 @@ export function PlayerPage() {
       onOpenNowPlaying={state?.current ? () => setNowPlayingOpen(true) : undefined}
       favorite={!!state?.current && favorites.some((f) => f.uri === state.current?.uri)}
       onToggleFavorite={state?.current ? () => toggleFavorite(state.current as TrackInfo) : undefined}
-      playlistMenu={
-        state?.current ? (
-          <PlaylistAddMenu
-            size="medium"
-            track={{
+      playlistTrack={
+        state?.current
+          ? {
               title: state.current.title,
               author: state.current.author,
               uri: state.current.uri ?? "",
               source: state.current.source ?? "",
               length_ms: state.current.length,
               artwork: state.current.artwork,
-            }}
-          />
-        ) : null
+            }
+          : null
       }
     />
   );

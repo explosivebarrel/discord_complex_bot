@@ -1,13 +1,27 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Chip, CircularProgress, IconButton, LinearProgress, ListItemIcon, ListItemText, Menu, MenuItem, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Chip, CircularProgress, Drawer, IconButton, LinearProgress, List, ListItemButton, ListItemIcon, ListItemText, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { IconBedtime as Bedtime, IconCheck as Check, IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
+import { IconArrowBack as ArrowBack, IconBedtime as Bedtime, IconCheck as Check, IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconLyrics as Lyrics, IconMoreHoriz as MoreHoriz, IconPause as Pause, IconPlayArrow as PlayArrow, IconPlaylistAdd as PlaylistAdd, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
+import type { PlaylistTrackRef } from "./PlaylistAddMenu";
+import { PlaylistMenuContent } from "./PlaylistAddMenu";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
 import { useGlassIsland } from "./glass/glassRegistry";
 
 const LIVE_LENGTH = 9223372036854775807;
+
+/** Nested view header inside the "more" sheet: a back row plus the title. */
+function SheetHeader({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <ListItemButton onClick={onBack} sx={{ borderRadius: 1 }}>
+      <ListItemIcon sx={{ minWidth: 40 }}>
+        <ArrowBack fontSize="small" />
+      </ListItemIcon>
+      <ListItemText primary={label} slotProps={{ primary: { variant: "subtitle2" } }} />
+    </ListItemButton>
+  );
+}
 
 function fmt(ms: number): string {
   if (ms >= LIVE_LENGTH) return "LIVE";
@@ -106,6 +120,7 @@ const EFFECTS: Array<[string, string]> = [
   ["8d", "8D audio"],
   ["robot", "Robot"],
   ["karaoke", "Karaoke"],
+  ["speed15", "×1.5 speed"],
 ];
 
 export function PlayerDock({
@@ -124,7 +139,7 @@ export function PlayerDock({
   onRepeatCycle,
   favorite,
   onToggleFavorite,
-  playlistMenu,
+  playlistTrack,
   onOpenNowPlaying,
 }: {
   state: PlayerState | null;
@@ -142,7 +157,8 @@ export function PlayerDock({
   onRepeatCycle: () => void;
   favorite: boolean;
   onToggleFavorite?: () => void;
-  playlistMenu?: React.ReactNode;
+  /** Current track for the "add to playlist" sheet view (null hides it). */
+  playlistTrack?: PlaylistTrackRef | null;
   /** Opens the full-screen now-playing view (click on artwork or title). */
   onOpenNowPlaying?: () => void;
 }) {
@@ -156,8 +172,19 @@ export function PlayerDock({
   const [livePos, setLivePos] = useState(0);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [effectsAnchor, setEffectsAnchor] = useState<HTMLElement | null>(null);
-  const [sleepAnchor, setSleepAnchor] = useState<HTMLElement | null>(null);
+  // The "more" sheet: the less-frequent actions (effects, sleep timer,
+  // add to playlist, stop) live in a bottom drawer instead of crowding
+  // the dock row.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreView, setMoreView] = useState<"root" | "effects" | "sleep" | "playlist">("root");
+  const openMore = (view: "root" | "effects" | "sleep" | "playlist" = "root") => {
+    setMoreView(view);
+    setMoreOpen(true);
+  };
+  const closeMore = () => {
+    setMoreOpen(false);
+    setMoreView("root");
+  };
   // The dock's measured width also drives the row-vs-stack layout decision.
   const dockRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -457,16 +484,13 @@ export function PlayerDock({
         }}
       >
         {/* Current-track actions live with the transport side of the dock:
-            like (filled when already favorited) and add-to-playlist. */}
+            like (filled when already favorited). */}
         {current && (
-          <>
-            <Tooltip title={favorite ? "Remove from favorites" : "Add to favorites"}>
-              <IconButton onClick={onToggleFavorite} aria-label="Toggle favorite" sx={favorite ? { color: "primary.main" } : undefined}>
-                <Favorite filled={favorite} />
-              </IconButton>
-            </Tooltip>
-            {playlistMenu}
-          </>
+          <Tooltip title={favorite ? "Remove from favorites" : "Add to favorites"}>
+            <IconButton onClick={onToggleFavorite} aria-label="Toggle favorite" sx={favorite ? { color: "primary.main" } : undefined}>
+              <Favorite filled={favorite} />
+            </IconButton>
+          </Tooltip>
         )}
         <Tooltip title={`Repeat: ${repeat === "off" ? "off (click for queue)" : repeat === "all" ? "whole queue (click for one track)" : "one track (click to turn off)"}`}>
           <IconButton
@@ -476,79 +500,10 @@ export function PlayerDock({
             {repeat === "one" ? <RepeatOne /> : <Repeat />}
           </IconButton>
         </Tooltip>
-        <Tooltip title={`Sound effects: ${EFFECTS.find(([id]) => id === effect)?.[1] ?? "Clear"}`}>
-          <IconButton
-            onClick={(e) => setEffectsAnchor(e.currentTarget)}
-            aria-label="Sound effects"
-            sx={effect !== "none" ? { color: "primary.main" } : { color: "text.secondary" }}
-          >
-            <GraphicEq />
+        <Tooltip title="More: effects, sleep timer, add to playlist, stop">
+          <IconButton onClick={() => openMore()} aria-label="More player actions">
+            <MoreHoriz />
           </IconButton>
-        </Tooltip>
-        <Menu
-          open={!!effectsAnchor}
-          anchorEl={effectsAnchor}
-          onClose={() => setEffectsAnchor(null)}
-          anchorOrigin={{ vertical: "top", horizontal: "right" }}
-          transformOrigin={{ vertical: "bottom", horizontal: "right" }}
-        >
-          {EFFECTS.map(([id, label]) => (
-            <MenuItem
-              key={id}
-              selected={id === effect}
-              onClick={() => {
-                setEffectsAnchor(null);
-                onEffectChange?.(id);
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 32 }}>
-                {id === effect ? <Check fontSize={18} /> : null}
-              </ListItemIcon>
-              <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
-            </MenuItem>
-          ))}
-        </Menu>
-        <Tooltip title={sleepRemaining ? `Sleep timer: ${Math.round(sleepRemaining / 60)} min left` : "Sleep timer"}>
-          <IconButton
-            onClick={(e) => setSleepAnchor(e.currentTarget)}
-            aria-label="Sleep timer"
-            sx={sleepRemaining ? { color: "primary.main" } : { color: "text.secondary" }}
-          >
-            <Bedtime />
-          </IconButton>
-        </Tooltip>
-        <Menu
-          open={!!sleepAnchor}
-          anchorEl={sleepAnchor}
-          onClose={() => setSleepAnchor(null)}
-          anchorOrigin={{ vertical: "top", horizontal: "right" }}
-          transformOrigin={{ vertical: "bottom", horizontal: "right" }}
-        >
-          {([
-            [null, "Off"],
-            [0, "After the current track"],
-            [15, "15 minutes"],
-            [30, "30 minutes"],
-            [45, "45 minutes"],
-            [60, "60 minutes"],
-          ] as Array<[number | null, string]>).map(([minutes, label]) => (
-            <MenuItem
-              key={label}
-              onClick={() => {
-                setSleepAnchor(null);
-                onSleep?.(minutes);
-              }}
-            >
-              <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
-            </MenuItem>
-          ))}
-        </Menu>
-        <Tooltip title="Stop and clear the queue">
-          <span>
-            <IconButton onClick={onStop} disabled={!current && !state.queue.length} sx={{ color: "error.main" }}>
-              <Stop />
-            </IconButton>
-          </span>
         </Tooltip>
         {/* The inline slider needs ~120px on top of the five icons: with a
             wide dock it fits, otherwise the icon + popover takes over (the
@@ -615,6 +570,115 @@ export function PlayerDock({
           </Typography>
         </Box>
       </Popover>
+
+      {/* "More" sheet: slides up from the dock edge; nested views keep the
+          whole flow in one surface (root -> effects/sleep/playlist). */}
+      <Drawer
+        anchor="bottom"
+        open={moreOpen}
+        onClose={closeMore}
+        slotProps={{ paper: { sx: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxWidth: 420, mx: "auto", width: "100%" } } }}
+      >
+        <Box sx={{ display: "flex", justifyContent: "center", pt: 1 }}>
+          <Box sx={{ width: 36, height: 4, borderRadius: 999, bgcolor: "divider" }} />
+        </Box>
+        <List sx={{ px: 1, pb: 2 }}>
+          {moreView === "root" && (
+            <>
+              <ListItemButton onClick={() => setMoreView("effects")}>
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  <GraphicEq sx={effect !== "none" ? { color: "primary.main" } : undefined} />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Sound effects"
+                  secondary={EFFECTS.find(([id]) => id === effect)?.[1] ?? "Clear"}
+                  slotProps={{ secondary: { color: effect !== "none" ? "primary" : undefined } }}
+                />
+              </ListItemButton>
+              <ListItemButton onClick={() => setMoreView("sleep")}>
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  <Bedtime sx={sleepRemaining ? { color: "primary.main" } : undefined} />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Sleep timer"
+                  secondary={sleepRemaining ? `${Math.max(1, Math.round(sleepRemaining / 60))} min left` : "Off"}
+                />
+              </ListItemButton>
+              {current && onOpenNowPlaying && (
+                <ListItemButton onClick={() => { closeMore(); onOpenNowPlaying(); }}>
+                  <ListItemIcon sx={{ minWidth: 40 }}>
+                    <Lyrics />
+                  </ListItemIcon>
+                  <ListItemText primary="Lyrics" secondary="Synced lyrics on the now-playing screen" slotProps={{ secondary: { noWrap: true } }} />
+                </ListItemButton>
+              )}
+              {playlistTrack && (
+                <ListItemButton onClick={() => setMoreView("playlist")}>
+                  <ListItemIcon sx={{ minWidth: 40 }}>
+                    <PlaylistAdd />
+                  </ListItemIcon>
+                  <ListItemText primary="Add to playlist" secondary={`Current: ${playlistTrack.title}`} slotProps={{ secondary: { noWrap: true } }} />
+                </ListItemButton>
+              )}
+              <ListItemButton onClick={onStop} disabled={!current && !state.queue.length}>
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  <Stop sx={{ color: "error.main" }} />
+                </ListItemIcon>
+                <ListItemText primary="Stop and clear the queue" slotProps={{ primary: { color: "error.main" } }} />
+              </ListItemButton>
+            </>
+          )}
+          {moreView === "effects" && (
+            <>
+              <SheetHeader label="Sound effects" onBack={() => setMoreView("root")} />
+              {EFFECTS.map(([id, label]) => (
+                <ListItemButton
+                  key={id}
+                  selected={id === effect}
+                  onClick={() => {
+                    onEffectChange?.(id);
+                    closeMore();
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40 }}>
+                    {id === effect ? <Check /> : null}
+                  </ListItemIcon>
+                  <ListItemText primary={label} />
+                </ListItemButton>
+              ))}
+            </>
+          )}
+          {moreView === "sleep" && (
+            <>
+              <SheetHeader label="Sleep timer" onBack={() => setMoreView("root")} />
+              {([
+                [null, "Off"],
+                [0, "After the current track"],
+                [15, "15 minutes"],
+                [30, "30 minutes"],
+                [45, "45 minutes"],
+                [60, "60 minutes"],
+              ] as Array<[number | null, string]>).map(([minutes, label]) => (
+                <ListItemButton
+                  key={label}
+                  onClick={() => {
+                    onSleep?.(minutes);
+                    closeMore();
+                  }}
+                >
+                  <ListItemText primary={label} />
+                </ListItemButton>
+              ))}
+            </>
+          )}
+          {moreView === "playlist" && playlistTrack && (
+            <>
+              <SheetHeader label="Add to playlist" onBack={() => setMoreView("root")} />
+              <PlaylistMenuContent track={playlistTrack} onDone={closeMore} />
+            </>
+          )}
+        </List>
+      </Drawer>
     </Box>
   );
 }

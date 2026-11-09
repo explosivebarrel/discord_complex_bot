@@ -42,6 +42,8 @@ export const IconCode = ic("code");
 /** Outlined to keep the destructive action light. */
 export const IconDelete = ic("delete", false);
 export const IconEdit = ic("edit");
+export const IconLyrics = ic("lyrics");
+export const IconMoreHoriz = ic("more_horiz");
 export const IconError = ic("error", false);
 export const IconFolder = ic("folder");
 export const IconFormatBold = ic("format_bold");
