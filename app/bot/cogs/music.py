@@ -146,6 +146,12 @@ class MusicCog(commands.Cog):
         embed.set_footer(text=f"{pos // 60}:{pos % 60:02d} / {length // 60}:{length % 60:02d}")
         paused = bool(current.get("paused"))
         await interaction.response.send_message(embed=embed, view=NowPlayingView(paused=paused))
+        # The message becomes the live now-playing card: following tracks
+        # edit it instead of leaving a stale snapshot.
+        msg = await interaction.original_response()
+        await self.bot.music.adopt_np_message(
+            interaction.guild_id or 0, msg.id, interaction.channel_id or 0
+        )
 
     @app_commands.command(name="sleep", description="Fade the music out and pause after N minutes")
     @app_commands.describe(minutes="Minutes until the fade-out; omit to cancel the timer")

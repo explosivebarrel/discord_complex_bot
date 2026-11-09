@@ -1162,6 +1162,15 @@ class MusicService:
         except Exception:  # noqa: BLE001 - announcements must never break playback
             logger.exception("Now-playing announcement failed for guild %s", guild_id)
 
+    async def adopt_np_message(self, guild_id: int, message_id: int, channel_id: int) -> None:
+        """/nowplaying: its message becomes the live now-playing card. The
+        following tracks edit it in place (the announcement channel moves
+        with it, so the Manage toggle stays truthful)."""
+        await self.db.update_guild_settings(
+            guild_id, np_channel_id=channel_id, np_message_id=message_id
+        )
+        self.np_recreate.discard(guild_id)
+
     # --- fun effects: Lavalink filter presets ---
 
     EFFECT_PRESETS: dict[str, str] = {

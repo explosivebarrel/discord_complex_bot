@@ -8,7 +8,11 @@ layer, so nothing circular.
 """
 from __future__ import annotations
 
+import logging
+
 import discord
+
+logger = logging.getLogger(__name__)
 
 
 class NowPlayingView(discord.ui.View):
@@ -21,18 +25,28 @@ class NowPlayingView(discord.ui.View):
 
     @discord.ui.button(emoji="⏯", label="Pause", style=discord.ButtonStyle.secondary, custom_id="np:pause")
     async def pause_toggle(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        music = interaction.client.music
-        state = await music.get_state(interaction.guild_id)
-        paused = bool((state.get("current") or {}).get("paused"))
-        await music.set_paused(interaction.guild_id, not paused)
-        await interaction.response.edit_message(view=NowPlayingView(paused=not paused))
+        # Acknowledge first: the toggle itself (a state round-trip) can
+        # outlive Discord's 3-second interaction window.
+        await interaction.response.defer_update()
+        try:
+            music = interaction.client.music
+            state = await music.get_state(interaction.guild_id)
+            paused = bool((state.get("current") or {}).get("paused"))
+            await music.set_paused(interaction.guild_id, not paused)
+            await interaction.edit_original_response(view=NowPlayingView(paused=not paused))
+        except Exception:  # noqa: BLE001 - the button must never sit on an error
+            logger.exception("NP pause toggle failed")
+            await interaction.followup.send("Playback control failed — try again.", ephemeral=True)
 
-    @discord.ui.button(emoji="⏭", style=discord.ButtonStyle.secondary, custom_id="np:skip")
+    @discord.ui.button(emoji="⏭", label="Skip", style=discord.ButtonStyle.secondary, custom_id="np:skip")
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        result = await interaction.client.music.request_skip(interaction.guild_id, interaction.user.id)
-        if result.get("skipped"):
-            await interaction.response.defer_update()
-        else:
-            await interaction.response.send_message(
-                f"Skip vote: {result.get('votes')}/{result.get('needed')}", ephemeral=True
-            )
+        await interaction.response.defer_update()
+        try:
+            result = await interaction.client.music.request_skip(interaction.guild_id, interaction.user.id)
+            if not result.get("skipped"):
+                await interaction.followup.send(
+                    f"Skip vote: {result.get('votes')}/{result.get('needed')}", ephemeral=True
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("NP skip failed")
+            await interaction.followup.send("Skip failed — try again.", ephemeral=True)
