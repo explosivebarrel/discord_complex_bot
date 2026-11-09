@@ -3,7 +3,6 @@ import {
   Badge,
   Box,
   Button,
-  IconButton,
   ListItemIcon,
   ListItemButton,
   List,
@@ -45,11 +44,17 @@ export function NotificationBell({ collapsed }: { collapsed: boolean }) {
     return (
       <>
         <Tooltip title={badge ? `Notifications — ${unread} unread` : "Notifications"} placement="right" disableInteractive>
-          <IconButton onClick={open} aria-label="Notifications" sx={{ mx: "auto", display: "flex", mb: 0.5 }}>
+          {/* Same 48px round row as the palette/availability rail buttons:
+              a plain IconButton's 40px halo reads smaller than theirs. */}
+          <ListItemButton
+            onClick={open}
+            aria-label="Notifications"
+            sx={{ width: 48, height: 48, minHeight: 48, px: 0, mx: "auto", mb: 0.5, borderRadius: "50%", justifyContent: "center" }}
+          >
             <Badge badgeContent={badge} color="primary">
               <MsIcon name="notifications" fontSize={22} />
             </Badge>
-          </IconButton>
+          </ListItemButton>
         </Tooltip>
         <NotificationsPopover anchor={anchor} onClose={close} items={items} loaded={loaded} />
       </>

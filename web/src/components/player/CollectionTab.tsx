@@ -177,10 +177,9 @@ function ExternalPlaylistView({
               {/* A fixed square: the row stretches children, and a stretched
                   small IconButton turns borderRadius:50% into an oval. */}
               <IconButton
-                size="small"
                 onClick={onClose}
                 aria-label="Close external playlist"
-                sx={{ width: 34, height: 34, flexShrink: 0, alignSelf: "center", borderRadius: "50%" }}
+                sx={{ width: 40, height: 40, flexShrink: 0, alignSelf: "center", borderRadius: "50%" }}
               >
                 <DeleteOutlined fontSize="small" />
               </IconButton>
