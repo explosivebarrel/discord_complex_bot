@@ -377,6 +377,9 @@ export const api = {
 
   notifications: () => fetch("/api/notifications?limit=40").then((r) => handle<NotificationInfo[]>(r)),
 
+  clearNotifications: () =>
+    fetch("/api/notifications", { method: "DELETE" }).then((r) => handle<{ status: string }>(r)),
+
   playlistPreview: (guildId: string, query: string, source = "all") =>
     fetch(`/api/guilds/${guildId}/player/playlist/preview`, {
       method: "POST",

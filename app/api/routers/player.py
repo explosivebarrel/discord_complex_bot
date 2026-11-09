@@ -57,6 +57,16 @@ async def list_notifications(
     return await db.list_notifications(min(max(limit, 1), 100))
 
 
+@root_router.delete("/api/notifications")
+async def clear_notifications(
+    user: CurrentUser = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> dict[str, str]:
+    """Wipe the shared notification log (the bell's "Clear all")."""
+    await db.clear_notifications()
+    return {"status": "cleared"}
+
+
 class JoinBody(BaseModel):
     channel_id: int
 

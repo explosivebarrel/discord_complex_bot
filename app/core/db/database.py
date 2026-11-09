@@ -1031,6 +1031,11 @@ class Database:
             await session.execute(delete(Notification).where(Notification.created_at < before))
             await session.commit()
 
+    async def clear_notifications(self) -> None:
+        async with self.session_factory() as session:
+            await session.execute(delete(Notification))
+            await session.commit()
+
     async def load_music_snapshots(self) -> dict[int, dict[str, Any]]:
         import json as _json
 

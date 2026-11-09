@@ -54,3 +54,12 @@ export function markAllRead() {
   localStorage.setItem(LAST_SEEN_KEY, String(Date.now()));
   emit();
 }
+
+/** "Clear all": wipes the shared log server-side and empties the local
+    list (the last-seen marker moves with it so the badge stays empty). */
+export async function clearAllNotifications() {
+  items = [];
+  localStorage.setItem(LAST_SEEN_KEY, String(Date.now()));
+  emit();
+  await api.clearNotifications().catch(() => undefined);
+}

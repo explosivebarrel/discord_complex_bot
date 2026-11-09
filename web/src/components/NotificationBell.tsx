@@ -13,7 +13,7 @@ import {
   Typography,
 } from "@mui/material";
 import { MsIcon } from "./MsIcon";
-import { useNotifications, markAllRead } from "../useNotifications";
+import { useNotifications, markAllRead, clearAllNotifications } from "../useNotifications";
 
 const CATEGORY_ICON: Record<string, string> = {
   player: "error",
@@ -101,6 +101,18 @@ export function NotificationsPopover({
         </Typography>
         <Button size="small" variant="text" onClick={markAllRead} disabled={!items.length}>
           Mark read
+        </Button>
+        <Button
+          size="small"
+          variant="text"
+          color="error"
+          onClick={() => {
+            close();
+            clearAllNotifications();
+          }}
+          disabled={!items.length}
+        >
+          Clear all
         </Button>
       </Stack>
       <Box sx={{ overflowY: "auto", px: 1, pb: 1.5 }}>
