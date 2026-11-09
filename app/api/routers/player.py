@@ -73,7 +73,7 @@ class EnqueueBody(BaseModel):
     artwork: str | None = None
     # VK userscript capture: the signed CDN stream URL taken off the page;
     # plays without any server-side VK token.
-    stream_url: str | None = None,
+    stream_url: str | None = None
     # "Play next": insert at the queue head instead of the tail.
     play_next: bool = False
 
