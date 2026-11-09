@@ -186,9 +186,16 @@ export function NowPlayingScreen({
               onClick={() => setLyricsOpen((o) => !o)}
               aria-label="Toggle lyrics"
               sx={{
-                color: "#fff",
+                // Active: the theme's primary fill with its own contrast
+                // color (dark on the lilac Liquid Glass) — white on the
+                // light fill is unreadable in dark themes.
+                color: lyricsOpen ? "primary.contrastText" : "#fff",
                 bgcolor: lyricsOpen ? "primary.main" : "rgba(255,255,255,.12)",
-                "&:hover": { bgcolor: lyricsOpen ? "primary.main" : "rgba(255,255,255,.22)", filter: "brightness(1.1)" },
+                "&:hover": {
+                  bgcolor: lyricsOpen ? "primary.main" : "rgba(255,255,255,.22)",
+                  color: lyricsOpen ? "primary.contrastText" : "#fff",
+                  filter: "brightness(1.08)",
+                },
               }}
             >
               <LyricsIcon />
