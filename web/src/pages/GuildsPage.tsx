@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar, Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
@@ -17,14 +17,21 @@ function guildIconUrl(guild: GuildBrief) {
 
 /** Guild card section button: disabled with a hint when no access. On the
     Liquid Glass theme the pill becomes a scene lens (the shader paints the
-    glass beneath the transparent button). */
+    glass beneath the transparent button); the primary pill carries a neon
+    tint from the theme accent so it stays visible while the shader warms
+    up — a transparent pill over the dark backdrop reads as "not there". */
 function SectionButton({ label, icon, href, enabled, hint, primary }: { label: string; icon: React.ReactNode; href: string; enabled: boolean; hint?: string; primary?: boolean }) {
   const { glassWebgl } = useAppTheme();
   const ref = useRef<HTMLAnchorElement | null>(null);
+  // Same mount gate the dock uses: the ref is null on the first render,
+  // so a render-time `!!ref.current` registered the lens once with
+  // enabled=false and never re-ran — the glass never appeared.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   useGlassIsland(
     ref,
     { radius: 999, kind: "lens" },
-    glassWebgl && !!ref.current,
+    glassWebgl && mounted,
   );
   const button = (
     <Button
@@ -34,16 +41,31 @@ function SectionButton({ label, icon, href, enabled, hint, primary }: { label: s
       size="small"
       startIcon={icon}
       disabled={!enabled}
-      sx={(t) => ({
-        flex: 1,
-        ...(t.surface.islands && glassWebgl
-          ? {
-              bgcolor: "transparent",
-              "&:hover": { bgcolor: alpha(t.palette.primary.main, 0.18) },
-              "&.Mui-disabled": { bgcolor: "transparent", color: t.palette.primary.contrastText, opacity: 0.4 },
-            }
-          : {}),
-      })}
+      sx={(t) => {
+        const glass = t.surface.islands && glassWebgl;
+        const accent = t.palette.primary.main;
+        return {
+          flex: 1,
+          ...(glass
+            ? {
+                bgcolor: primary ? alpha(accent, 0.16) : "transparent",
+                ...(primary
+                  ? {
+                      color: "#fff",
+                      boxShadow: `inset 0 0 0 1px ${alpha(accent, 0.65)}, 0 0 16px ${alpha(accent, 0.3)}, inset 0 1px 0 ${alpha("#FFFFFF", 0.25)}`,
+                    }
+                  : {}),
+                "&:hover": {
+                  bgcolor: alpha(accent, primary ? 0.28 : 0.18),
+                  ...(primary
+                    ? { boxShadow: `inset 0 0 0 1px ${alpha(accent, 0.85)}, 0 0 22px ${alpha(accent, 0.45)}, inset 0 1px 0 ${alpha("#FFFFFF", 0.3)}` }
+                    : {}),
+                },
+                "&.Mui-disabled": { bgcolor: "transparent", color: t.palette.primary.contrastText, opacity: 0.4 },
+              }
+            : {}),
+        };
+      }}
     >
       {label}
     </Button>
