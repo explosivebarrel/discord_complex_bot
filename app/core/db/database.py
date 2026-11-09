@@ -836,13 +836,21 @@ class Database:
     def lyrics_key(artist: str, title: str) -> str:
         return f"{(artist or '').strip().lower()}|{(title or '').strip().lower()}"[:320]
 
-    async def get_lyrics(self, key: str) -> dict[str, Any] | None:
+    async def get_lyrics(self, key: str, max_age_s: float | None = None) -> dict[str, Any] | None:
+        """The cached lyrics, or None when absent — or older than
+        ``max_age_s`` (the rolling TTL: a stale entry re-fetches, and even
+        a miss is re-saved, extending its lifetime)."""
         import json as _json
 
         async with self.session_factory() as session:
             row = await session.get(LyricsCache, key)
             if row is None:
                 return None
+            if max_age_s is not None and row.created_at is not None:
+                from app.core.db.models import utcnow
+
+                if utcnow() - row.created_at > timedelta(seconds=max_age_s):
+                    return None
             return _json.loads(row.data)
 
     async def save_lyrics(self, key: str, data: dict[str, Any]) -> None:

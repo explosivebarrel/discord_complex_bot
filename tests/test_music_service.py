@@ -1492,3 +1492,16 @@ def test_lyrics_record_pick_prefers_synced_then_duration() -> None:
     assert _pick_record(records, 224)["syncedLyrics"] == "[00:02] y"
     assert _pick_record([], 224) is None
     assert _pick_record([{"syncedLyrics": None, "plainLyrics": "a", "duration": 999}], 224)["plainLyrics"] == "a"
+
+
+async def test_lyrics_cache_ttl(db: Database) -> None:
+    """The rolling TTL: a fresh entry reads back, an expired one is
+    treated as a miss so the lookup re-fetches."""
+    key = "artist|title"
+    await db.save_lyrics(key, {"synced": [], "plain": ""})
+    fresh = await db.get_lyrics(key, max_age_s=7 * 24 * 3600)
+    assert fresh == {"synced": [], "plain": ""}
+    # Zero TTL = everything is stale.
+    assert await db.get_lyrics(key, max_age_s=0) is None
+    # No TTL = the historic never-expire behavior.
+    assert await db.get_lyrics(key) is not None

@@ -1,8 +1,10 @@
 """Synced lyrics via LRCLIB (lrclib.net): free, no tokens.
 
-The lookup is cached in the lyrics_cache table (lyrics never change).
-syncedLyrics comes in LRC format "[mm:ss.xx] text" and is parsed into
-[seconds, text] pairs for the panel's karaoke-style view.
+The lookup is cached in the lyrics_cache table with a rolling TTL: a
+fresh re-request refreshes the entry, a miss just extends it for
+another cycle (a track that has no lyrics today rarely grows them
+tomorrow). syncedLyrics comes in LRC format "[mm:ss.xx] text" and is
+parsed into [seconds, text] pairs for the panel's karaoke-style view.
 """
 from __future__ import annotations
 
@@ -54,12 +56,18 @@ def _pick_record(records: list[dict[str, Any]], duration_s: int) -> dict[str, An
     )
 
 
+# A rolling cache TTL: live results refresh on re-request, misses are
+# re-saved (extending for another cycle) so a lyrics-less track does not
+# hit LRCLIB on every play, yet a later community upload gets picked up.
+LYRICS_TTL_S = 7 * 24 * 3600
+
+
 async def fetch_lyrics(db: Database, artist: str, title: str, duration_s: int) -> dict[str, Any] | None:
     """Cached lyrics for a track, or None when LRCLIB has nothing."""
     if not artist.strip() or not title.strip():
         return None
     key = _cache_key(artist, title)
-    cached = await db.get_lyrics(key)
+    cached = await db.get_lyrics(key, max_age_s=LYRICS_TTL_S)
     if cached is not None:
         return cached
     headers = {"User-Agent": "discord-complex-bot/1.0"}
