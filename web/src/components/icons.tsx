@@ -8,6 +8,15 @@ type IconProps = { fontSize?: number | string; className?: string; sx?: SxProps<
 // its icons from one collection. `ic` maps MUI-style props onto MsIcon
 // and translates the legacy fontSize="small" to 20px. className must be
 // forwarded: MUI clones icon elements with wrapper classes (Chip etc.).
+//
+// Rebuilding the subset after adding a glyph here (icon ligatures live in
+// the rlig feature; a naive --glyphs-file subset keeps glyphs but the
+// WOFF2 output drops glyph names, so prune GSUB first):
+//   1. names=$(grep -o 'ic("[a-z_0-9]*")' icons.tsx | sed 's/ic("//;s/")//' | sort -u)
+//   2. prune the full font's GSUB rlig lookups to ligature glyphs from
+//      that list (fontTools: filter ligatures by LigGlyph), save a temp ttf
+//   3. pyftsubset temp.ttf --glyphs-file=names --layout-features='*' --flavor=woff2
+//      -> web/public/fonts/material-symbols-rounded-subset.woff2
 const ic = (name: string, fill = true) => {
   const Component = ({ fontSize = 24, className, sx }: IconProps) => (
     <MsIcon name={name} fontSize={fontSize === "small" ? 20 : fontSize} fill={fill} className={className} sx={sx} />

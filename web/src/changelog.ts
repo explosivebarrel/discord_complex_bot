@@ -18,6 +18,7 @@ export interface ChangelogBlock {
 export const CHANGELOG: ChangelogBlock[] = [
   {
     version: "v3.04.00",
+    commit: "4de343c",
     date: "2026-11-09",
     title: "Player QoL batch: sleep timer, voice rejoin, vote-skip, lyrics, effects, permissions",
     points: [
