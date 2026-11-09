@@ -92,6 +92,12 @@ async def get_settings(
         "mod_log_channel_id": (
             str(settings.mod_log_channel_id) if settings.mod_log_channel_id is not None else None
         ),
+        "vote_skip": settings.vote_skip,
+        "np_channel_id": str(settings.np_channel_id) if settings.np_channel_id is not None else None,
+        "volume_access": settings.volume_access,
+        "effects_access": settings.effects_access,
+        "queue_clear_access": settings.queue_clear_access,
+        "seek_access": settings.seek_access,
     }
 
 

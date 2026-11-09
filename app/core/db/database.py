@@ -67,10 +67,18 @@ class Database:
         autoplay_playlist_id: int | None = None,
         *,
         clear_autoplay_playlist: bool = False,
+        clear_np_channel: bool = False,
         stats_access: str | None = None,
         posts_access: str | None = None,
         moderation_access: str | None = None,
         mod_log_channel_id: int | None = None,
+        vote_skip: bool | None = None,
+        np_channel_id: int | None = None,
+        np_message_id: int | None = None,
+        volume_access: str | None = None,
+        effects_access: str | None = None,
+        queue_clear_access: str | None = None,
+        seek_access: str | None = None,
     ) -> GuildSettings:
         async with self.session_factory() as session:
             settings = await session.get(GuildSettings, guild_id)
@@ -99,6 +107,24 @@ class Database:
                 settings.moderation_access = moderation_access
             if mod_log_channel_id is not None:
                 settings.mod_log_channel_id = mod_log_channel_id
+            if vote_skip is not None:
+                settings.vote_skip = vote_skip
+            if clear_np_channel:
+                settings.np_channel_id = None
+                settings.np_message_id = None
+            else:
+                if np_channel_id is not None:
+                    settings.np_channel_id = np_channel_id
+                if np_message_id is not None:
+                    settings.np_message_id = np_message_id
+            for field, value in (
+                ("volume_access", volume_access),
+                ("effects_access", effects_access),
+                ("queue_clear_access", queue_clear_access),
+                ("seek_access", seek_access),
+            ):
+                if value is not None:
+                    setattr(settings, field, value)
             await session.commit()
             return settings
 
@@ -792,6 +818,8 @@ class Database:
             row.queue = _json.dumps(data.get("queue") or [], ensure_ascii=False)
             row.played = _json.dumps(data.get("played") or [], ensure_ascii=False)
             row.repeat = str(data.get("repeat") or "off")
+            row.voice_channel_id = data.get("voice_channel_id")
+            row.effect = data.get("effect")
             row.saved_at = utcnow()
             await session.commit()
 
@@ -801,6 +829,35 @@ class Database:
             if row is not None:
                 await session.delete(row)
                 await session.commit()
+
+    # --- lyrics cache ---
+
+    @staticmethod
+    def lyrics_key(artist: str, title: str) -> str:
+        return f"{(artist or '').strip().lower()}|{(title or '').strip().lower()}"[:320]
+
+    async def get_lyrics(self, key: str) -> dict[str, Any] | None:
+        import json as _json
+
+        async with self.session_factory() as session:
+            row = await session.get(LyricsCache, key)
+            if row is None:
+                return None
+            return _json.loads(row.data)
+
+    async def save_lyrics(self, key: str, data: dict[str, Any]) -> None:
+        import json as _json
+
+        from app.core.db.models import utcnow
+
+        async with self.session_factory() as session:
+            row = await session.get(LyricsCache, key)
+            if row is None:
+                row = LyricsCache(key=key)
+                session.add(row)
+            row.data = _json.dumps(data, ensure_ascii=False)
+            row.created_at = utcnow()
+            await session.commit()
 
     # --- track artwork cache ---
 
@@ -976,6 +1033,8 @@ class Database:
                     "queue": _json.loads(row.queue or "[]"),
                     "played": _json.loads(row.played or "[]"),
                     "repeat": row.repeat,
+                    "voice_channel_id": row.voice_channel_id,
+                    "effect": row.effect,
                 }
                 for row in rows
             }
