@@ -114,6 +114,15 @@ def _stream_from_json(body: str, owner_id: int, audio_id: int) -> tuple[str | No
             continue
         url = row.get("url")
         if isinstance(url, str) and _looks_like_stream(url):
+            # HE-AAC decodes at half sample rate in lavaplayer (the x2
+            # chipmunk): when the main url is an AAC variant, look for an
+            # mp3 alternative in the audio_streams list.
+            if ".aac" in url.lower() or "aac" in url.rsplit("?", 1)[0].rsplit("/", 1)[-1].lower():
+                for st in row.get("audio_streams") or []:
+                    alt = (st or {}).get("url") if isinstance(st, dict) else None
+                    if isinstance(alt, str) and ".mp3" in alt.lower() and _looks_like_stream(alt):
+                        url = alt
+                        break
             return url, _artwork_from_row(row)
     return None, None
 

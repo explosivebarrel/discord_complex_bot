@@ -1235,12 +1235,19 @@ class MusicService:
             raise MusicServiceError("The source could not be loaded.") from exc
         item.track = track
         # Stream-type telemetry: the x2-speed reports need to be matched
-        # against what the source actually handed out (mp3 vs aac/hls).
+        # against what the source actually handed out (mp3 vs aac/hls) and
+        # against a leftover speed effect (nightcore / x1.5).
+        uri = getattr(track, "uri", "") or getattr(item, "pending_url", "") or ""
+        effect = self.effects.get(guild_id, "none")
         logger.info(
-            "Play %r [%s] %s",
-            item.display_title[:48], item.source,
-            (getattr(track, "uri", "") or getattr(item, "pending_url", "") or "")[:110],
+            "Play %r [%s] %s%s",
+            item.display_title[:48], item.source, uri[:110],
+            f" [effect:{effect}]" if effect != "none" else "",
         )
+        if ".aac" in uri.lower():
+            # lavaplayer decodes raw HE-AAC at half sample rate — flag the
+            # report candidates instead of letting them hide in the log.
+            logger.warning("HE-AAC stream for %r — x2-speed risk", item.display_title[:48])
         await player.play(track)
         self.play_started_at[guild_id] = time.monotonic()
         # The now-playing embed goes out after the track actually started:
