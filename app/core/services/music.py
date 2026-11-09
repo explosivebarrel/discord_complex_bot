@@ -147,6 +147,11 @@ class MusicService:
         # YouTube blocks re-loading a direct video URL, so the web panel queues
         # tracks from this cache instead of asking Lavalink to load again.
         self.track_cache: dict[str, dict[str, Any]] = {}
+        # Monotonic timestamp of the moment the current track started
+        # playing, per guild. Lavalink reports a plain "finished" when a
+        # stream dies mid-play; player.position is already 0 at that
+        # event, so the wall clock since the start is the reliable signal.
+        self.play_started_at: dict[int, float] = {}
         # Last playback failure, shown on the web panel settings page.
         self.last_error: dict[str, Any] | None = None
         # Sleep timer per guild: the running fade task and the deadline.
@@ -1209,7 +1214,16 @@ class MusicService:
         player = self.get_player(guild_id)
         if player is None:
             raise MusicServiceError("Bot is not connected to a voice channel.")
-        track = await self._resolve_item(item)
+        try:
+            track = await self._resolve_item(item)
+        except MusicServiceError:
+            raise
+        except Exception as exc:
+            # Callers (enqueue, jump_to, ...) only map MusicServiceError to
+            # a 400; an unexpected resolve error must not surface as a 500
+            # and must never leave the item half-resolved.
+            logger.exception("Unexpected resolve failure for guild %s: %r", guild_id, item.display_title)
+            raise MusicServiceError("The source could not be loaded.") from exc
         item.track = track
         # Stream-type telemetry: the x2-speed reports need to be matched
         # against what the source actually handed out (mp3 vs aac/hls).
@@ -1219,6 +1233,7 @@ class MusicService:
             (getattr(track, "uri", "") or getattr(item, "pending_url", "") or "")[:110],
         )
         await player.play(track)
+        self.play_started_at[guild_id] = time.monotonic()
         # The now-playing embed goes out after the track actually started:
         # it never blocks or breaks playback.
         asyncio.create_task(self._announce_now_playing(guild_id, item))
@@ -1328,6 +1343,21 @@ class MusicService:
             )
             self.current_items.pop(guild_id, None)
             return await self.play_next(guild_id, reason)
+        except Exception as exc:
+            # A resolve can also die with an unexpected error (e.g. a
+            # LavalinkLoadException for an expired signed CDN link). It must
+            # never escape: an escaped failure leaves current unresolved and
+            # the in-flight guard would then silence the queue forever.
+            logger.exception("Unexpected resolve failure for guild %s: %r", guild_id, item.display_title)
+            self.record_error(f"Resolve crashed: {exc}", {"guild_id": guild_id, "title": item.display_title})
+            await self.notify(
+                guild_id,
+                "player",
+                "Track skipped",
+                f'"{item.display_title}" — the source could not be loaded.',
+            )
+            self.current_items.pop(guild_id, None)
+            return await self.play_next(guild_id, reason)
         item.track = track
         try:
             await player.play(track)
@@ -1341,6 +1371,7 @@ class MusicService:
             if player is None:
                 raise
             await player.play(track)
+        self.play_started_at[guild_id] = time.monotonic()
         if not item.is_autoplay:
             self._push_played(guild_id, item)
         await self._record_history(guild_id, item)

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+import wavelink
+
 from app.core.db import Database
 from app.core.services import vk_music
 from app.core.services.music import MusicService, MusicServiceError, PlaylistSession, QueueItem
@@ -1450,3 +1452,29 @@ async def test_play_next_dead_entry_recursion_clears_current(music: MusicService
     assert result is None
     assert len(music.queues[GUILD_ID]) == 0
     assert music.current_items.get(GUILD_ID) is None
+
+
+async def test_play_next_survives_crashing_resolve(music: MusicService) -> None:
+    """A resolve that dies with an unexpected error (LavalinkLoadException
+    for an expired signed link) must be treated as a dead entry: notify,
+    clear current, move on. An escaped exception would leave current
+    unresolved and the in-flight guard would silence the queue forever."""
+    calls = {"n": 0}
+
+    async def flaky_resolve(item):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise wavelink.LavalinkLoadException("That URL is not playable.")
+        return make_track(f"OK {calls['n']}")
+
+    music._resolve_item = flaky_resolve  # type: ignore[method-assign]
+    stub = SimpleNamespace(playing=False)
+    async def play(track): stub.playing = True
+    stub.play = play
+    music.get_player = lambda _gid: stub  # type: ignore[method-assign]
+    fill_queue(music, ["Dead1", "Dead2", "Alive"])
+    track = await music.play_next(GUILD_ID)
+    assert track is not None
+    assert track.title == "OK 3"
+    assert len(music.queues[GUILD_ID]) == 0
+    assert music.current_items[GUILD_ID].track is track

@@ -504,7 +504,14 @@ export function PlayerDock({
             {repeat === "one" ? <RepeatOne /> : <Repeat />}
           </IconButton>
         </Tooltip>
-        <Tooltip title="More: effects, sleep timer, add to playlist, stop">
+        <Tooltip title="Stop and clear the queue">
+          <span>
+            <IconButton onClick={onStop} disabled={!current && !state.queue.length} sx={{ color: "error.main" }}>
+              <Stop />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="More: effects, sleep timer, add to playlist">
           <IconButton onClick={() => openMore()} aria-label="More player actions">
             <MoreHoriz />
           </IconButton>
@@ -624,12 +631,6 @@ export function PlayerDock({
                   <ListItemText primary="Add to playlist" secondary={`Current: ${playlistTrack.title}`} slotProps={{ secondary: { noWrap: true } }} />
                 </ListItemButton>
               )}
-              <ListItemButton onClick={onStop} disabled={!current && !state.queue.length}>
-                <ListItemIcon sx={{ minWidth: 40 }}>
-                  <Stop sx={{ color: "error.main" }} />
-                </ListItemIcon>
-                <ListItemText primary="Stop and clear the queue" slotProps={{ primary: { color: "error.main" } }} />
-              </ListItemButton>
             </>
           )}
           {moreView === "effects" && (

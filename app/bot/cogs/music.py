@@ -220,34 +220,31 @@ class MusicCog(commands.Cog):
             return
         if track_key:
             self._last_track_end[guild_id] = (track_key, now)
-        # A source that dies early (expired CDN link, connection reset)
-        # reports a plain "finished": Lavalink sees the stream EOF and the
-        # queue moves on with no exception anywhere. Compare the stopped
-        # position with the track length and surface the premature end.
+        # A source that dies early (expired CDN link, connection reset,
+        # rate-limited CDN) reports a plain "finished": Lavalink sees the
+        # stream EOF and the queue moves on with no exception anywhere.
+        # player.position is already 0 at this event, so the wall clock
+        # since the track started is the reliable measure.
         try:
             track = payload.track
             length = int(track.length or 0)
-            position = int(payload.player.position or 0)
             is_stream = bool(getattr(track, "is_stream", False)) or length >= 9_223_372_036_854_775_807
-            if (
-                payload.reason == "finished"
-                and not is_stream
-                and length > 30_000
-                and 0 < position < length - 10_000
-            ):
+            started = self.bot.music.play_started_at.get(guild_id)
+            played_ms = int((time.monotonic() - started) * 1000) if started else 0
+            if payload.reason == "finished" and not is_stream and length > 30_000 and 0 < played_ms < length - 10_000:
                 logger.info(
-                    "Track ended early for guild %s: %r at %s/%sms",
-                    guild_id, track.title[:48], position, length,
+                    "Track ended early for guild %s: %r after %s/%sms",
+                    guild_id, track.title[:48], played_ms, length,
                 )
                 self.bot.music.record_error(
                     "Track ended early",
-                    {"guild_id": guild_id, "position": position, "length": length},
+                    {"guild_id": guild_id, "played_ms": played_ms, "length": length},
                 )
                 await self.bot.music.notify(
                     guild_id,
                     "player",
                     "Track ended early",
-                    f'"{track.title}" stopped at {position // 1000}/{length // 1000}s — '
+                    f'"{track.title}" stopped after {played_ms // 1000}/{length // 1000}s — '
                     "the source stream died before the end.",
                 )
         except Exception:  # noqa: BLE001 - telemetry must never break playback
