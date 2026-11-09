@@ -59,6 +59,7 @@ export interface CollectionTabProps {
   onBrowserPlay: (index: number) => void;
   onBrowserAdd: (indices: number[]) => void;
   onBrowserAddAll: () => void;
+  onImport?: (name: string) => void;
 }
 
 /** A compact track row (two-column favorite grids, playlist contents):
@@ -112,7 +113,7 @@ function TrackRow({
     page in the same style as our own playlist pages: a hero with the
     cover mosaic and the usual actions, then track rows with hover pills. */
 function ExternalPlaylistView({
-  playlist, busy, onClose, onBack, onReload, onPlay, onAdd, onAddAll, onMenu,
+  playlist, busy, onClose, onBack, onReload, onPlay, onAdd, onAddAll, onMenu, onImport,
 }: {
   playlist: import("../../api").PlaylistPageInfo;
   busy: boolean;
@@ -123,6 +124,7 @@ function ExternalPlaylistView({
   onAdd: (indices: number[]) => void;
   onAddAll: () => void;
   onMenu: (e: React.MouseEvent, spec: TrackMenuSpec) => void;
+  onImport?: (name: string) => void;
 }) {
   const [filter, setFilter] = useState("");
   const heroCovers = [...new Set(playlist.tracks.map((t) => t.artwork).filter((x): x is string => !!x))].slice(0, 4);
@@ -160,6 +162,17 @@ function ExternalPlaylistView({
                 <PlaylistAdd />
               </IconButton>
             </Tooltip>
+            {onImport && (
+              <Tooltip title="Copy this playlist into my playlists">
+                <Button
+                  disabled={busy || playlist.tracks.length === 0}
+                  startIcon={<PlaylistAdd />}
+                  onClick={() => onImport(playlist.title)}
+                >
+                  Import
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip title="Close">
               <IconButton size="small" onClick={onClose} aria-label="Close external playlist">
                 <DeleteOutlined fontSize="small" />
@@ -302,7 +315,7 @@ export function CollectionTab(props: CollectionTabProps) {
     openPl, plOpening, createPlaylist, plBusy, onShufflePlay, onPlayPlaylist, onOpenPlaylist, onDetailDelete, onBackFromExternal,
     onQueueAll, onPlayPlaylistTrack, onQueuePlaylistTrack, onRemovePlaylistTrack, onQueueFavorites,
     uploads, canModerateUploads, queueUpload, removeUpload, enqueueing, playlist, playlistBusy, onCloseBrowser,
-    onReloadBrowser, onBrowserPlay, onBrowserAdd, onBrowserAddAll,
+    onReloadBrowser, onBrowserPlay, onBrowserAdd, onBrowserAddAll, onImport,
   } = props;
   const [newPlOpen, setNewPlOpen] = useState(false);
   const [newPlName, setNewPlName] = useState("");
@@ -422,6 +435,7 @@ export function CollectionTab(props: CollectionTabProps) {
         onAdd={onBrowserAdd}
         onAddAll={onBrowserAddAll}
         onMenu={onMenu}
+        onImport={onImport}
       />
     );
   }

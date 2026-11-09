@@ -36,6 +36,14 @@ class UpdateSettingsBody(BaseModel):
     posts_access: str | None = None
     moderation_access: str | None = None
     mod_log_channel_id: int | None = None
+    vote_skip: bool | None = None
+    np_channel_id: int | None = None
+    # None = keep, -1 = clear (announcements off).
+    clear_np_channel: bool = False
+    volume_access: str | None = None
+    effects_access: str | None = None
+    queue_clear_access: str | None = None
+    seek_access: str | None = None
 
 
 class AddAdminBody(BaseModel):
@@ -99,7 +107,10 @@ async def update_settings(
     # super-admin) may rewrite them, otherwise any panel admin could grant
     # themselves more access. Everything else stays admin-editable.
     owner_field = any(
-        value is not None for value in (body.stats_access, body.posts_access, body.moderation_access)
+        value is not None for value in (
+            body.stats_access, body.posts_access, body.moderation_access,
+            body.volume_access, body.effects_access, body.queue_clear_access, body.seek_access,
+        )
     )
     if owner_field and not is_guild_owner(bot, guild_id, user):
         raise HTTPException(status_code=403, detail="Only the server owner can change section access")
@@ -116,6 +127,13 @@ async def update_settings(
         posts_access=body.posts_access,
         moderation_access=body.moderation_access,
         mod_log_channel_id=body.mod_log_channel_id,
+        vote_skip=body.vote_skip,
+        clear_np_channel=body.clear_np_channel,
+        np_channel_id=(body.np_channel_id if (body.np_channel_id or 0) > 0 else None),
+        volume_access=body.volume_access,
+        effects_access=body.effects_access,
+        queue_clear_access=body.queue_clear_access,
+        seek_access=body.seek_access,
     )
     await db.audit(
         "admin.update_settings",

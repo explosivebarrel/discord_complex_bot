@@ -44,12 +44,25 @@ class ComplexBot(commands.Bot):
             if ext not in self.extensions:
                 await self.load_extension(ext)
         await self.tree.sync()
+        # Persistent now-playing buttons: Discord needs the view registered
+        # with timeout=None for the custom_ids to survive restarts.
+        from app.bot.np import NowPlayingView
+
+        self.add_view(NowPlayingView())
         logger.info("Slash commands synced")
         # Pool.connect retries until Lavalink is reachable. Run it as a background
         # task, because the gateway connect waits for setup_hook to finish.
         asyncio.create_task(wavelink_connect(self), name="lavalink-connect")
 
     async def on_ready(self) -> None:
+        # Voice rejoin after a restart: re-enter the saved channels and
+        # resume the queues. Guarded inside — on_ready fires on every
+        # gateway reconnect, the rejoin must happen once per process.
+        try:
+            await self.music.rejoin_voice()
+        except Exception:  # noqa: BLE001 - a failed rejoin never blocks readiness
+            logger.exception("Voice rejoin failed")
+
         logger.info(
             "Bot ready as %s (%s), guilds: %d", self.user, self.user and self.user.id, len(self.guilds)
         )

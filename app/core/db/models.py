@@ -35,6 +35,17 @@ class GuildSettings(Base):
     moderation_access: Mapped[str] = mapped_column(String(16), default="admins")
     # Moderation actions are mirrored to this channel as embeds.
     mod_log_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Vote-skip: a skip counts only when half the voice channel agrees.
+    vote_skip: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Now-playing announcements go to this text channel (None = off); the
+    # np_message_id is the single embed the bot keeps editing.
+    np_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    np_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Player action permissions: admins | members | off (off = owner only).
+    volume_access: Mapped[str] = mapped_column(String(16), default="members")
+    effects_access: Mapped[str] = mapped_column(String(16), default="members")
+    queue_clear_access: Mapped[str] = mapped_column(String(16), default="members")
+    seek_access: Mapped[str] = mapped_column(String(16), default="members")
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
 
@@ -182,7 +193,20 @@ class MusicSnapshot(Base):
     queue: Mapped[str] = mapped_column(Text, default="[]")
     played: Mapped[str] = mapped_column(Text, default="[]")
     repeat: Mapped[str] = mapped_column(String(8), default="off")
+    # Voice rejoin after restart: where the bot was and which effect ran.
+    voice_channel_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    effect: Mapped[str | None] = mapped_column(String(32), nullable=True)
     saved_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
+class LyricsCache(Base):
+    """Cached LRCLIB lyrics, keyed by "artist|title" (like the artwork cache)."""
+
+    __tablename__ = "lyrics_cache"
+
+    key: Mapped[str] = mapped_column(String(320), primary_key=True)
+    data: Mapped[str] = mapped_column(Text)  # JSON: {synced: [[sec, text]], plain: str|null}
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
 
 
 class TrackArtwork(Base):

@@ -7,8 +7,30 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, get_current_user, get_db
 from app.core.db import Database
+from app.core.services.music import MusicService, MusicServiceError
+from app.api.deps import get_music, get_oauth, get_bot, require_guild_member
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
+
+
+class ImportBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    url: str
+    source: str = "yt"
+
+
+class SaveQueueBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+async def _create_from_tracks(db: Database, user_id: int, name: str, tracks: list[dict[str, Any]]) -> int:
+    playlist_id = await db.create_user_playlist(user_id, name)
+    if playlist_id is None:
+        raise HTTPException(status_code=409, detail=f"A playlist named \"{name}\" already exists")
+    added, _skipped = await db.add_user_playlist_tracks(
+        user_id, playlist_id, tracks
+    )
+    return added
 
 
 class CreatePlaylistBody(BaseModel):
@@ -100,4 +122,54 @@ async def remove_track(
     if not removed:
         raise HTTPException(status_code=404, detail="Track not found in the playlist")
     return {"removed": True}
+
+
+@router.post("/import")
+async def import_external(
+    body: ImportBody,
+    user: CurrentUser = Depends(get_current_user),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Copy an external playlist (Yandex Music, YouTube, ...) into the
+    user's personal playlists: it then plays without any external service."""
+    try:
+        session = await music.open_playlist(body.url, body.source)
+    except MusicServiceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    exported = music.playlist_export(session.id)
+    tracks = [tr for tr in exported["tracks"] if tr.get("uri")]
+    if not tracks:
+        raise HTTPException(status_code=400, detail="This playlist has no importable tracks")
+    added = await _create_from_tracks(db, user.discord_id, body.name, tracks)
+    return {"imported": added, "total": len(tracks)}
+
+
+@router.post("/from-queue/{guild_id}")
+async def save_queue(
+    guild_id: int,
+    body: SaveQueueBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Save the current queue (and the playing track) as a personal playlist."""
+    state = await music.get_state(guild_id)
+    rows = ([state["current"]] if state.get("current") else []) + state.get("queue") or []
+    tracks = [
+        {
+            "title": r.get("title") or "",
+            "author": r.get("author") or "",
+            "uri": r.get("uri") or "",
+            "source": r.get("source") or "",
+            "length_ms": int(r.get("length") or 0),
+            "artwork": r.get("artwork"),
+        }
+        for r in rows
+        if r.get("uri")
+    ]
+    if not tracks:
+        raise HTTPException(status_code=400, detail="The queue is empty — nothing to save")
+    added = await _create_from_tracks(db, user.discord_id, body.name, tracks)
+    return {"saved": added, "total": len(tracks)}
 

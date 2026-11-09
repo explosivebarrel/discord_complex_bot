@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import contextlib
 import json
 import logging
@@ -148,6 +149,17 @@ class MusicService:
         self.track_cache: dict[str, dict[str, Any]] = {}
         # Last playback failure, shown on the web panel settings page.
         self.last_error: dict[str, Any] | None = None
+        # Sleep timer per guild: the running fade task and the deadline.
+        self.sleep_tasks: dict[int, asyncio.Task] = {}
+        self.sleep_deadlines: dict[int, float] = {}
+        self.sleep_volume: dict[int, int] = {}
+        # Vote-skip ballots per guild (cleared on every track change).
+        self.skip_votes: dict[int, set[int]] = {}
+        # Voice rejoin after restart: snapshots awaiting connect, and the
+        # "create a fresh now-playing message" flag per guild.
+        self.pending_rejoin: dict[int, dict[str, Any]] = {}
+        self.np_recreate: set[int] = set()
+        self.rejoined = False
         # Cached flat playlists for the panel browser (PlaylistSession).
         self.playlist_sessions: dict[int, PlaylistSession] = {}
         self._playlist_seq = 0
@@ -605,6 +617,7 @@ class MusicService:
         source: str = "yt",
         meta: dict[str, Any] | None = None,
         stream_url: str | None = None,
+        play_next: bool = False,
     ) -> dict[str, Any]:
         """Add a search query, a track URL or a whole playlist to the queue.
 
@@ -838,7 +851,12 @@ class MusicService:
             await self._play_item(guild_id, first)
             now_playing = True
         else:
-            queue.extend(items)
+            if play_next:
+                # Right after the current track, before everything queued
+                # earlier — the "play next" action.
+                queue.extendleft(reversed(items))
+            else:
+                queue.extend(items)
         return {
             "queued": len(items),
             "title": title,
@@ -1070,6 +1088,66 @@ class MusicService:
             return None
         return loaded[0]
 
+    # --- now-playing announcements ---
+
+    async def _announce_now_playing(self, guild_id: int, item: QueueItem) -> None:
+        """Post/edit the now-playing embed in the configured text channel.
+
+        One message per guild is kept and edited on every track; a fresh
+        message is created after a voice (re)connect or when the old one is
+        gone. Failures are logged and swallowed.
+        """
+        try:
+            settings = await self.db.get_guild_settings(guild_id)
+            channel_id = settings.np_channel_id
+            if not channel_id:
+                return
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                return
+            queue = self._queue(guild_id)
+            total = sum((i.length or (i.track.length if i.track else 0)) for i in queue)
+            embed = discord.Embed(
+                title=item.display_title[:256],
+                color=discord.Color.from_str("#D0BCFF"),
+            )
+            if item.author:
+                embed.description = f"by **{item.author}**"
+            if item.artwork:
+                embed.set_thumbnail(url=item.artwork)
+            embed.add_field(
+                name="Up next",
+                value=(queue[0].display_title[:100] if queue else "Queue is empty"),
+                inline=False,
+            )
+            minutes, seconds = divmod(total // 1000, 60)
+            embed.add_field(
+                name="Queue",
+                value=f"{len(queue)} track(s) · {minutes}:{seconds:02d}",
+                inline=True,
+            )
+            src = {"yt": "YouTube", "sc": "SoundCloud", "vk": "VK", "ym": "Yandex Music",
+                   "local": "Local library", "direct": "VK (userscript)"}
+            embed.set_footer(text=f"Source: {src.get(item.source, item.source)}")
+            from app.bot.np import NowPlayingView
+
+            view = NowPlayingView()
+            message_id = settings.np_message_id
+            if message_id and guild_id not in self.np_recreate:
+                try:
+                    msg = await channel.fetch_message(message_id)
+                    await msg.edit(embed=embed, view=view)
+                    return
+                except discord.NotFound:
+                    pass
+                except discord.HTTPException as exc:
+                    logger.warning("NP embed edit failed (%s), posting a new one", exc)
+            msg = await channel.send(embed=embed, view=view)
+            await self.db.update_guild_settings(guild_id, np_message_id=msg.id)
+            self.np_recreate.discard(guild_id)
+        except Exception:  # noqa: BLE001 - announcements must never break playback
+            logger.exception("Now-playing announcement failed for guild %s", guild_id)
+
     # --- fun effects: Lavalink filter presets ---
 
     EFFECT_PRESETS: dict[str, str] = {
@@ -1078,6 +1156,7 @@ class MusicService:
         "slowed": "Slowed",
         "chipmunk": "Chipmunk",
         "deep": "Deep voice",
+        "speed15": "×1.5 speed",
         "bass": "Bass boost",
         "underwater": "Underwater",
         "8d": "8D audio",
@@ -1096,6 +1175,9 @@ class MusicService:
             f.timescale.set(speed=1.3, pitch=1.7)
         elif preset == "deep":
             f.timescale.set(pitch=0.7)
+        elif preset == "speed15":
+            # Podcast pace: tempo only, the pitch stays natural.
+            f.timescale.set(rate=1.5)
         elif preset == "bass":
             f.equalizer.set(bands=[{"band": n, "gain": g} for n, g in ((0, 0.5), (1, 0.45), (2, 0.3), (3, 0.15))])
         elif preset == "underwater":
@@ -1137,6 +1219,9 @@ class MusicService:
             (getattr(track, "uri", "") or getattr(item, "pending_url", "") or "")[:110],
         )
         await player.play(track)
+        # The now-playing embed goes out after the track actually started:
+        # it never blocks or breaks playback.
+        asyncio.create_task(self._announce_now_playing(guild_id, item))
         # Recent is written when the track STARTS: a song that is playing
         # right now has been played recently. The autoplay radio stays out.
         if not item.is_autoplay:
@@ -1164,6 +1249,7 @@ class MusicService:
             await self.hub.broadcast({"type": "notification", "notification": row}, guild_id=guild_id)
 
     async def play_next(self, guild_id: int, reason: str = "finished") -> wavelink.Playable | None:
+        self.skip_votes.pop(guild_id, None)  # a new track, a fresh ballot
         queue = self._queue(guild_id)
         player = self.get_player(guild_id)
         if player is None:
@@ -1492,6 +1578,25 @@ class MusicService:
         if session is None or session.expired():
             raise MusicServiceError("This playlist preview has expired. Open the link again.")
         return session
+
+    def playlist_export(self, playlist_id: int) -> dict[str, Any]:
+        """Every entry of an open playlist session, mapped for the personal
+        playlist importer."""
+        session = self._session(playlist_id)
+        return {
+            "title": session.title,
+            "source": session.source,
+            "tracks": [
+                {
+                    "title": self._entry_title(e),
+                    "author": self._entry_author(e),
+                    "uri": self._entry_uri(e),
+                    "length_ms": self._entry_length(e),
+                    "artwork": self._entry_artwork(e),
+                }
+                for e in session.entries
+            ],
+        }
 
     def playlist_page(self, playlist_id: int, page: int, query: str = "") -> dict[str, Any]:
         """One page of the playlist for the panel browser, with a filter."""
@@ -1885,16 +1990,108 @@ class MusicService:
         await player.stop()
         await self.db.audit("music.stop", guild_id=guild_id, actor_id=requester_id)
 
+    async def request_skip(self, guild_id: int, requester_id: int) -> dict[str, Any]:
+        """Skip with optional vote-skip: when enabled in the guild settings,
+        a skip only fires once half the voice channel has voted."""
+        settings = await self.db.get_guild_settings(guild_id)
+        player = self.get_player(guild_id)
+        humans = 0
+        if player is not None and player.channel is not None:
+            humans = sum(1 for m in player.channel.members if not m.bot)
+        if not settings.vote_skip or humans <= 1:
+            skipped = await self.skip(guild_id, requester_id)
+            return {"skipped": skipped, "votes": 1, "needed": 1}
+        votes = self.skip_votes.setdefault(guild_id, set())
+        votes.add(requester_id)
+        needed = max(1, -(-len(humans) // 2))
+        current = self.current_items.get(guild_id)
+        title = current.display_title if current else "the track"
+        if len(votes) >= needed:
+            self.skip_votes.pop(guild_id, None)
+            await self.skip(guild_id, requester_id)
+            return {"skipped": True, "votes": len(votes), "needed": needed}
+        await self.notify(
+            guild_id, "player", "Skip vote",
+            f"{len(votes)}/{needed} to skip \"{title}\".",
+        )
+        return {"skipped": False, "votes": len(votes), "needed": needed}
+
     async def set_paused(self, guild_id: int, paused: bool) -> None:
         player = self._require_player(guild_id)
         if player.playing:
             await player.pause(paused)
+        if not paused and guild_id in self.sleep_deadlines:
+            # A manual resume cancels the sleep timer and undoes the fade.
+            self.cancel_sleep(guild_id)
 
     async def set_volume(self, guild_id: int, volume: int) -> int:
         volume = max(VOLUME_MIN, min(VOLUME_MAX, volume))
         player = self._require_player(guild_id)
         await player.set_volume(volume)
         return volume
+
+    # --- sleep timer ---
+
+    SLEEP_FADE_SECONDS = 15.0
+
+    def set_sleep(self, guild_id: int, seconds: float | None) -> float | None:
+        """Schedule a fade-out + pause; None cancels. Returns the deadline."""
+        old_task = self.sleep_tasks.pop(guild_id, None)
+        if old_task is not None:
+            old_task.cancel()
+        if seconds is None:
+            self.sleep_deadlines.pop(guild_id, None)
+            self.sleep_volume.pop(guild_id, None)
+            return None
+        deadline = time.monotonic() + seconds
+        self.sleep_deadlines[guild_id] = deadline
+        self.sleep_tasks[guild_id] = asyncio.create_task(self._sleep_run(guild_id, seconds))
+        return deadline
+
+    def cancel_sleep(self, guild_id: int) -> None:
+        """Undo a fired sleep timer (the user resumed playback manually)."""
+        task = self.sleep_tasks.pop(guild_id, None)
+        if task is not None:
+            task.cancel()
+        self.sleep_deadlines.pop(guild_id, None)
+        volume = self.sleep_volume.pop(guild_id, None)
+        player = self.get_player(guild_id)
+        if volume is not None and player is not None:
+            asyncio.create_task(player.set_volume(volume))
+
+    async def _sleep_run(self, guild_id: int, seconds: float) -> None:
+        try:
+            player = self._require_player(guild_id)
+            fade = min(self.SLEEP_FADE_SECONDS, max(seconds, 0.0))
+            base = player.volume or 100
+            self.sleep_volume[guild_id] = base
+            if fade > 0:
+                await asyncio.sleep(seconds - fade)
+                steps = 10
+                for n in range(1, steps + 1):
+                    if guild_id not in self.sleep_deadlines:
+                        return  # cancelled mid-fade
+                    await player.set_volume(max(1, round(base * (1.0 - n / steps))))
+                    await asyncio.sleep(fade / steps)
+            if guild_id not in self.sleep_deadlines:
+                return
+            if player.playing:
+                await player.pause(True)
+            # Keep the volume at zero only while paused: the manual resume
+            # path (set_paused) restores it via cancel_sleep.
+            await self.notify(guild_id, "player", "Sleep timer", "Playback paused, sleep timer done.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - a sleep timer must never crash the service
+            logger.exception("Sleep timer failed for guild %s", guild_id)
+        finally:
+            self.sleep_tasks.pop(guild_id, None)
+
+    def sleep_remaining(self, guild_id: int) -> int | None:
+        deadline = self.sleep_deadlines.get(guild_id)
+        if deadline is None:
+            return None
+        return max(0, round(deadline - time.monotonic()))
 
     async def seek(self, guild_id: int, position_ms: int) -> None:
         player = self._require_player(guild_id)
@@ -1930,6 +2127,7 @@ class MusicService:
             "channel_name": player.channel.name if player is not None and player.channel else None,
             "volume": player.volume if player is not None else 100,
             "effect": self.effects.get(guild_id, "none"),
+            "sleep_remaining": self.sleep_remaining(guild_id),
             "playing": bool(player is not None and player.playing),
             "repeat": self.repeat_modes.get(guild_id, "off"),
             "current": current,
@@ -1991,6 +2189,9 @@ class MusicService:
             queue_items = [current] + queue_items
         history = list(self.played.get(guild_id) or [])
         repeat = self.repeat_modes.get(guild_id, "off")
+        # get_player needs the bot (it resolves the guild); the service also
+        # runs in tests and at restore time without one.
+        player = self.get_player(guild_id) if self.bot is not None else None
         if not queue_items and not history and repeat == "off":
             return None
         return {
@@ -1998,6 +2199,8 @@ class MusicService:
             # Newest first, matching the panel view.
             "played": [i.to_dict() for i in reversed(history)],
             "repeat": repeat,
+            "voice_channel_id": player.channel.id if player is not None and player.channel else None,
+            "effect": self.effects.get(guild_id),
         }
 
     async def persist_state(self) -> None:
@@ -2042,11 +2245,36 @@ class MusicService:
             repeat = data.get("repeat")
             if repeat in ("off", "one", "all") and repeat != "off":
                 self.repeat_modes[gid] = repeat
+            if data.get("voice_channel_id"):
+                self.pending_rejoin[gid] = {
+                    "channel_id": int(data["voice_channel_id"]),
+                    "effect": data.get("effect"),
+                }
         if markers:
             # Lazy markers point at in-memory sessions that a restart wiped;
             # re-read their playlists to hand the markers fresh sessions.
             task = asyncio.create_task(self._rebind_markers(markers))
             task.add_done_callback(lambda t: t.exception() and logger.exception("Marker rebind failed"))
+
+    async def rejoin_voice(self) -> None:
+        """Rejoin the voice channels saved before a restart and resume the
+        queues. Called once from on_ready; failures drop the rejoin for
+        that guild without touching the persisted queue."""
+        if self.rejoined:
+            return
+        self.rejoined = True
+        for gid, job in list(self.pending_rejoin.items()):
+            try:
+                await self.connect(gid, int(job["channel_id"]), 0)
+                effect = job.get("effect")
+                if effect and effect != "none":
+                    await self.set_effect(gid, effect)
+                self.np_recreate.add(gid)  # a fresh voice session: a fresh NP message
+                logger.info("Rejoined voice in guild %s after restart", gid)
+            except Exception as exc:  # noqa: BLE001 - nobody may be there anymore
+                logger.warning("Voice rejoin skipped for guild %s: %s", gid, exc)
+            finally:
+                self.pending_rejoin.pop(gid, None)
 
     async def _rebind_markers(self, pairs: list[tuple[int, QueueItem]]) -> None:
         changed = False

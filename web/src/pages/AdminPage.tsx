@@ -59,6 +59,12 @@ export function AdminPage() {
     posts: string;
     moderation: string;
     modLog: string;
+    voteSkip: boolean;
+    npChannel: string;
+    volume: string;
+    effects: string;
+    queueClear: string;
+    seek: string;
   } | null>(null);
 
   const guard = (e: Error) => feedback.show(e.message, "error");
@@ -78,6 +84,12 @@ export function AdminPage() {
         posts: settings.posts_access,
         moderation: settings.moderation_access,
         modLog: settings.mod_log_channel_id ?? "",
+        voteSkip: settings.vote_skip,
+        npChannel: settings.np_channel_id ?? "",
+        volume: settings.volume_access,
+        effects: settings.effects_access,
+        queueClear: settings.queue_clear_access,
+        seek: settings.seek_access,
       });
     }
   }, [settings]);
@@ -280,6 +292,27 @@ export function AdminPage() {
                   ))}
                   <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
                     <Typography variant="body2" sx={{ width: 110, flexShrink: 0 }}>
+                      Now playing
+                    </Typography>
+                    <Select
+                      fullWidth
+                      size="small"
+                      displayEmpty
+                      value={access.npChannel}
+                      onChange={(e) => setAccess({ ...access, npChannel: e.target.value as string })}
+                    >
+                      <MenuItem value="">
+                        <em>Not set (announcements off)</em>
+                      </MenuItem>
+                      {textChannels.map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          # {c.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Stack>
+                  <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                    <Typography variant="body2" sx={{ width: 110, flexShrink: 0 }}>
                       Mod log
                     </Typography>
                     <Tooltip title={isOwner ? undefined : "Only the server owner can change this"}>
@@ -319,8 +352,14 @@ export function AdminPage() {
                                   posts_access: access.posts,
                                   moderation_access: access.moderation,
                                   mod_log_channel_id: access.modLog || null,
+                                  np_channel_id: access.npChannel || null,
+                                  clear_np_channel: !access.npChannel,
                                 }
-                              : { mod_log_channel_id: access.modLog || null },
+                              : {
+                                  mod_log_channel_id: access.modLog || null,
+                                  np_channel_id: access.npChannel || null,
+                                  clear_np_channel: !access.npChannel,
+                                },
                           )
                           .then((s) => {
                             setDraftSettings(s);
@@ -329,6 +368,12 @@ export function AdminPage() {
                               posts: s.posts_access,
                               moderation: s.moderation_access,
                               modLog: s.mod_log_channel_id ?? "",
+                              npChannel: s.np_channel_id ?? "",
+                              voteSkip: s.vote_skip,
+                              volume: s.volume_access,
+                              effects: s.effects_access,
+                              queueClear: s.queue_clear_access,
+                              seek: s.seek_access,
                             });
                             feedback.show("Panel access saved");
                           })
@@ -341,6 +386,95 @@ export function AdminPage() {
                 </Stack>
               </CardContent>
             </Card>
+          )}
+
+          {access && (
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Player
+              </Typography>
+              <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+                Vote-skip makes a skip count only when half the voice channel
+                agrees. Action permissions decide who may change the volume,
+                switch effects, seek and clear the queue — the server owner
+                and the bot's super-admin always can.
+                {!isOwner && " Only the server owner can change the access levels."}
+              </Typography>
+              <Stack spacing={1.5} sx={{ maxWidth: 560 }}>
+                <FormControlLabel
+                  sx={{ px: 0.5 }}
+                  control={
+                    <Switch
+                      checked={access.voteSkip}
+                      onChange={(e) => setAccess({ ...access, voteSkip: e.target.checked })}
+                    />
+                  }
+                  label="Vote-skip (half the voice channel must agree)"
+                />
+                {(
+                  [
+                    ["Volume", "volume"],
+                    ["Effects", "effects"],
+                    ["Clear queue", "queueClear"],
+                    ["Seek", "seek"],
+                  ] as const
+                ).map(([label, key]) => (
+                  <Stack key={key} direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+                    <Typography variant="body2" sx={{ width: 110, flexShrink: 0 }}>
+                      {label}
+                    </Typography>
+                    <Tooltip title={isOwner ? undefined : "Only the server owner can change this"}>
+                      <span style={{ display: "flex", flex: 1, minWidth: 0 }}>
+                        <Select
+                          fullWidth
+                          size="small"
+                          disabled={!isOwner}
+                          value={access[key]}
+                          onChange={(e) => setAccess({ ...access, [key]: e.target.value as string })}
+                        >
+                          <MenuItem value="members">Everyone</MenuItem>
+                          <MenuItem value="admins">Admins only</MenuItem>
+                          <MenuItem value="off">Owner only</MenuItem>
+                        </Select>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                ))}
+                <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Button
+                    variant="contained"
+                    disabled={!isOwner}
+                    onClick={() =>
+                      api
+                        .updateGuildSettings(gid, {
+                          vote_skip: access.voteSkip,
+                          volume_access: access.volume,
+                          effects_access: access.effects,
+                          queue_clear_access: access.queueClear,
+                          seek_access: access.seek,
+                        })
+                        .then((s) => {
+                          setDraftSettings(s);
+                          setAccess({
+                            ...access,
+                            voteSkip: s.vote_skip,
+                            volume: s.volume_access,
+                            effects: s.effects_access,
+                            queueClear: s.queue_clear_access,
+                            seek: s.seek_access,
+                          });
+                          feedback.show("Player settings saved");
+                        })
+                        .catch(guard)
+                    }
+                  >
+                    Save
+                  </Button>
+                </Box>
+              </Stack>
+            </CardContent>
+          </Card>
           )}
 
           <Card>

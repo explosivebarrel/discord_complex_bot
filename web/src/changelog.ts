@@ -3,7 +3,7 @@
  * large feature blocks, ZZ for daily fixes. The current version is the
  * last entry of CHANGELOG; bump it with every release commit.
  */
-export const BOT_VERSION = "v3.03.10";
+export const BOT_VERSION = "v3.04.00";
 
 export interface ChangelogBlock {
   version: string;
@@ -16,6 +16,23 @@ export interface ChangelogBlock {
 }
 
 export const CHANGELOG: ChangelogBlock[] = [
+  {
+    version: "v3.04.00",
+    date: "2026-11-09",
+    title: "Player QoL batch: sleep timer, voice rejoin, vote-skip, lyrics, effects, permissions",
+    points: [
+      "Sleep timer: fade-out and pause after 15/30/45/60 minutes or at the end of the track (dock menu, /sleep)",
+      "The bot rejoins its voice channels and resumes the queues after a restart - deploys no longer drop playback",
+      "Vote-skip (per-guild toggle in Manage): a skip fires when half the voice channel agrees",
+      "Synced lyrics on the now-playing screen via LRCLIB (cached), click a line to seek",
+      "Play next (context menus), save the queue as a personal playlist, keyboard shortcuts (Space / arrows / M)",
+      "Sound effects menu in the dock: nightcore, slowed, chipmunk, deep, bass boost, underwater, 8D, robot, karaoke, x1.5 speed",
+      "Now-playing announcements to a configurable text channel with pause/skip buttons; /nowplaying renders the same embed",
+      "Import external playlists (Yandex Music, YouTube...) into personal playlists from the playlist view",
+      "Player action permissions in Manage: volume / effects / clear queue / seek - admins, members or owner only",
+      "Fixed the icon subset rebuild pipeline (ligatures were dropped, icons rendered as raw text)",
+    ],
+  },
   {
     version: "v3.03.10",
     commit: "ab3c6f1",

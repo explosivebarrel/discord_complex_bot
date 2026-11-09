@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../../api";
 import { Box, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
 import {
   IconFavorite as Favorite,
@@ -30,6 +32,7 @@ function fmt(ms: number): string {
     collapses back to the player. */
 export function NowPlayingScreen({
   state,
+  gid,
   favorite,
   onToggleFavorite,
   onPauseToggle,
@@ -42,6 +45,7 @@ export function NowPlayingScreen({
   onClose,
 }: {
   state: PlayerState;
+  gid: string;
   favorite: boolean;
   onToggleFavorite: () => void;
   onPauseToggle: () => void;
@@ -61,6 +65,30 @@ export function NowPlayingScreen({
   const repeat = state.repeat ?? "off";
   // Advance the progress line locally between 3-second polls (same as the dock).
   const [livePos, setLivePos] = useState(0);
+  // Lyrics: fetched once per track uri; synced lines follow the position.
+  const lyricsQuery = useQuery({
+    queryKey: ["lyrics", current?.uri ?? ""],
+    queryFn: () => api.lyrics(gid),
+    enabled: !!current?.uri,
+    staleTime: Infinity,
+  });
+  const synced: [number, string][] = lyricsQuery.data?.synced ?? [];
+  const activeLine = (() => {
+    const pos = (current?.position ?? 0) / 1000;
+    let idx = -1;
+    for (let i = 0; i < synced.length; i++) {
+      if (synced[i][0] <= pos) idx = i;
+      else break;
+    }
+    return idx;
+  })();
+  const lyricsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const box = lyricsRef.current;
+    if (!box) return;
+    const active = box.querySelector<HTMLElement>("[data-active='true']");
+    if (active) active.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeLine]);
   const [dragMs, setDragMs] = useState<number | null>(null);
   const dragRef = useRef(false);
   const position = Math.min(livePos, current?.length ?? 0);
@@ -241,6 +269,64 @@ export function NowPlayingScreen({
             <Typography variant="caption" sx={{ color: "rgba(255,255,255,.7)", fontVariantNumeric: "tabular-nums", width: 44, textAlign: "right" }}>
               {fmt(dragMs ?? position)}
             </Typography>
+  {(() => {
+    if (lyricsQuery.isLoading) {
+      return (
+        <Typography variant="body2" sx={{ color: "text.secondary", textAlign: "center" }}>
+          Looking for lyrics…
+        </Typography>
+      );
+    }
+    if (synced.length > 0) {
+      return (
+        <Box
+          ref={lyricsRef}
+          sx={{
+            maxHeight: 180,
+            overflowY: "auto",
+            width: "100%",
+            px: 1,
+            maskImage: "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
+            WebkitMaskImage: "linear-gradient(to bottom, transparent, black 12%, black 88%, transparent)",
+          }}
+        >
+          {synced.map(([sec, text], i) => (
+            <Typography
+              key={i}
+              data-active={i === activeLine}
+              onClick={() => typeof onSeek === "function" && onSeek(Math.round(sec * 1000))}
+              sx={{
+                textAlign: "center",
+                cursor: "pointer",
+                py: 0.25,
+                fontSize: i === activeLine ? "body1.fontSize" : "body2.fontSize",
+                fontWeight: i === activeLine ? 600 : 400,
+                color: i === activeLine ? "text.primary" : "text.secondary",
+                opacity: i === activeLine ? 1 : 0.55,
+                transition: "all .25s",
+              }}
+            >
+              {text}
+            </Typography>
+          ))}
+        </Box>
+      );
+    }
+    if (lyricsQuery.data?.plain) {
+      return (
+        <Box sx={{ maxHeight: 180, overflowY: "auto", width: "100%", px: 1 }}>
+          <Typography variant="body2" sx={{ color: "text.secondary", whiteSpace: "pre-wrap", textAlign: "center" }}>
+            {lyricsQuery.data.plain}
+          </Typography>
+        </Box>
+      );
+    }
+    return (
+      <Typography variant="caption" sx={{ color: "text.secondary", textAlign: "center" }}>
+        No lyrics found for this track.
+      </Typography>
+    );
+  })()}
             <Box
               sx={{ flex: 1, py: 1, cursor: "pointer", touchAction: "none" }}
               onPointerDown={(e) => {

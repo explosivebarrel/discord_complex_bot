@@ -1387,3 +1387,28 @@ async def test_ym_enqueue_normalizes_ru_domain(
     await music.enqueue(GUILD_ID, "https://music.yandex.ru/track/123", 1, "u", source="ym")
 
     assert seen == ["https://music.yandex.com/track/123"]
+
+
+def test_lyrics_lrc_parse() -> None:
+    from app.core.services.lyrics import parse_lrc
+
+    raw = "[00:12.00]first line\n[01:02.50]second line\ngarbage\n[00:30]early repeat"
+    parsed = parse_lrc(raw)
+    assert parsed == [[12.0, "first line"], [30.0, "early repeat"], [62.5, "second line"]]
+
+
+async def test_enqueue_play_next_inserts_at_head(music: MusicService) -> None:
+    await music.enqueue(GUILD_ID, "https://www.youtube.com/watch?v=a", 1, "u",
+                        meta={"title": "Song A"}, source="yt")
+    await music.enqueue(GUILD_ID, "https://www.youtube.com/watch?v=b", 1, "u",
+                        meta={"title": "Song B"}, source="yt")
+    await music.enqueue(GUILD_ID, "https://www.youtube.com/watch?v=c", 1, "u",
+                        meta={"title": "Song C"}, source="yt", play_next=True)
+    titles = [item.title for item in music._queue(GUILD_ID)]  # noqa: SLF001
+    assert titles == ["Song C", "Song A", "Song B"]
+
+
+def test_effect_presets_build(music: MusicService) -> None:
+    for name in music.EFFECT_PRESETS:  # noqa: SLF001
+        music._effect_filters(name)  # noqa: SLF001 - must not raise for any preset
+    assert music._effect_filters("nope") is None  # noqa: SLF001

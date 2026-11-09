@@ -131,6 +131,7 @@ export interface PlayerState {
   default_voice_channel_id?: string | null;
   volume: number;
   effect?: string;
+  sleep_remaining?: number | null;
   playing: boolean;
   repeat: "off" | "one" | "all";
   current: TrackInfo | null;
@@ -272,6 +273,12 @@ export interface GuildSettings {
   posts_access: string;
   moderation_access: string;
   mod_log_channel_id: string | null;
+  vote_skip: boolean;
+  np_channel_id: string | null;
+  volume_access: string;
+  effects_access: string;
+  queue_clear_access: string;
+  seek_access: string;
 }
 
 export interface GuildStats {
@@ -403,11 +410,12 @@ export const api = {
     body: {
       query?: string;
       encoded?: string;
-      source?: string;
-      title?: string;
-      author?: string;
-      length_ms?: number;
+      source?: string | null;
+      title?: string | null;
+      author?: string | null;
+      length_ms?: number | null;
       artwork?: string | null;
+      play_next?: boolean;
     },
   ) =>
     fetch(`/api/guilds/${guildId}/player/enqueue`, {
@@ -619,6 +627,32 @@ export const api = {
       body: JSON.stringify({ name }),
     }).then((r) => handle<{ effect: string }>(r)),
 
+  setSleep: (guildId: string, minutes: number | null) =>
+    fetch(`/api/guilds/${guildId}/player/sleep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes }),
+    }).then((r) => handle<{ sleep_remaining: number | null }>(r)),
+
+  lyrics: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/lyrics`).then((r) =>
+      handle<{ synced: [number, string][]; plain: string | null }>(r),
+    ),
+
+  saveQueueAsPlaylist: (guildId: string, name: string) =>
+    fetch(`/api/playlists/from-queue/${guildId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then((r) => handle<{ saved: number; total: number }>(r)),
+
+  importPlaylist: (body: { name: string; url: string; source: string }) =>
+    fetch("/api/playlists/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => handle<{ imported: number; total: number }>(r)),
+
   seek: (guildId: string, position: number) =>
     fetch(`/api/guilds/${guildId}/player/seek`, {
       method: "POST",
@@ -643,6 +677,13 @@ export const api = {
       posts_access?: string;
       moderation_access?: string;
       mod_log_channel_id?: string | null;
+      vote_skip?: boolean;
+      np_channel_id?: string | null;
+      clear_np_channel?: boolean;
+      volume_access?: string;
+      effects_access?: string;
+      queue_clear_access?: string;
+      seek_access?: string;
     },
   ) =>
     fetch(`/api/admin/guilds/${guildId}/settings`, {

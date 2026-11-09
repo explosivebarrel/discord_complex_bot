@@ -18,6 +18,7 @@ import {
   Stack,
   Tooltip,
   Typography,
+  TextField,
 } from "@mui/material";
 import YouTube from "@mui/icons-material/YouTube";
 import {
@@ -36,6 +37,8 @@ import {
   IconRadio as RadioIcon,
   IconShuffle as Shuffle,
   IconTag as TagIcon,
+  IconCheck as Check,
+  IconPlaylistAdd as PlaylistAdd,
 } from "../components/icons";
 import {
   api,
@@ -142,6 +145,8 @@ export function PlayerPage() {
   const [plBusy, setPlBusy] = useState(false);
   const [volume, setVolume] = useState<number | null>(null);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  const [saveQueueOpen, setSaveQueueOpen] = useState(false);
+  const [saveQueueName, setSaveQueueName] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadsQuery = useGuildUploads(gid);
@@ -254,7 +259,7 @@ export function PlayerPage() {
   // plus the caller's play/queue handlers and context extras.
   const trackMenuSpec = (
     t: { title: string; author?: string | null; uri?: string | null; source?: string | null; length?: number; artwork?: string | null },
-    opts: Partial<Pick<TrackMenuSpec, "onPlay" | "onQueue" | "extra">> = {},
+    opts: Partial<Pick<TrackMenuSpec, "onPlay" | "onQueue" | "onPlayNext" | "extra">> = {},
   ): TrackMenuSpec => ({
     track: {
       title: t.title,
@@ -272,6 +277,29 @@ export function PlayerPage() {
   const guard = (e: Error) => {
     if (e.message !== "unauthorized") feedback.show(e.message, "error");
   };
+
+  // Player hotkeys: Space pause/resume, arrows seek +-10s, M mute.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      const st = state;
+      if (!st) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        act(() => api.simpleAction(gid, st.current?.paused ? "resume" : "pause"));
+      } else if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
+        const base = st.current?.position ?? 0;
+        e.preventDefault();
+        act(() => api.seek(gid, Math.max(0, base + (e.code === "ArrowRight" ? 10000 : -10000))));
+      } else if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
+        act(() => api.volume(gid, volume === 0 ? 100 : 0));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const act = (fn: () => Promise<unknown>, okMessage?: string) => {
     fn()
@@ -483,6 +511,7 @@ export function PlayerPage() {
       volume={volume ?? 100}
       effect={state.effect ?? "none"}
       onEffectChange={(name) => act(() => api.setEffect(gid, name))}
+      onSleep={(minutes) => act(() => api.setSleep(gid, minutes))}
       onVolumeChange={setVolume}
       onVolumeCommit={(v) => act(() => api.volume(gid, v))}
       onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}
@@ -610,12 +639,57 @@ export function PlayerPage() {
             >
               Recent
             </Button>
-            {queueView === "next" && (state?.queue.length ?? 0) > 1 && (
-              <Tooltip title="Shuffle the queue">
-                <IconButton size="small" onClick={() => act(() => api.shuffleQueue(gid), "Queue shuffled")} sx={{ ml: "auto" }}>
-                  <Shuffle fontSize="small" />
-                </IconButton>
-              </Tooltip>
+            {queueView === "next" && (state?.queue.length ?? 0) > 0 && (
+              <Stack direction="row" spacing={0.5} sx={{ ml: "auto", alignItems: "center" }}>
+                {saveQueueOpen ? (
+                  <>
+                    <TextField
+                      autoFocus
+                      size="small"
+                      placeholder="Playlist name"
+                      value={saveQueueName}
+                      onChange={(e) => setSaveQueueName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && saveQueueName.trim()) {
+                          setSaveQueueOpen(false);
+                          act(
+                            () => api.saveQueueAsPlaylist(gid, saveQueueName.trim()),
+                            `Saved to playlist: ${saveQueueName.trim()}`,
+                          );
+                        }
+                        if (e.key === "Escape") setSaveQueueOpen(false);
+                      }}
+                      sx={{ width: 170 }}
+                    />
+                    <IconButton
+                      size="small"
+                      disabled={!saveQueueName.trim()}
+                      onClick={() => {
+                        setSaveQueueOpen(false);
+                        act(
+                          () => api.saveQueueAsPlaylist(gid, saveQueueName.trim()),
+                          `Saved to playlist: ${saveQueueName.trim()}`,
+                        );
+                      }}
+                    >
+                      <Check fontSize="small" />
+                    </IconButton>
+                  </>
+                ) : (
+                  <Tooltip title="Save the queue as a playlist">
+                    <IconButton size="small" onClick={() => { setSaveQueueOpen(true); setSaveQueueName(`Queue ${new Date().toLocaleDateString()}`); }}>
+                      <PlaylistAdd fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                {(state?.queue.length ?? 0) > 1 && (
+                  <Tooltip title="Shuffle the queue">
+                    <IconButton size="small" onClick={() => act(() => api.shuffleQueue(gid), "Queue shuffled")}>
+                      <Shuffle fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Stack>
             )}
           </Stack>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
@@ -787,6 +861,20 @@ export function PlayerPage() {
                         trackMenuSpec(t, {
                           onPlay: () => act(() => api.replayPlayed(gid, i), `Now playing: ${t.title}`),
                           onQueue: () => act(() => api.requeuePlayed(gid, i), `Added to queue: ${t.title}`),
+                          onPlayNext: () =>
+                            act(
+                              () =>
+                                api.enqueue(gid, {
+                                  query: t.uri ?? "",
+                                  source: t.source ?? "yt",
+                                  title: t.title,
+                                  author: t.author,
+                                  length_ms: t.length,
+                                  artwork: t.artwork,
+                                  play_next: true,
+                                }),
+                              `Plays next: ${t.title}`,
+                            ),
                         }),
                       )
                     }
@@ -976,6 +1064,16 @@ export function PlayerPage() {
                                     uri: f.uri, source: f.source || "yt", title: f.title,
                                     author: f.author, length_ms: f.length_ms, artwork: f.artwork,
                                   }),
+                                onPlayNext: () =>
+                                  act(
+                                    () =>
+                                      api.enqueue(gid, {
+                                        query: f.uri, source: f.source || "yt", title: f.title,
+                                        author: f.author, length_ms: f.length_ms, artwork: f.artwork,
+                                        play_next: true,
+                                      }),
+                                    `Plays next: ${f.title}`,
+                                  ),
                               })
                             }
                           />
@@ -1098,6 +1196,12 @@ export function PlayerPage() {
                 playlist && playlistAction(() => api.playlistAdd(gid, playlist.id, indices), `Added ${indices.length} track(s) to the queue`)
               }
               onBrowserAddAll={() => playlist && playlistAction(() => api.playlistAddAll(gid, playlist.id), "Whole playlist queued (lazy)")}
+              onImport={(name) =>
+                act(
+                  () => api.importPlaylist({ name, url: externalUrl ?? "", source: playlist?.source ?? "yt" }),
+                  `Imported: ${name}`,
+                )
+              }
             />
           )}
 
@@ -1117,7 +1221,8 @@ export function PlayerPage() {
       {trackMenu.node}
       {nowPlayingOpen && state?.current && (
         <NowPlayingScreen
-          state={state}
+          gid={gid}
+        state={state}
           favorite={favorites.some((f) => f.uri === state.current?.uri)}
           onToggleFavorite={() => state.current && toggleFavorite(state.current as TrackInfo)}
           onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}

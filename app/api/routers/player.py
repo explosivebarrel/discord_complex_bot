@@ -20,6 +20,7 @@ from app.api.deps import (
     get_db,
     get_music,
     get_oauth,
+    ensure_player_access,
     is_admin_tier,
     require_guild_member,
 )
@@ -72,7 +73,9 @@ class EnqueueBody(BaseModel):
     artwork: str | None = None
     # VK userscript capture: the signed CDN stream URL taken off the page;
     # plays without any server-side VK token.
-    stream_url: str | None = None
+    stream_url: str | None = None,
+    # "Play next": insert at the queue head instead of the tail.
+    play_next: bool = False
 
     @model_validator(mode="after")
     def check_query_or_encoded(self) -> EnqueueBody:
@@ -481,6 +484,7 @@ async def enqueue(
             source=body.source,
             meta=meta,
             stream_url=body.stream_url,
+            play_next=body.play_next,
         )
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -528,10 +532,10 @@ async def skip(
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        skipped = await music.skip(guild_id, user.discord_id)
+        result = await music.request_skip(guild_id, user.discord_id)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"skipped": skipped}
+    return result
 
 
 @router.post("/stop")
@@ -540,7 +544,10 @@ async def stop(
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
     db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
+    await ensure_player_access(guild_id, user, "queue_clear_access", db=db, oauth=oauth, bot=bot)
     try:
         await music.stop(guild_id, user.discord_id)
     except MusicServiceError as exc:
@@ -568,7 +575,11 @@ async def volume(
     body: VolumeBody,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
+    await ensure_player_access(guild_id, user, "volume_access", db=db, oauth=oauth, bot=bot)
     try:
         applied = await music.set_volume(guild_id, body.volume)
     except MusicServiceError as exc:
@@ -582,12 +593,68 @@ async def seek(
     body: SeekBody,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
+    await ensure_player_access(guild_id, user, "seek_access", db=db, oauth=oauth, bot=bot)
     try:
         await music.seek(guild_id, body.position)
     except MusicServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"position": body.position}
+
+
+class SleepBody(BaseModel):
+    # null/absent = cancel; 0 = after the current track; otherwise minutes.
+    minutes: float | None = None
+
+
+@router.post("/sleep")
+async def sleep(
+    guild_id: int,
+    body: SleepBody,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
+) -> dict[str, Any]:
+    await ensure_player_access(guild_id, user, "volume_access", db=db, oauth=oauth, bot=bot)
+    state = await music.get_state(guild_id)
+    if body.minutes is None or body.minutes == 0:
+        seconds = None
+        if body.minutes == 0 and state.get("current"):
+            remaining = (state["current"].get("length") or 0) - (state["current"].get("position") or 0)
+            seconds = max(remaining / 1000, 0.0)
+    else:
+        seconds = body.minutes * 60
+    deadline = music.set_sleep(guild_id, seconds)
+    return {"sleep_remaining": music.sleep_remaining(guild_id), "deadline": deadline}
+
+
+@router.get("/lyrics")
+async def lyrics(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    state = await music.get_state(guild_id)
+    current = state.get("current") or {}
+    if not current.get("title"):
+        raise HTTPException(status_code=404, detail="Nothing is playing right now")
+    from app.core.services.lyrics import fetch_lyrics
+
+    result = await fetch_lyrics(
+        db,
+        str(current.get("author") or ""),
+        str(current.get("title") or ""),
+        int((current.get("length") or 0) / 1000),
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="No lyrics found for this track")
+    return result
 
 
 @router.post("/repeat")
@@ -610,7 +677,10 @@ async def clear_queue(
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
     db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
+    await ensure_player_access(guild_id, user, "queue_clear_access", db=db, oauth=oauth, bot=bot)
     cleared = music.clear_queue(guild_id)
     await db.audit(
         "music.queue_clear", guild_id=guild_id, actor_id=user.discord_id, details={"cleared": cleared}
@@ -642,7 +712,11 @@ async def set_effect(
     body: EffectBody,
     user: CurrentUser = Depends(require_guild_member),
     music: MusicService = Depends(get_music),
+    db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
 ) -> dict[str, Any]:
+    await ensure_player_access(guild_id, user, "effects_access", db=db, oauth=oauth, bot=bot)
     try:
         await music.set_effect(guild_id, body.name)
     except MusicServiceError as exc:

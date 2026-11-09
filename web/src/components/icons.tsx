@@ -16,6 +16,7 @@ const ic = (name: string, fill = true) => {
 };
 
 export const IconAddToQueue = ic("add_to_queue");
+export const IconBedtime = ic("bedtime");
 export const IconAllInclusive = ic("all_inclusive");
 export const IconAlternateEmail = ic("alternate_email");
 export const IconArrowBack = ic("arrow_back");

@@ -12,6 +12,7 @@ import {
   IconFavorite as Favorite,
   IconPlayArrow as PlayArrow,
   IconQueueMusic as QueueMusic,
+  IconSkipNext as SkipNext,
 } from "./icons";
 import { MsIcon } from "./MsIcon";
 import { PlaylistMenuContent, type PlaylistTrackRef } from "./PlaylistAddMenu";
@@ -23,6 +24,8 @@ export interface TrackMenuSpec {
   track: PlaylistTrackRef;
   onPlay?: () => void;
   onQueue?: () => void;
+  /** "Play next": enqueue with play_next (right after the current track). */
+  onPlayNext?: () => void;
   favorite?: boolean;
   onToggleFavorite?: () => void;
   extra?: {
@@ -51,7 +54,7 @@ export function useTrackMenu(): { open: OpenFn; node: React.ReactNode } {
 }
 
 function TrackMenu({ spec, onClose }: { spec: TrackMenuSpec & { pos: { x: number; y: number } }; onClose: () => void }) {
-  const { track, onPlay, onQueue, favorite, onToggleFavorite, extra, pos } = spec;
+  const { track, onPlay, onQueue, onPlayNext, favorite, onToggleFavorite, extra, pos } = spec;
   const [plOpen, setPlOpen] = useState(false);
 
   const run = (fn: () => void) => () => {
@@ -78,6 +81,12 @@ function TrackMenu({ spec, onClose }: { spec: TrackMenuSpec & { pos: { x: number
         <MenuItem onClick={run(onQueue)}>
           <ListItemIcon><QueueMusic fontSize="small" /></ListItemIcon>
           <ListItemText>Add to queue</ListItemText>
+        </MenuItem>
+      )}
+      {onPlayNext && (
+        <MenuItem onClick={run(onPlayNext)}>
+          <ListItemIcon><SkipNext fontSize="small" /></ListItemIcon>
+          <ListItemText>Play next</ListItemText>
         </MenuItem>
       )}
       {onToggleFavorite && (

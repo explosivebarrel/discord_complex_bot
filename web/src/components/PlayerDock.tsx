@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Chip, CircularProgress, IconButton, LinearProgress, ListItemIcon, ListItemText, Menu, MenuItem, Popover, Slider, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { IconCheck as Check, IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
+import { IconBedtime as Bedtime, IconCheck as Check, IconFavorite as Favorite, IconGraphicEq as GraphicEq, IconPause as Pause, IconPlayArrow as PlayArrow, IconRepeat as Repeat, IconRepeatOne as RepeatOne, IconSkipNext as SkipNext, IconSkipPrevious as SkipPrevious, IconStop as Stop, IconVolumeUp as VolumeUp } from "./icons";
 import type { PlayerState } from "../api";
 import { surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
@@ -113,6 +113,7 @@ export function PlayerDock({
   volume,
   effect = "none",
   onEffectChange,
+  onSleep,
   onVolumeChange,
   onVolumeCommit,
   onPauseToggle,
@@ -130,6 +131,7 @@ export function PlayerDock({
   volume: number;
   effect?: string;
   onEffectChange?: (name: string) => void;
+  onSleep?: (minutes: number | null) => void;
   onVolumeChange: (v: number) => void;
   onVolumeCommit: (v: number) => void;
   onPauseToggle: () => void;
@@ -146,6 +148,7 @@ export function PlayerDock({
 }) {
   const current = state?.current;
   const paused = !!current?.paused;
+  const sleepRemaining = state?.sleep_remaining ?? null;
   const isLive = !!current && current.length >= LIVE_LENGTH;
   const isLoading = !!current?.loading;
   const hasHistory = (state?.played?.length ?? 0) > 0;
@@ -154,6 +157,7 @@ export function PlayerDock({
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [effectsAnchor, setEffectsAnchor] = useState<HTMLElement | null>(null);
+  const [sleepAnchor, setSleepAnchor] = useState<HTMLElement | null>(null);
   // The dock's measured width also drives the row-vs-stack layout decision.
   const dockRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -500,6 +504,41 @@ export function PlayerDock({
               <ListItemIcon sx={{ minWidth: 32 }}>
                 {id === effect ? <Check fontSize={18} /> : null}
               </ListItemIcon>
+              <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
+            </MenuItem>
+          ))}
+        </Menu>
+        <Tooltip title={sleepRemaining ? `Sleep timer: ${Math.round(sleepRemaining / 60)} min left` : "Sleep timer"}>
+          <IconButton
+            onClick={(e) => setSleepAnchor(e.currentTarget)}
+            aria-label="Sleep timer"
+            sx={sleepRemaining ? { color: "primary.main" } : { color: "text.secondary" }}
+          >
+            <Bedtime />
+          </IconButton>
+        </Tooltip>
+        <Menu
+          open={!!sleepAnchor}
+          anchorEl={sleepAnchor}
+          onClose={() => setSleepAnchor(null)}
+          anchorOrigin={{ vertical: "top", horizontal: "right" }}
+          transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+        >
+          {([
+            [null, "Off"],
+            [0, "After the current track"],
+            [15, "15 minutes"],
+            [30, "30 minutes"],
+            [45, "45 minutes"],
+            [60, "60 minutes"],
+          ] as Array<[number | null, string]>).map(([minutes, label]) => (
+            <MenuItem
+              key={label}
+              onClick={() => {
+                setSleepAnchor(null);
+                onSleep?.(minutes);
+              }}
+            >
               <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
             </MenuItem>
           ))}

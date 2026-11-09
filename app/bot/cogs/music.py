@@ -52,11 +52,16 @@ class MusicCog(commands.Cog):
     @app_commands.guild_only()
     async def skip(self, interaction: discord.Interaction) -> None:
         try:
-            skipped = await self.bot.music.skip(interaction.guild_id or 0, interaction.user.id)
+            result = await self.bot.music.request_skip(interaction.guild_id or 0, interaction.user.id)
         except MusicServiceError as exc:
             await interaction.response.send_message(f"❌ {exc}", ephemeral=True)
             return
-        await interaction.response.send_message("⏭️ Skipped." if skipped else "Nothing is playing.")
+        if result.get("skipped"):
+            await interaction.response.send_message("⏭️ Skipped.")
+        else:
+            await interaction.response.send_message(
+                f"🗳️ Skip vote: {result.get('votes')}/{result.get('needed')}.", ephemeral=True
+            )
 
     @app_commands.command(name="stop", description="Stop playback and clear the queue")
     @app_commands.guild_only()
@@ -111,10 +116,49 @@ class MusicCog(commands.Cog):
         if not current:
             await interaction.response.send_message("Nothing is playing.")
             return
-        pos, length = current["position"] // 1000, current["length"] // 1000
-        await interaction.response.send_message(
-            f"▶️ **{current['title']}**\n`{pos // 60}:{pos % 60:02d}` / `{length // 60}:{length % 60:02d}`"
+        from app.bot.np import NowPlayingView
+
+        queue = state.get("queue") or []
+        total = sum((t.get("length") or 0) for t in queue)
+        minutes, seconds = divmod(total // 1000, 60)
+        embed = discord.Embed(title=current["title"][:256], color=discord.Color.from_str("#D0BCFF"))
+        if current.get("author"):
+            embed.description = f"by **{current['author']}**"
+        if current.get("artwork"):
+            embed.set_thumbnail(url=current["artwork"])
+        embed.add_field(
+            name="Up next",
+            value=(queue[0]["title"][:100] if queue else "Queue is empty"),
+            inline=False,
         )
+        embed.add_field(name="Queue", value=f"{len(queue)} track(s) · {minutes}:{seconds:02d}", inline=True)
+        pos, length = current["position"] // 1000, current["length"] // 1000
+        embed.set_footer(text=f"{pos // 60}:{pos % 60:02d} / {length // 60}:{length % 60:02d}")
+        await interaction.response.send_message(embed=embed, view=NowPlayingView())
+
+    @app_commands.command(name="sleep", description="Fade the music out and pause after N minutes")
+    @app_commands.describe(minutes="Minutes until the fade-out; omit to cancel the timer")
+    @app_commands.guild_only()
+    async def sleep(
+        self,
+        interaction: discord.Interaction,
+        minutes: app_commands.Range[float, 0.5, 480.0] | None = None,
+    ) -> None:
+        is_admin = interaction.user.guild_permissions.manage_guild
+        is_super = interaction.user.id in self.bot.music.config.superadmin_ids
+        if not (is_admin or is_super):
+            await interaction.response.send_message("❌ Only server admins can set the sleep timer.", ephemeral=True)
+            return
+        deadline = self.bot.music.set_sleep(interaction.guild_id or 0, minutes * 60 if minutes else None)
+        if deadline is None:
+            await interaction.response.send_message("⏰ Sleep timer cancelled.")
+        else:
+            import time as _time
+
+            left = max(0, round(deadline - _time.monotonic()))
+            await interaction.response.send_message(
+                f"🌙 Sleep timer set: the music fades out in {left // 60} min {left % 60} s."
+            )
 
     @app_commands.command(name="leave", description="Disconnect the bot from voice")
     @app_commands.guild_only()

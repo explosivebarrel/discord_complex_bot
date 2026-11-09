@@ -18,6 +18,7 @@ from app.core.db.models import (
     FavoriteTrack,
     GuildAdmin,
     GuildSettings,
+    LyricsCache,
     ModWarning,
     MusicSnapshot,
     Notification,
