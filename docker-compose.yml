@@ -44,6 +44,9 @@ services:
       # Lavalink fetches local library files from the app service.
       INTERNAL_BASE_URL: http://app:8000
       MUSIC_LIBRARY_DIR: /data/music
+      # Voice-call recordings and the whisper model cache: must live on the
+      # mounted volume — BASE_DIR/data inside the container is ephemeral.
+      RECORDINGS_DIR: /data/voice
       # The logged-in browser that hands out VK stream URLs (see vkresolver/).
       VK_RESOLVER_URL: http://vk-resolver:8100
     volumes:
