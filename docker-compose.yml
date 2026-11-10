@@ -18,8 +18,9 @@ services:
       # youtube-plugin verdict baked in (see lavalink/supervise.sh).
       - ./lavalink/application.yml:/opt/Lavalink/application.yml.template:ro
       - ./lavalink/supervise.sh:/opt/Lavalink/supervise.sh:ro
-    ports:
-      - "2333:2333"
+    # No published port: the app reaches it over the compose network
+    # (LAVALINK_HOST=lavalink). Debug access goes through
+    # docker-compose.override.yml.
 
   app:
     build: .
@@ -58,8 +59,7 @@ services:
     depends_on:
       - app
     # Frontend-only changes rebuild just this image; the bot stays up.
-    ports:
-      - "8000:80"
+    # No published port: the gateway container is the front door.
 
   vk-resolver:
     build: ./vkresolver
@@ -74,8 +74,25 @@ services:
       # Whole data dir read-only: single-file bind mounts confuse Docker
       # Desktop when the file appears after the first mount.
       - ./data:/session:ro
+    # No published port: VK_RESOLVER_URL points at the service name.
+
+  # The single front door on the host: system nginx (TLS via certbot)
+  # proxies bot.domain here, and this hop forwards everything to web.
+  # Mirrors the memle55 angie-gateway convention: no compose service
+  # publishes ports on its own.
+  gateway:
+    image: nginx:alpine
+    container_name: dcbot-gateway
+    restart: unless-stopped
+    depends_on:
+      - web
+      - app
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "127.0.0.1:8100:8100"
+      # Loopback only: the system nginx reaches it on localhost, the
+      # internet never sees this port.
+      - "127.0.0.1:8080:80"
 
 volumes:
   bot-data:

@@ -52,3 +52,6 @@ tools/vk_spike/last_stream_url.txt
 
 # Playwright debug profile
 vk_debug_profile/
+
+# Local-only port overrides (dev machine convenience ports)
+docker-compose.override.yml
