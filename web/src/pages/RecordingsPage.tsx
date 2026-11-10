@@ -32,6 +32,7 @@ function timeAgo(iso: string): string {
 
 const STATUS_CHIP: Record<VoiceRecordingInfo["status"], { label: string; color: string }> = {
   recording: { label: "Recording", color: "error.main" },
+  queued: { label: "Queued", color: "text.secondary" },
   transcribing: { label: "Transcribing…", color: "warning.main" },
   done: { label: "Ready", color: "success.main" },
   failed: { label: "Failed", color: "text.disabled" },

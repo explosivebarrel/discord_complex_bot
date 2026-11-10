@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.core.config import Config
@@ -13,8 +13,6 @@ from app.core.db.models import (
     AvailabilityRollup,
     AvailabilitySample,
     Base,
-    TrackArtwork,
-    utcnow,
     FavoriteTrack,
     GuildAdmin,
     GuildSettings,
@@ -25,12 +23,14 @@ from app.core.db.models import (
     PlayHistory,
     SearchCache,
     SystemSetting,
+    TrackArtwork,
     UserApiToken,
     UserPlaylist,
     UserPlaylistTrack,
     VoiceRecording,
     VoiceRecordingSegment,
     WebSession,
+    utcnow,
 )
 
 
@@ -1136,6 +1136,18 @@ class Database:
             await session.delete(row)
             await session.commit()
             return True
+
+    async def fail_stale_recordings(self) -> int:
+        """After a restart no session or transcription can still be live;
+        rows stuck in those statuses would never resolve on their own."""
+        async with self.session_factory() as session:
+            result = await session.execute(
+                update(VoiceRecording)
+                .where(VoiceRecording.status.in_(("recording", "queued", "transcribing")))
+                .values(status="failed", error="Interrupted by a bot restart.", ended_at=utcnow())
+            )
+            await session.commit()
+            return result.rowcount
 
     @staticmethod
     def _recording_dict(row: VoiceRecording) -> dict[str, Any]:

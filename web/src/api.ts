@@ -298,7 +298,7 @@ export interface VoiceRecordingInfo {
   started_by: string;
   started_at: string;
   ended_at: string | null;
-  status: "recording" | "transcribing" | "done" | "failed";
+  status: "recording" | "queued" | "transcribing" | "done" | "failed";
   error: string;
   title: string;
   speakers?: { user_id: string; username: string }[];

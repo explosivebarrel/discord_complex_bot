@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import wave
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -19,6 +20,7 @@ from app.core.services.recorder import (
     PCM_RATE,
     RecorderService,
     RecordingError,
+    RecordingSession,
     format_transcript_srt,
     format_transcript_txt,
     wav_to_whisper_array,
@@ -147,6 +149,47 @@ async def test_music_connect_refuses_while_recording(db, config) -> None:
     service.recorder = SimpleNamespace(is_recording=lambda gid: True)
     with pytest.raises(MusicServiceError, match="recording"):
         await service.connect(GUILD_ID, 1, USER_ID)
+
+
+# --- transcription queue ---
+
+async def test_transcription_queue_processes_fifo(db, config) -> None:
+    """Concurrent stops must not run whisper concurrently: one worker, FIFO."""
+    recorder = _service(db, config)
+    order: list[int] = []
+
+    async def fake_transcribe(session) -> None:
+        order.append(session.recording_id)
+        await db.update_recording_status(session.recording_id, "done")
+
+    recorder._transcribe = fake_transcribe  # type: ignore[method-assign]
+    sessions = []
+    for _ in range(3):
+        row = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "tavern")
+        await db.update_recording_status(row["id"], "queued")
+        session = RecordingSession(
+            recording_id=row["id"], guild_id=GUILD_ID, channel_id=999, started_by=USER_ID
+        )
+        sessions.append(session)
+        recorder._enqueue(session)
+    await asyncio.wait_for(recorder._queue.join(), timeout=5)
+    recorder._worker_task.cancel()
+    assert order == [s.recording_id for s in sessions]
+    statuses = [(await db.get_recording(s.recording_id, GUILD_ID))["status"] for s in sessions]
+    assert statuses == ["done", "done", "done"]
+
+
+async def test_fail_stale_recordings_cleans_after_restart(db, config) -> None:
+    live = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "tavern")
+    queued = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "tavern")
+    await db.update_recording_status(queued["id"], "queued")
+    done = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "tavern")
+    await db.update_recording_status(done["id"], "done")
+    n = await db.fail_stale_recordings()
+    assert n == 2
+    assert (await db.get_recording(live["id"], GUILD_ID))["status"] == "failed"
+    assert (await db.get_recording(queued["id"], GUILD_ID))["status"] == "failed"
+    assert (await db.get_recording(done["id"], GUILD_ID))["status"] == "done"
 
 
 # --- DB roundtrip ---

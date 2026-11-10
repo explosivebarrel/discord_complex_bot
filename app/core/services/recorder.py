@@ -159,7 +159,12 @@ class RecordingSession:
 
 
 class RecorderService:
-    """Per-guild recording sessions; one live session per guild."""
+    """Per-guild recording sessions; one live session per guild.
+
+    Transcription runs through a single-worker FIFO queue: whisper on CPU
+    is the heaviest thing this process does, and concurrent runs would
+    starve the voice/websocket loops (and each other) on a small VPS.
+    """
 
     def __init__(self, bot, db: Database, config: Config) -> None:
         self.bot = bot
@@ -167,7 +172,8 @@ class RecorderService:
         self.config = config
         self.hub = None  # set from main.py, like music.hub
         self.sessions: dict[int, RecordingSession] = {}
-        self._transcribe_tasks: set[asyncio.Task] = set()
+        self._queue: asyncio.Queue[RecordingSession] = asyncio.Queue()
+        self._worker_task: asyncio.Task | None = None
         self._model = None
         self._model_lock = asyncio.Lock()
 
@@ -273,13 +279,12 @@ class RecorderService:
             await self.notify(guild_id, "Recording failed", "No speech was captured.")
             return await self.db.get_recording(session.recording_id, guild_id)
 
-        await self.db.update_recording_status(session.recording_id, "transcribing")
+        await self.db.update_recording_status(session.recording_id, "queued")
         await self.db.audit("record.stop", guild_id=guild_id, actor_id=requester_id,
                             details={"recording_id": session.recording_id})
-        await self.notify(guild_id, "Recording stopped", "Transcribing the call…")
-        task = asyncio.create_task(self._transcribe(session), name=f"transcribe-{session.recording_id}")
-        self._transcribe_tasks.add(task)
-        task.add_done_callback(self._transcribe_tasks.discard)
+        await self.notify(guild_id, "Recording stopped",
+                          f"Queued for transcription (position {self._queue.qsize() + 1}).")
+        self._enqueue(session)
         return await self.db.get_recording(session.recording_id, guild_id)
 
     async def _watch(self, session: RecordingSession) -> None:
@@ -310,6 +315,38 @@ class RecorderService:
                 return
 
     # --- transcription ---
+
+    # --- transcription queue ---
+
+    def _enqueue(self, session: RecordingSession) -> None:
+        self._queue.put_nowait(session)
+        if self._worker_task is None or self._worker_task.done():
+            self._worker_task = asyncio.create_task(
+                self._transcribe_worker(), name="transcribe-worker"
+            )
+
+    async def _transcribe_worker(self) -> None:
+        while True:
+            session = await self._queue.get()
+            try:
+                await self.db.update_recording_status(session.recording_id, "transcribing")
+                await self._transcribe(session)
+            except Exception:
+                # _transcribe handles its own failures; this is a safety net
+                # so the worker never dies with the queue still full.
+                logger.exception("Transcription worker error on recording #%s", session.recording_id)
+            finally:
+                self._queue.task_done()
+
+    async def fail_stale_recordings(self) -> None:
+        """Mark in-flight work dead after a restart: no session or worker
+        survives the process, so those rows would sit queued forever."""
+        try:
+            n = await self.db.fail_stale_recordings()
+            if n:
+                logger.warning("Marked %s stale recording(s) as failed after restart", n)
+        except Exception:
+            logger.exception("Stale-recording cleanup failed")
 
     async def _get_model(self):
         async with self._model_lock:
@@ -377,6 +414,8 @@ class RecorderService:
 
     def close_all(self) -> None:
         """App shutdown: drop live sessions (the files stay on disk)."""
+        if self._worker_task is not None:
+            self._worker_task.cancel()
         for guild_id in list(self.sessions):
             session = self.sessions.pop(guild_id)
             if session.watch_task is not None:

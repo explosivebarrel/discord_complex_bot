@@ -120,7 +120,9 @@ export function useRecordings(guildId: string) {
     queryFn: () => api.guildRecordings(guildId),
     enabled: guildId !== "",
     refetchInterval: (query) =>
-      query.state.data?.some((r) => r.status === "recording" || r.status === "transcribing")
+      query.state.data?.some(
+        (r) => r.status === "recording" || r.status === "queued" || r.status === "transcribing",
+      )
         ? 4000
         : false,
   });

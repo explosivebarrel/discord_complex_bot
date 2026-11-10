@@ -92,6 +92,8 @@ def create_app() -> FastAPI:
         music.hub = hub
         recorder.hub = hub
         app.state.recorder = recorder
+        # No session or transcription survives the restart; mark dead rows.
+        await recorder.fail_stale_recordings()
         state_task = asyncio.create_task(_player_state_loop(app, hub), name="player-state-push")
         availability_task = asyncio.create_task(
             availability.loop(config, db, bot, music), name="availability"
