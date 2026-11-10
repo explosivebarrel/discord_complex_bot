@@ -2071,7 +2071,7 @@ class MusicService:
             return {"skipped": skipped, "votes": 1, "needed": 1}
         votes = self.skip_votes.setdefault(guild_id, set())
         votes.add(requester_id)
-        needed = max(1, -(-len(humans) // 2))
+        needed = max(1, -(-humans // 2))
         current = self.current_items.get(guild_id)
         title = current.display_title if current else "the track"
         if len(votes) >= needed:

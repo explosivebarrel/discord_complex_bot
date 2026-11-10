@@ -439,6 +439,11 @@ export const api = {
       handle<{ queued: number; title: string; now_playing: boolean; preview?: PlaylistPageInfo }>(r),
     ),
 
+  skipWithVote: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/skip`, { method: "POST" }).then(
+      (r) => handle<{ skipped: boolean; votes: number; needed: number }>(r),
+    ),
+
   simpleAction: (guildId: string, action: "pause" | "resume" | "skip" | "stop" | "previous") =>
     fetch(`/api/guilds/${guildId}/player/${action}`, { method: "POST" }).then((r) => handle<unknown>(r)),
 

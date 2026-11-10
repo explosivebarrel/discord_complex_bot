@@ -1505,3 +1505,33 @@ async def test_lyrics_cache_ttl(db: Database) -> None:
     assert await db.get_lyrics(key, max_age_s=0) is None
     # No TTL = the historic never-expire behavior.
     assert await db.get_lyrics(key) is not None
+
+
+async def test_vote_skip_multi_human_branch(music: MusicService) -> None:
+    """The 500 regression: the threshold math used len() on an int. With
+    vote-skip on and 4 humans, a single vote must NOT skip - it records
+    1/2; reaching the threshold skips and clears the ballot."""
+    humans = [SimpleNamespace(bot=False, id=i) for i in range(4)]
+    stub = SimpleNamespace(playing=True, channel=SimpleNamespace(members=humans))
+    music.get_player = lambda _gid: stub  # type: ignore[method-assign]
+    music.current_items[GUILD_ID] = QueueItem(make_track("Now"), 1, "tester")
+    skipped_calls = []
+
+    async def fake_skip(gid, requester):  # type: ignore[no-untyped-def]
+        skipped_calls.append(requester)
+        return True
+
+    music.skip = fake_skip  # type: ignore[method-assign]
+    await music.db.update_guild_settings(GUILD_ID, vote_skip=True)
+
+    first = await music.request_skip(GUILD_ID, 101)
+    assert first == {"skipped": False, "votes": 1, "needed": 2}
+    assert skipped_calls == []
+
+    second = await music.request_skip(GUILD_ID, 102)
+    assert second["skipped"] is True
+    assert second["votes"] == 2 and second["needed"] == 2
+    assert skipped_calls == [102]
+    # The ballot cleared: a fresh skip starts from zero.
+    votes = music.skip_votes.get(GUILD_ID, set())
+    assert not votes

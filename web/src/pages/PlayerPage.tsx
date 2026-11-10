@@ -282,7 +282,10 @@ export function PlayerPage() {
   });
 
   const guard = (e: Error) => {
-    if (e.message !== "unauthorized") feedback.show(e.message, "error");
+    if (e.message === "unauthorized") return;
+    // A held skip vote is informational, not a failure.
+    if ((e as Error & { silent?: boolean }).silent) feedback.show(e.message);
+    else feedback.show(e.message, "error");
   };
 
   // Player hotkeys: Space pause/resume, arrows seek +-10s, M mute.
@@ -307,6 +310,14 @@ export function PlayerPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  // Skip that explains itself when vote-skip holds it back: the panel
+  // mirrors what /skip and the Discord buttons report.
+  const voteAwareSkip = () =>
+    act(async () => {
+      const r = await api.skipWithVote(gid);
+      if (!r.skipped) throw Object.assign(new Error(`Skip vote: ${r.votes}/${r.needed}`), { silent: true });
+    }, "Skipped");
 
   const act = (fn: () => Promise<unknown>, okMessage?: string) => {
     fn()
@@ -523,7 +534,7 @@ export function PlayerPage() {
       onVolumeCommit={(v) => act(() => api.volume(gid, v))}
       onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}
       onPrevious={() => act(() => api.simpleAction(gid, "previous"))}
-      onSkip={() => act(() => api.simpleAction(gid, "skip"))}
+      onSkip={voteAwareSkip}
       onStop={() => act(() => api.simpleAction(gid, "stop"))}
       onSeek={(p) => act(() => api.seek(gid, p))}
       onRepeatCycle={cycleRepeat}
@@ -1240,7 +1251,7 @@ export function PlayerPage() {
           onToggleFavorite={() => state.current && toggleFavorite(state.current as TrackInfo)}
           onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}
           onPrevious={() => act(() => api.simpleAction(gid, "previous"))}
-          onSkip={() => act(() => api.simpleAction(gid, "skip"))}
+          onSkip={voteAwareSkip}
           onSeek={(p) => perms?.seek !== false && act(() => api.seek(gid, p))}
           canSeek={perms?.seek !== false}
           onRepeatCycle={cycleRepeat}
