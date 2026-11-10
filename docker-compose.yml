@@ -91,8 +91,11 @@ services:
       - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       # Loopback only: the system nginx reaches it on localhost, the
-      # internet never sees this port.
-      - "127.0.0.1:8080:80"
+      # internet never sees this port. The host port is per-server (other
+      # services on the box count their own gateway ports from 8101):
+      # set GATEWAY_EXPOSED_PORT in .env, the system nginx proxies
+      # bot.domain to 127.0.0.1:<that port>.
+      - "127.0.0.1:${GATEWAY_EXPOSED_PORT:-8080}:80"
 
 volumes:
   bot-data:

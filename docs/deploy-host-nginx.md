@@ -10,7 +10,10 @@ internet ──> system nginx (443, certbot TLS, bot.domain)
 
 No compose service publishes a public port: `web`, `app`, `lavalink` and
 `vk-resolver` live on the compose network only; the gateway publishes
-**127.0.0.1:8080** (loopback, so only the system nginx reaches it).
+**127.0.0.1:$GATEWAY_EXPOSED_PORT** (loopback, so only the system nginx
+reaches it). The port is set in `.env` — on this server the convention
+numbers self-hosted gateways from 8101, so the default is 8101. Check what
+is taken with `ss -tlnp`.
 
 ## 1. System nginx site
 
@@ -46,7 +49,8 @@ server {
     client_max_body_size 64m;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        # The gateway's GATEWAY_EXPOSED_PORT from the bot's .env.
+        proxy_pass http://127.0.0.1:8101;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
