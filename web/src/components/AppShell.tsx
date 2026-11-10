@@ -136,7 +136,7 @@ function DrawerContent({
   // Secondary sections sit behind "Show more"; start expanded when the
   // current route already points into that group.
   const { pathname } = useLocation();
-  const [moreOpen, setMoreOpen] = useState(() => /\/(moderation|admin|recordings)$/.test(pathname));
+  const [moreOpen, setMoreOpen] = useState(() => /\/(stats|posts|moderation|admin)$/.test(pathname));
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* The expand/collapse toggle lives in AppShell, pinned to the top
@@ -175,21 +175,12 @@ function DrawerContent({
               ]}
             />
             <GuildTab
-              to={`/guild/${active.id}/stats`}
-              icon={Ic.stats}
-              label="Stats"
+              to={`/guild/${active.id}/recordings`}
+              icon={Ic.recordings}
+              label="Recordings"
               collapsed={collapsed}
-              disabled={!guildAllows(active, "stats")}
-              botBlocked={active.bot_access?.stats === false}
-              onClick={onNavigate}
-            />
-            <GuildTab
-              to={`/guild/${active.id}/posts`}
-              icon={Ic.posts}
-              label="Posts"
-              collapsed={collapsed}
-              disabled={!guildAllows(active, "posts")}
-              botBlocked={active.bot_access?.posts === false}
+              disabled={!guildAllows(active, "recordings")}
+              botBlocked={active.bot_access?.recordings === false}
               onClick={onNavigate}
             />
             {/* Secondary sections live one click deeper so the rail stays
@@ -232,21 +223,30 @@ function DrawerContent({
             </Tooltip>
             <Collapse in={moreOpen}>
               <GuildTab
+                to={`/guild/${active.id}/stats`}
+                icon={Ic.stats}
+                label="Stats"
+                collapsed={collapsed}
+                disabled={!guildAllows(active, "stats")}
+                botBlocked={active.bot_access?.stats === false}
+                onClick={onNavigate}
+              />
+              <GuildTab
+                to={`/guild/${active.id}/posts`}
+                icon={Ic.posts}
+                label="Posts"
+                collapsed={collapsed}
+                disabled={!guildAllows(active, "posts")}
+                botBlocked={active.bot_access?.posts === false}
+                onClick={onNavigate}
+              />
+              <GuildTab
                 to={`/guild/${active.id}/moderation`}
                 icon={Ic.moderation}
                 label="Moderation"
                 collapsed={collapsed}
                 disabled={!guildAllows(active, "moderation")}
                 botBlocked={active.bot_access?.moderation === false}
-                onClick={onNavigate}
-              />
-              <GuildTab
-                to={`/guild/${active.id}/recordings`}
-                icon={Ic.recordings}
-                label="Recordings"
-                collapsed={collapsed}
-                disabled={!guildAllows(active, "recordings")}
-                botBlocked={active.bot_access?.recordings === false}
                 onClick={onNavigate}
               />
               <GuildTab
