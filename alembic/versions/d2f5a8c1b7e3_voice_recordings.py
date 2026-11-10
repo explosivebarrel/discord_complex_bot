@@ -19,37 +19,51 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _has_column(insp, table: str, column: str) -> bool:
+    return any(c["name"] == column for c in insp.get_columns(table))
+
+
 def upgrade() -> None:
-    op.add_column(
-        'guild_settings',
-        sa.Column('recordings_access', sa.String(length=16), nullable=False, server_default='admins'),
-    )
-    op.create_table(
-        'voice_recordings',
-        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('guild_id', sa.BigInteger(), nullable=False),
-        sa.Column('channel_id', sa.BigInteger(), nullable=False),
-        sa.Column('started_by', sa.BigInteger(), nullable=False),
-        sa.Column('started_at', sa.DateTime(), nullable=False),
-        sa.Column('ended_at', sa.DateTime(), nullable=True),
-        sa.Column('status', sa.String(length=16), nullable=False),
-        sa.Column('error', sa.String(length=500), nullable=False),
-        sa.Column('title', sa.String(length=200), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index(op.f('ix_voice_recordings_guild_id'), 'voice_recordings', ['guild_id'])
-    op.create_table(
-        'voice_recording_segments',
-        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('recording_id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.BigInteger(), nullable=False),
-        sa.Column('username', sa.String(length=128), nullable=False),
-        sa.Column('offset_s', sa.Float(), nullable=False),
-        sa.Column('duration_s', sa.Float(), nullable=False),
-        sa.Column('text', sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index(op.f('ix_voice_recording_segments_recording_id'), 'voice_recording_segments', ['recording_id'])
+    # The app's startup create_all may have already made the new tables (it
+    # cannot add columns though), so every step checks before applying.
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+
+    if not _has_column(insp, "guild_settings", "recordings_access"):
+        op.add_column(
+            'guild_settings',
+            sa.Column('recordings_access', sa.String(length=16), nullable=False, server_default='admins'),
+        )
+
+    tables = insp.get_table_names()
+    if "voice_recordings" not in tables:
+        op.create_table(
+            'voice_recordings',
+            sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+            sa.Column('guild_id', sa.BigInteger(), nullable=False),
+            sa.Column('channel_id', sa.BigInteger(), nullable=False),
+            sa.Column('started_by', sa.BigInteger(), nullable=False),
+            sa.Column('started_at', sa.DateTime(), nullable=False),
+            sa.Column('ended_at', sa.DateTime(), nullable=True),
+            sa.Column('status', sa.String(length=16), nullable=False),
+            sa.Column('error', sa.String(length=500), nullable=False),
+            sa.Column('title', sa.String(length=200), nullable=False),
+            sa.PrimaryKeyConstraint('id'),
+        )
+        op.create_index(op.f('ix_voice_recordings_guild_id'), 'voice_recordings', ['guild_id'])
+    if "voice_recording_segments" not in tables:
+        op.create_table(
+            'voice_recording_segments',
+            sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+            sa.Column('recording_id', sa.Integer(), nullable=False),
+            sa.Column('user_id', sa.BigInteger(), nullable=False),
+            sa.Column('username', sa.String(length=128), nullable=False),
+            sa.Column('offset_s', sa.Float(), nullable=False),
+            sa.Column('duration_s', sa.Float(), nullable=False),
+            sa.Column('text', sa.Text(), nullable=False),
+            sa.PrimaryKeyConstraint('id'),
+        )
+        op.create_index(op.f('ix_voice_recording_segments_recording_id'), 'voice_recording_segments', ['recording_id'])
 
 
 def downgrade() -> None:
