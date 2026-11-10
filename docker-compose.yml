@@ -3,6 +3,11 @@ services:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: dcbot-lavalink
     restart: unless-stopped
+    # Explicit external resolvers: Docker Desktop's host-DNS chain drops
+    # queries intermittently ("Temporary failure in name resolution"),
+    # which has taken down interactions and voice. The embedded resolver
+    # (127.0.0.11) still serves service names; external ones go to these.
+    dns: [1.1.1.1, 8.8.8.8]
     # The supervisor gates the youtube plugin on a reachability probe and
     # restarts Lavalink only when the verdict flips (see supervise.sh).
     entrypoint: ["/bin/sh", "/opt/Lavalink/supervise.sh"]
@@ -26,6 +31,8 @@ services:
     build: .
     container_name: dcbot-app
     restart: unless-stopped
+    # See lavalink.dns — same flaky-DNS protection for the bot itself.
+    dns: [1.1.1.1, 8.8.8.8]
     depends_on:
       - lavalink
     env_file: .env
@@ -68,6 +75,7 @@ services:
     build: ./vkresolver
     container_name: dcbot-vk-resolver
     restart: unless-stopped
+    dns: [1.1.1.1, 8.8.8.8]
     environment:
       PROFILE_DIR: /profile
       # Exported on the admin's machine by tools/vk_spike/export_session.py.
