@@ -15,7 +15,7 @@ commands or from a browser that looks and feels like a streaming app.
 [![Docker](https://img.shields.io/badge/Docker%20Compose-ready-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![License](https://img.shields.io/badge/License-MIT-3DA639)](LICENSE)
 
-*[Screenshots](#screenshots) · [Features](#features) · [Architecture](#architecture) · [Quick start](#setup) · [Development](#development)*
+*[Screenshots](#screenshots) · [Features](#features) · [Architecture](#architecture) · [Deploy](DEPLOY.md) · [FAQ](FAQ.md) · [Development](#development)*
 
 ![The player panel](docs/screenshots/player.png)
 
@@ -166,9 +166,10 @@ data/             # runtime state: sqlite db, local music library (git-ignored)
 
 ## Roadmap
 
-Planned work lives in [ROADMAP.md](ROADMAP.md). The versioning scheme and the
-full change history are on the panel's **About → Changelog** tab
-([web/src/changelog.ts](web/src/changelog.ts)).
+Planned work lives in [ROADMAP.md](ROADMAP.md). Deployment is documented in
+[DEPLOY.md](DEPLOY.md), known issues in [FAQ.md](FAQ.md). The versioning
+scheme and the full change history are on the panel's **About → Changelog**
+tab ([web/src/changelog.ts](web/src/changelog.ts)).
 
 ## License
 
