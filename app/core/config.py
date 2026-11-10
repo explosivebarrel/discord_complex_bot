@@ -43,9 +43,10 @@ class Config:
     # The logged-in browser sidecar (vkresolver/): empty = disabled.
     vk_resolver_url: str = ""
     # Local faster-whisper transcription: model size (tiny/base/small/...)
-    # and the expected language (None = auto-detect).
+    # and the spoken language. Empty = auto-detect per recording (the model
+    # covers 99 languages; pin one only for a single-language server).
     transcribe_model: str = "small"
-    transcribe_language: str = "ru"
+    transcribe_language: str = ""
 
 
 def load_config() -> Config:
@@ -84,7 +85,7 @@ def load_config() -> Config:
         internal_base_url=os.getenv("INTERNAL_BASE_URL", base_url_value),
         bot_name=os.getenv("BOT_NAME", "discord_complex_bot"),
         transcribe_model=os.getenv("TRANSCRIBE_MODEL", "small"),
-        transcribe_language=os.getenv("TRANSCRIBE_LANGUAGE", "ru"),
+        transcribe_language=os.getenv("TRANSCRIBE_LANGUAGE", ""),
     )
 
 
