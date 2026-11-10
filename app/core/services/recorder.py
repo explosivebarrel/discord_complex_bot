@@ -174,13 +174,29 @@ class RecorderService:
         if channel is None or not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
             raise RecordingError("Voice channel not found.")
         # Exclusive mode: refuse while music plays, evict an idle connection.
-
         music = getattr(self.bot, "music", None)
         player = music.get_player(guild_id) if music is not None else None
         if player is not None and player.playing:
             raise RecordingError("Stop playback first — recording and music cannot run together.")
         if player is not None:
             await music.disconnect(guild_id)
+
+        # voice receive decodes opus locally (the music path leaves it to
+        # Lavalink), so the shared libopus must be loaded once per process.
+        # discord.py 2.7's load_opus demands an explicit library name.
+        try:
+            import ctypes.util
+
+            lib = ctypes.util.find_library("opus")
+            if lib is None:
+                raise RecordingError(
+                    "libopus is not installed in the container — recordings cannot decode audio."
+                )
+            discord.opus.load_opus(lib)
+        except RecordingError:
+            raise
+        except Exception:
+            logger.exception("Failed to load libopus — recording will not capture audio")
 
         row = await self.db.add_voice_recording(guild_id, channel.id, requester_id, channel.name)
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(row["id"])
@@ -250,10 +266,24 @@ class RecorderService:
         return await self.db.get_recording(session.recording_id, guild_id)
 
     async def _watch(self, session: RecordingSession) -> None:
-        """Auto-stop when the voice client dies (kick, channel delete, crash)."""
+        """Auto-stop when the voice client dies (kick, channel delete, crash).
+
+        Also catches a dead audio reader: voice_recv stops the reader thread
+        on a packet-processing error (e.g. missing libopus) while the voice
+        connection itself stays alive — without this the session would run
+        on capturing nothing.
+        """
         while True:
             await asyncio.sleep(30)
             vc = session.vc
+            reader_error = getattr(getattr(vc, "_reader", None), "error", None)
+            if reader_error is not None:
+                logger.error("Recording #%s reader crashed: %s", session.recording_id, reader_error)
+                try:
+                    await self.stop(session.guild_id)
+                except RecordingError:
+                    pass
+                return
             if vc is None or not vc.is_connected():
                 logger.warning("Recording #%s lost its voice client; auto-stopping", session.recording_id)
                 try:
