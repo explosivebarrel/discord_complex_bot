@@ -34,11 +34,18 @@ class Config:
     log_level: str
     data_dir: Path = field(default_factory=lambda: BASE_DIR / "data")
     music_library_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "music")
+    # Voice-call recordings (per-speaker wav) and the whisper model cache
+    # live under here; /data is bind-mounted so models survive rebuilds.
+    recordings_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "voice")
     max_upload_mb: int = 50
     internal_base_url: str = "http://localhost:8000"
     bot_name: str = "discord_complex_bot"
     # The logged-in browser sidecar (vkresolver/): empty = disabled.
     vk_resolver_url: str = ""
+    # Local faster-whisper transcription: model size (tiny/base/small/...)
+    # and the expected language (None = auto-detect).
+    transcribe_model: str = "small"
+    transcribe_language: str = "ru"
 
 
 def load_config() -> Config:
@@ -72,9 +79,12 @@ def load_config() -> Config:
         vk_resolver_url=os.getenv("VK_RESOLVER_URL", ""),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         music_library_dir=Path(os.getenv("MUSIC_LIBRARY_DIR", str(data_dir_value / "music"))),
+        recordings_dir=Path(os.getenv("RECORDINGS_DIR", str(data_dir_value / "voice"))),
         max_upload_mb=int(os.getenv("MAX_UPLOAD_MB", "50")),
         internal_base_url=os.getenv("INTERNAL_BASE_URL", base_url_value),
         bot_name=os.getenv("BOT_NAME", "discord_complex_bot"),
+        transcribe_model=os.getenv("TRANSCRIBE_MODEL", "small"),
+        transcribe_language=os.getenv("TRANSCRIBE_LANGUAGE", "ru"),
     )
 
 

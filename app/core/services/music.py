@@ -247,6 +247,10 @@ class MusicService:
         guild = self.get_guild(guild_id)
         if guild is None:
             raise MusicServiceError("Bot is not on this server.")
+        # Exclusive voice connection: a live recording owns it.
+        recorder = getattr(self, "recorder", None)
+        if recorder is not None and recorder.is_recording(guild_id):
+            raise MusicServiceError("A call recording is running — stop it before playing music.")
         channel = guild.get_channel(channel_id)
         if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
             raise MusicServiceError("Voice channel not found.")

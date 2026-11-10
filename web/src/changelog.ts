@@ -3,7 +3,7 @@
  * large feature blocks, ZZ for daily fixes. The current version is the
  * last entry of CHANGELOG; bump it with every release commit.
  */
-export const BOT_VERSION = "v3.05.00";
+export const BOT_VERSION = "v3.06.00";
 
 export interface ChangelogBlock {
   version: string;
@@ -16,6 +16,19 @@ export interface ChangelogBlock {
 }
 
 export const CHANGELOG: ChangelogBlock[] = [
+  {
+    version: "v3.06.00",
+    commit: "pending",
+    date: "2026-11-11",
+    title: "Voice call recording with per-speaker transcription",
+    points: [
+      "/record start|stop|status: the bot records the voice call — exclusive mode, recording and music playback cannot run at the same time",
+      "Exact speaker attribution without diarization: every Discord user streams their own opus source (SSRC), the recorder writes one wav per person",
+      "Local transcription with faster-whisper (TRANSCRIBE_MODEL, TRANSCRIBE_LANGUAGE envs; no external API, the model downloads into data/voice/models on first use)",
+      "Recordings page in the panel (Show more section): live status chips, per-line transcript [time] speaker: text, txt/srt downloads, per-speaker wav audio, delete",
+      "Access gating: recordings_access (admins by default, owner-editable in Manage), the bot's voice permission is a hard limit; recording start/stop is audited and hits the notification bell",
+    ],
+  },
   {
     version: "v3.05.00",
     commit: "0999ffb",

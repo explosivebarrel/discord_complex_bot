@@ -65,6 +65,7 @@ export function AdminPage() {
     effects: string;
     queueClear: string;
     seek: string;
+    recordings: string;
   } | null>(null);
 
   const guard = (e: Error) => feedback.show(e.message, "error");
@@ -90,6 +91,7 @@ export function AdminPage() {
         effects: settings.effects_access,
         queueClear: settings.queue_clear_access,
         seek: settings.seek_access,
+        recordings: settings.recordings_access,
       });
     }
   }, [settings]);
@@ -267,6 +269,7 @@ export function AdminPage() {
                       ["stats", "Stats"],
                       ["posts", "Posts"],
                       ["moderation", "Moderation"],
+                      ["recordings", "Recordings"],
                     ] as const
                   ).map(([key, label]) => (
                     <Stack key={key} direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
@@ -351,6 +354,7 @@ export function AdminPage() {
                                   stats_access: access.stats,
                                   posts_access: access.posts,
                                   moderation_access: access.moderation,
+                                  recordings_access: access.recordings,
                                   mod_log_channel_id: access.modLog || null,
                                   np_channel_id: access.npChannel || null,
                                   clear_np_channel: !access.npChannel,
@@ -374,6 +378,7 @@ export function AdminPage() {
                               effects: s.effects_access,
                               queueClear: s.queue_clear_access,
                               seek: s.seek_access,
+                              recordings: s.recordings_access,
                             });
                             feedback.show("Panel access saved");
                           })

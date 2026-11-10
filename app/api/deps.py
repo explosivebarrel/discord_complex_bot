@@ -398,6 +398,9 @@ def bot_section_available(bot: ComplexBot, guild_id: int, section: str) -> bool:
         return p.view_channel and p.send_messages
     if section == "moderation":
         return p.moderate_members or p.kick_members or p.ban_members
+    if section == "recordings":
+        # Recording needs its own voice connection in the channel.
+        return p.connect
     # manage: the bot configures itself, no Discord permission involved.
     return True
 

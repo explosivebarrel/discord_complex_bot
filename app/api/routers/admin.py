@@ -44,6 +44,7 @@ class UpdateSettingsBody(BaseModel):
     effects_access: str | None = None
     queue_clear_access: str | None = None
     seek_access: str | None = None
+    recordings_access: str | None = None
 
 
 class AddAdminBody(BaseModel):
@@ -98,6 +99,7 @@ async def get_settings(
         "effects_access": settings.effects_access,
         "queue_clear_access": settings.queue_clear_access,
         "seek_access": settings.seek_access,
+        "recordings_access": settings.recordings_access,
     }
 
 
@@ -116,6 +118,7 @@ async def update_settings(
         value is not None for value in (
             body.stats_access, body.posts_access, body.moderation_access,
             body.volume_access, body.effects_access, body.queue_clear_access, body.seek_access,
+            body.recordings_access,
         )
     )
     if owner_field and not is_guild_owner(bot, guild_id, user):
@@ -140,6 +143,7 @@ async def update_settings(
         effects_access=body.effects_access,
         queue_clear_access=body.queue_clear_access,
         seek_access=body.seek_access,
+        recordings_access=body.recordings_access,
     )
     await db.audit(
         "admin.update_settings",

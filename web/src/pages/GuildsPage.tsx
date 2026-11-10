@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Avatar, Box, Button, Card, CardContent, Chip, Grid, IconButton, ListItemText, Menu, MenuItem, Skeleton, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
+import { IconBarChart as BarChart, IconGavel as Gavel, IconGraphicEq as GraphicEq, IconMic as Mic, IconPostAdd as PostAdd, IconSettings as Settings } from "../components/icons";
 import { api, guildAllows, guildSectionHint, type AccessMockTier, type GuildBrief } from "../api";
 import { useGuilds, useMe, useSetAccessMock } from "../queries";
 import { useAuth } from "../useAuth";
@@ -264,6 +264,15 @@ export function GuildsPage() {
                         href={`/guild/${g.id}/moderation`}
                         enabled={guildAllows(g, "moderation")}
                         hint={guildSectionHint(g, "moderation")}
+                      />
+                    </Box>
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <SectionButton
+                        label="Recordings"
+                        icon={<Mic />}
+                        href={`/guild/${g.id}/recordings`}
+                        enabled={guildAllows(g, "recordings")}
+                        hint={guildSectionHint(g, "recordings")}
                       />
                     </Box>
                   </Box>

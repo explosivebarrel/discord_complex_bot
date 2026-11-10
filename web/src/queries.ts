@@ -113,6 +113,36 @@ export function useGuildStats(guildId: string) {
   });
 }
 
+/** Voice-call recordings; live statuses (recording/transcribing) re-poll. */
+export function useRecordings(guildId: string) {
+  return useQuery({
+    queryKey: ["recordings", guildId],
+    queryFn: () => api.guildRecordings(guildId),
+    enabled: guildId !== "",
+    refetchInterval: (query) =>
+      query.state.data?.some((r) => r.status === "recording" || r.status === "transcribing")
+        ? 4000
+        : false,
+  });
+}
+
+export function useRecordingTranscript(guildId: string, id: number | null) {
+  return useQuery({
+    queryKey: ["recording-transcript", guildId, id],
+    queryFn: () => api.recordingTranscript(guildId, id!),
+    enabled: guildId !== "" && id !== null,
+  });
+}
+
+export function useDeleteRecording(guildId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.deleteRecording(guildId, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["recordings", guildId] }),
+  });
+}
+
+
 export function useGuildSettings(guildId: string) {
   return useQuery({
     queryKey: ["guildSettings", guildId],

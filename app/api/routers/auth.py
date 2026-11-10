@@ -169,9 +169,15 @@ async def my_guilds(
         # panel shows must say the same (a mock wins over the shortcut).
         # "player" mirrors require_guild_member: any member may listen.
         if mock == "guest":
-            access = {"player": False, "manage": False, "stats": False, "posts": False, "moderation": False}
+            access = {
+                "player": False, "manage": False, "stats": False,
+                "posts": False, "moderation": False, "recordings": False,
+            }
         elif user.is_superadmin and mock is None:
-            access = {"player": True, "manage": True, "stats": True, "posts": True, "moderation": True}
+            access = {
+                "player": True, "manage": True, "stats": True,
+                "posts": True, "moderation": True, "recordings": True,
+            }
         else:
             access = {
                 "player": True,
@@ -179,6 +185,7 @@ async def my_guilds(
                 "stats": section_allows(settings.stats_access, tier),
                 "posts": section_allows(settings.posts_access, tier),
                 "moderation": section_allows(settings.moderation_access, tier),
+                "recordings": section_allows(settings.recordings_access, tier),
             }
         # The bot's own permissions are a hard limit no user tier can lift:
         # an invited-without-permissions bot makes sections useless.

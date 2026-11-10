@@ -24,6 +24,7 @@ import { ExtensionPage } from "./pages/ExtensionPage";
 import { StatsPage } from "./pages/StatsPage";
 import { PostsPage } from "./pages/PostsPage";
 import { ModerationPage } from "./pages/ModerationPage";
+import { RecordingsPage } from "./pages/RecordingsPage";
 import { SandboxPage } from "./pages/SandboxPage";
 
 const queryClient = new QueryClient({
@@ -87,7 +88,7 @@ function ThemedApp({ children }: { children: React.ReactNode }) {
               fontDisplay: "block",
               // The font is served immutable for a year: bump ?v= on every
               // subset rebuild, or clients keep the old file for a year.
-              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=11") format("woff2")',
+              src: 'url("/fonts/material-symbols-rounded-subset.woff2?v=12") format("woff2")',
             },
           }}
         />
@@ -118,6 +119,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="/guild/:guildId/stats" element={<StatsPage />} />
             <Route path="/guild/:guildId/posts" element={<PostsPage />} />
             <Route path="/guild/:guildId/moderation" element={<ModerationPage />} />
+            <Route path="/guild/:guildId/recordings" element={<RecordingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/extension" element={<ExtensionPage />} />
             <Route path="/sandbox" element={<SandboxPage />} />

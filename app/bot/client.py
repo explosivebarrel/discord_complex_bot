@@ -37,6 +37,7 @@ class ComplexBot(commands.Bot):
             "app.bot.cogs.moderation",
             "app.bot.cogs.owner",
             "app.bot.cogs.posts",
+            "app.bot.cogs.record",
         )
         for ext in cogs:
             # setup_hook runs again when _run_bot restarts a crashed bot —

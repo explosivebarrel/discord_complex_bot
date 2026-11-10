@@ -65,6 +65,8 @@ export const IconLink = ic("link");
 export const IconLogout = ic("logout");
 export const IconUpload = ic("upload", false);
 export const IconMenu = ic("menu");
+/** Voice-call recordings nav + page header. */
+export const IconMic = ic("mic");
 export const IconMood = ic("mood");
 export const IconMusicNote = ic("music_note");
 export const IconPalette = ic("palette");

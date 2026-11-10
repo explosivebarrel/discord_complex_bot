@@ -26,6 +26,7 @@ from app.api.routers import (
     moderation,
     player,
     posts,
+    recordings,
     system,
     user_playlists,
 )
@@ -35,6 +36,7 @@ from app.core.db import Database
 from app.core.db.models import utcnow
 from app.core.services import availability
 from app.core.services.music import MusicService
+from app.core.services.recorder import RecorderService
 from app.core.services.ws_hub import get_hub
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,8 @@ def create_app() -> FastAPI:
     music = MusicService(None, db, config)  # The code below sets music.bot to the bot object.
     bot = ComplexBot(config, db, music)
     music.bot = bot
+    recorder = RecorderService(bot, db, config)
+    music.recorder = recorder
 
     async def _run_bot() -> None:
         # A flaky network kills the first connect (gateway 5xx, TLS resets);
@@ -86,6 +90,8 @@ def create_app() -> FastAPI:
         search_cache_task = asyncio.create_task(_search_cache_cleanup_loop(db), name="search-cache-prune")
         hub = get_hub(app)
         music.hub = hub
+        recorder.hub = hub
+        app.state.recorder = recorder
         state_task = asyncio.create_task(_player_state_loop(app, hub), name="player-state-push")
         availability_task = asyncio.create_task(
             availability.loop(config, db, bot, music), name="availability"
@@ -100,6 +106,7 @@ def create_app() -> FastAPI:
             state_task.cancel()
             availability_task.cancel()
             watchdog_task.cancel()
+            recorder.close_all()
             await bot.close()
             bot_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -148,6 +155,7 @@ def create_app() -> FastAPI:
     app.include_router(posts.router)
     app.include_router(moderation.router)
     app.include_router(user_playlists.router)
+    app.include_router(recordings.router)
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:

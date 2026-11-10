@@ -35,6 +35,7 @@ export interface GuildBrief {
     stats: boolean;
     posts: boolean;
     moderation: boolean;
+    recordings: boolean;
   };
   /** Which sections the BOT can perform on this server. Missing on stale
       cached payloads; a false here is the reason access is false. */
@@ -286,6 +287,29 @@ export interface GuildSettings {
   effects_access: string;
   queue_clear_access: string;
   seek_access: string;
+  recordings_access: string;
+}
+
+/** One voice-call recording in the panel list. */
+export interface VoiceRecordingInfo {
+  id: number;
+  guild_id: string;
+  channel_id: string;
+  started_by: string;
+  started_at: string;
+  ended_at: string | null;
+  status: "recording" | "transcribing" | "done" | "failed";
+  error: string;
+  title: string;
+  speakers?: { user_id: string; username: string }[];
+}
+
+export interface TranscriptSegment {
+  user_id: string;
+  username: string;
+  offset_s: number;
+  duration_s: number;
+  text: string;
 }
 
 export interface GuildStats {
@@ -681,6 +705,20 @@ export const api = {
   guildStats: (guildId: string) =>
     fetch(`/api/admin/guilds/${guildId}/stats`).then((r) => handle<GuildStats>(r)),
 
+  guildRecordings: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/recordings`).then((r) => handle<VoiceRecordingInfo[]>(r)),
+
+  recordingTranscript: (guildId: string, id: number) =>
+    fetch(`/api/guilds/${guildId}/recordings/${id}/transcript`).then((r) => handle<TranscriptSegment[]>(r)),
+
+  recordingDetails: (guildId: string, id: number) =>
+    fetch(`/api/guilds/${guildId}/recordings/${id}`).then((r) => handle<VoiceRecordingInfo>(r)),
+
+  deleteRecording: (guildId: string, id: number) =>
+    fetch(`/api/guilds/${guildId}/recordings/${id}`, { method: "DELETE" }).then((r) =>
+      handle<{ status: string }>(r),
+    ),
+
   guildSettings: (guildId: string) =>
     fetch(`/api/admin/guilds/${guildId}/settings`).then((r) => handle<GuildSettings>(r)),
 
@@ -702,6 +740,7 @@ export const api = {
       effects_access?: string;
       queue_clear_access?: string;
       seek_access?: string;
+      recordings_access?: string;
     },
   ) =>
     fetch(`/api/admin/guilds/${guildId}/settings`, {

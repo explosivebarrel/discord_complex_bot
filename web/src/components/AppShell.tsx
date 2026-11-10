@@ -10,6 +10,7 @@ import { AccountMenu } from "./AccountMenu";
 import { islandStyle, surfaceStyle } from "../themes/buildTheme";
 import { useAppTheme } from "../themes/AppThemeContext";
 import { useGlassIsland } from "./glass/glassRegistry";
+import { IconMic } from "./icons";
 import type { GuildBrief, Me } from "../api";
 import { guildAllows } from "../api";
 import { useGuilds, useMe } from "../queries";
@@ -105,6 +106,7 @@ const Ic = {
   rightClose: <MsIcon name="right_panel_close" fill={false} />,
   rightOpen: <MsIcon name="right_panel_open" fill={false} />,
   queue: <MsIcon name="queue_music" />,
+  recordings: <IconMic />,
 };
 
 function DrawerContent({
@@ -134,7 +136,7 @@ function DrawerContent({
   // Secondary sections sit behind "Show more"; start expanded when the
   // current route already points into that group.
   const { pathname } = useLocation();
-  const [moreOpen, setMoreOpen] = useState(() => /\/(moderation|admin)$/.test(pathname));
+  const [moreOpen, setMoreOpen] = useState(() => /\/(moderation|admin|recordings)$/.test(pathname));
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* The expand/collapse toggle lives in AppShell, pinned to the top
@@ -236,6 +238,15 @@ function DrawerContent({
                 collapsed={collapsed}
                 disabled={!guildAllows(active, "moderation")}
                 botBlocked={active.bot_access?.moderation === false}
+                onClick={onNavigate}
+              />
+              <GuildTab
+                to={`/guild/${active.id}/recordings`}
+                icon={Ic.recordings}
+                label="Recordings"
+                collapsed={collapsed}
+                disabled={!guildAllows(active, "recordings")}
+                botBlocked={active.bot_access?.recordings === false}
                 onClick={onNavigate}
               />
               <GuildTab

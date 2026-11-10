@@ -28,6 +28,8 @@ from app.core.db.models import (
     UserApiToken,
     UserPlaylist,
     UserPlaylistTrack,
+    VoiceRecording,
+    VoiceRecordingSegment,
     WebSession,
 )
 
@@ -79,6 +81,7 @@ class Database:
         effects_access: str | None = None,
         queue_clear_access: str | None = None,
         seek_access: str | None = None,
+        recordings_access: str | None = None,
     ) -> GuildSettings:
         async with self.session_factory() as session:
             settings = await session.get(GuildSettings, guild_id)
@@ -122,6 +125,7 @@ class Database:
                 ("effects_access", effects_access),
                 ("queue_clear_access", queue_clear_access),
                 ("seek_access", seek_access),
+                ("recordings_access", recordings_access),
             ):
                 if value is not None:
                     setattr(settings, field, value)
@@ -1051,3 +1055,98 @@ class Database:
                 }
                 for row in rows
             }
+
+    # --- voice recordings ---
+
+    async def add_voice_recording(
+        self, guild_id: int, channel_id: int, started_by: int, title: str
+    ) -> dict[str, Any]:
+        async with self.session_factory() as session:
+            row = VoiceRecording(
+                guild_id=guild_id, channel_id=channel_id, started_by=started_by, title=title
+            )
+            session.add(row)
+            await session.commit()
+            return self._recording_dict(row)
+
+    async def update_recording_status(
+        self, recording_id: int, status: str, error: str = "", title: str | None = None
+    ) -> None:
+        async with self.session_factory() as session:
+            row = await session.get(VoiceRecording, recording_id)
+            if row is None:
+                return
+            row.status = status
+            row.error = error
+            if status in ("transcribing", "done", "failed"):
+                row.ended_at = utcnow()
+            if title is not None:
+                row.title = title
+            await session.commit()
+
+    async def add_recording_segments(self, recording_id: int, segments: list[dict[str, Any]]) -> None:
+        async with self.session_factory() as session:
+            for seg in segments:
+                session.add(VoiceRecordingSegment(recording_id=recording_id, **seg))
+            await session.commit()
+
+    async def list_voice_recordings(self, guild_id: int, limit: int = 50) -> list[dict[str, Any]]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(VoiceRecording)
+                .where(VoiceRecording.guild_id == guild_id)
+                .order_by(VoiceRecording.started_at.desc(), VoiceRecording.id.desc())
+                .limit(limit)
+            )
+            return [self._recording_dict(r) for r in rows.scalars()]
+
+    async def get_recording(self, recording_id: int, guild_id: int) -> dict[str, Any] | None:
+        async with self.session_factory() as session:
+            row = await session.get(VoiceRecording, recording_id)
+            if row is None or row.guild_id != guild_id:
+                return None
+            return self._recording_dict(row)
+
+    async def get_segments(self, recording_id: int) -> list[dict[str, Any]]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(VoiceRecordingSegment)
+                .where(VoiceRecordingSegment.recording_id == recording_id)
+                .order_by(VoiceRecordingSegment.offset_s, VoiceRecordingSegment.id)
+            )
+            return [
+                {
+                    "user_id": r.user_id,
+                    "username": r.username,
+                    "offset_s": r.offset_s,
+                    "duration_s": r.duration_s,
+                    "text": r.text,
+                }
+                for r in rows.scalars()
+            ]
+
+    async def delete_recording(self, recording_id: int, guild_id: int) -> bool:
+        async with self.session_factory() as session:
+            row = await session.get(VoiceRecording, recording_id)
+            if row is None or row.guild_id != guild_id:
+                return False
+            await session.execute(
+                delete(VoiceRecordingSegment).where(VoiceRecordingSegment.recording_id == recording_id)
+            )
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    @staticmethod
+    def _recording_dict(row: VoiceRecording) -> dict[str, Any]:
+        return {
+            "id": row.id,
+            "guild_id": row.guild_id,
+            "channel_id": row.channel_id,
+            "started_by": row.started_by,
+            "started_at": row.started_at.isoformat(),
+            "ended_at": row.ended_at.isoformat() if row.ended_at else None,
+            "status": row.status,
+            "error": row.error,
+            "title": row.title,
+        }

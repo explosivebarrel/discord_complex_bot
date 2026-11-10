@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -46,6 +56,8 @@ class GuildSettings(Base):
     effects_access: Mapped[str] = mapped_column(String(16), default="members")
     queue_clear_access: Mapped[str] = mapped_column(String(16), default="members")
     seek_access: Mapped[str] = mapped_column(String(16), default="members")
+    # Who can start/stop voice-call recordings: admins | members | off.
+    recordings_access: Mapped[str] = mapped_column(String(16), default="admins")
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, onupdate=utcnow)
 
@@ -297,3 +309,42 @@ class AvailabilityRollup(Base):
     degraded: Mapped[int] = mapped_column(Integer, default=0)
     down: Mapped[int] = mapped_column(Integer, default=0)
     na: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class VoiceRecording(Base):
+    """One voice-call recording session (exclusive mode, no music playback).
+
+    Status flow: recording -> transcribing -> done | failed. The per-speaker
+    wav files live on disk under recordings_dir/<guild_id>/<recording_id>/;
+    `title` defaults to the channel name at start.
+    """
+
+    __tablename__ = "voice_recordings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    started_by: Mapped[int] = mapped_column(BigInteger)
+    started_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="recording")
+    error: Mapped[str] = mapped_column(String(500), default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
+
+
+class VoiceRecordingSegment(Base):
+    """One transcript line of a recording, attributed to a speaker.
+
+    offset_s/duration_s are relative to the recording start; speakers are
+    exact (each Discord user streams their own opus source, no diarization).
+    """
+
+    __tablename__ = "voice_recording_segments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    recording_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    username: Mapped[str] = mapped_column(String(128), default="")
+    offset_s: Mapped[float] = mapped_column(Float)
+    duration_s: Mapped[float] = mapped_column(Float, default=0.0)
+    text: Mapped[str] = mapped_column(Text)
