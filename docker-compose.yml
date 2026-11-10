@@ -40,9 +40,12 @@ services:
       # The logged-in browser that hands out VK stream URLs (see vkresolver/).
       VK_RESOLVER_URL: http://vk-resolver:8100
     volumes:
-      - bot-data:/data
-      # Local music library; drop files into data/music on the host.
-      - ./data/music:/data/music
+      # The DB lives on the server disk at data/bot.db (plain bind): visible
+      # on the host, backed up with the usual disk backup. On the local
+      # Windows machine docker-compose.override.yml swaps this back to the
+      # named volume — SQLite over a Windows bind mount is a locking/perf
+      # hazard, so dev keeps the volume.
+      - ./data:/data
       # The panel edits the Yandex token here; lavalink reads it on recreate.
       - ./.env:/srv/.env
     # No published port: the web container is the front door (see below).
@@ -97,6 +100,8 @@ services:
       # bot.domain to 127.0.0.1:<that port>.
       - "127.0.0.1:${GATEWAY_EXPOSED_PORT:-8080}:80"
 
+# bot-data is used by the local dev override only (the server bind-mounts
+# ./data:/data); the declaration stays so the override stays valid.
 volumes:
   bot-data:
   vk-profile:
