@@ -18,7 +18,7 @@ export interface ChangelogBlock {
 export const CHANGELOG: ChangelogBlock[] = [
   {
     version: "v3.06.00",
-    commit: "pending",
+    commit: "f43902d",
     date: "2026-11-11",
     title: "Voice call recording with per-speaker transcription",
     points: [
