@@ -29,6 +29,23 @@ except ImportError:  # pragma: no cover - allows unit tests without discord
     discord = None  # type: ignore[assignment]
     voice_recv = None  # type: ignore[assignment]
 
+if voice_recv is not None:
+    # Upstream treats any single decode error as fatal: PacketRouter.run()
+    # dies on the first corrupt RTP packet (a routine thing on real voice
+    # links — loss and reorder happen) and the capture stops after ~0.5s.
+    # Make pop_data skip broken packets instead of killing the capture.
+    _upstream_pop_data = voice_recv.opus.PacketDecoder.pop_data
+
+    def _pop_data_resilient(self, *, timeout: float = 0):
+        for _ in range(64):
+            try:
+                return _upstream_pop_data(self, timeout=timeout)
+            except Exception as exc:
+                logger.warning("Dropping corrupt voice packet (ssrc %s): %s", self.ssrc, exc)
+        return None
+
+    voice_recv.opus.PacketDecoder.pop_data = _pop_data_resilient
+
 from app.core.config import Config
 from app.core.db.database import Database
 
