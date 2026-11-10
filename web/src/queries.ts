@@ -51,6 +51,15 @@ export function useSetAccessMock() {
   });
 }
 
+export function usePlayerPermissions(guildId: string) {
+  return useQuery({
+    queryKey: ["player-permissions", guildId],
+    queryFn: () => api.playerPermissions(guildId),
+    enabled: guildId !== "",
+    staleTime: 60_000,
+  });
+}
+
 export function usePlayerState(guildId: string) {
   // The websocket pushes state on change; polling stays as the fallback and
   // as a periodic correction, but slows right down while the socket is open.

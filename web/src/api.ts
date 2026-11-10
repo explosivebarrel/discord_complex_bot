@@ -121,6 +121,13 @@ export interface GuildUpload {
   uploader: string;
 }
 
+export interface PlayerPermissions {
+  volume: boolean;
+  effects: boolean;
+  queue_clear: boolean;
+  seek: boolean;
+}
+
 export interface PlayerState {
   guild_id: string;
   guild_name: string | null;
@@ -358,6 +365,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ guild_id: guildId, tier }),
     }).then((r) => handle<{ status: string }>(r)),
+
+  playerPermissions: (guildId: string) =>
+    fetch(`/api/guilds/${guildId}/player/permissions`).then((r) => handle<PlayerPermissions>(r)),
 
   playerState: (guildId: string) =>
     fetch(`/api/guilds/${guildId}/player/state`).then((r) => handle<PlayerState>(r)),

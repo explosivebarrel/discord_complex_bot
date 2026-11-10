@@ -46,7 +46,7 @@ import {
   TrackInfo,
   UserPlaylistFull,
 } from "../api";
-import { usePlayerState, useVoiceChannels, useFavorites, useGuilds, useGuildUploads, useMyPlaylists } from "../queries";
+import { usePlayerState, usePlayerPermissions, useVoiceChannels, useFavorites, useGuilds, useGuildUploads, useMyPlaylists } from "../queries";
 import { PlayerPageSkeleton } from "../components/Skeletons";
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
@@ -105,6 +105,10 @@ export function PlayerPage() {
   // the refresh happens in the background; the player state polls every 3s.
   usePlayerSocket(gid);
   const stateQuery = usePlayerState(gid);
+  // Effective player-action permissions: the UI hides what the user cannot
+  // use; the routes keep enforcing with 403s.
+  const permsQuery = usePlayerPermissions(gid);
+  const perms = permsQuery.data;
   const state = stateQuery.data ?? null;
   const channelsQuery = useVoiceChannels(gid);
   const channels = channelsQuery.data ?? [];
@@ -291,11 +295,11 @@ export function PlayerPage() {
       if (e.code === "Space") {
         e.preventDefault();
         act(() => api.simpleAction(gid, st.current?.paused ? "resume" : "pause"));
-      } else if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
+      } else if ((e.code === "ArrowRight" || e.code === "ArrowLeft") && perms?.seek !== false) {
         const base = st.current?.position ?? 0;
         e.preventDefault();
         act(() => api.seek(gid, Math.max(0, base + (e.code === "ArrowRight" ? 10000 : -10000))));
-      } else if (e.key === "m" || e.key === "M") {
+      } else if ((e.key === "m" || e.key === "M") && perms?.volume !== false) {
         e.preventDefault();
         act(() => api.volume(gid, volume === 0 ? 100 : 0));
       }
@@ -533,6 +537,7 @@ export function PlayerPage() {
           : undefined
       }
       favorite={!!state?.current && favorites.some((f) => f.uri === state.current?.uri)}
+      permissions={perms}
       onToggleFavorite={state?.current ? () => toggleFavorite(state.current as TrackInfo) : undefined}
       playlistTrack={
         state?.current
@@ -620,7 +625,7 @@ export function PlayerPage() {
             <Typography variant="h6" sx={{ flex: 1, minWidth: 0 }}>
               Queue ({state?.queue.length ?? 0})
             </Typography>
-            {state && (state.queue.length > 0 || state.current) && (
+            {state && (state.queue.length > 0 || state.current) && perms?.queue_clear !== false && (
               <Tooltip title="Stop and clear the queue">
                 <IconButton
                   size="small"
@@ -1236,7 +1241,8 @@ export function PlayerPage() {
           onPauseToggle={() => act(() => api.simpleAction(gid, state.current?.paused ? "resume" : "pause"))}
           onPrevious={() => act(() => api.simpleAction(gid, "previous"))}
           onSkip={() => act(() => api.simpleAction(gid, "skip"))}
-          onSeek={(p) => act(() => api.seek(gid, p))}
+          onSeek={(p) => perms?.seek !== false && act(() => api.seek(gid, p))}
+          canSeek={perms?.seek !== false}
           onRepeatCycle={cycleRepeat}
           onShuffleQueue={() => act(() => api.shuffleQueue(gid), "Queue shuffled")}
           onMenu={(e) =>

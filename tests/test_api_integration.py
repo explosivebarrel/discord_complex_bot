@@ -84,7 +84,9 @@ class StubGuild:
     def __init__(self, player: StubPlayer) -> None:
         self.id = GUILD_ID
         self.voice_client = player
-        self.owner_id = USER_ID
+        # Not the test user: access decisions must come from the mock tier,
+        # not from the owner shortcut.
+        self.owner_id = USER_ID + 1
 
     def get_member(self, _discord_id: int) -> None:
         return None
@@ -375,3 +377,32 @@ async def test_guilds_401_when_discord_rejects_token(api) -> None:
     client._transport.app.state.oauth.refresh_token = _rejected  # type: ignore[attr-defined]
     resp = await client.get("/api/auth/guilds")
     assert resp.status_code == 401, resp.text
+
+
+async def test_player_permissions_endpoint(api) -> None:
+    """/permissions mirrors the access matrix: owner sees everything;
+    a member loses a feature the owner turned off (the UI hides it)."""
+    client, _, _ = api
+    resp = await client.get(f"{PANEL_BASE}/permissions")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"volume": True, "effects": True, "queue_clear": True, "seek": True}
+
+    session_id = next(iter(deps._access_mock), None)
+    assert session_id is not None
+    # The owner turns volume off (settings PUT requires admin), then the
+    # member's view is checked.
+    resp = await client.put(
+        f"/api/admin/guilds/{GUILD_ID}/settings", json={"volume_access": "off"}
+    )
+    assert resp.status_code == 200, resp.text
+    deps.set_access_mock(session_id, GUILD_ID, "member")
+    try:
+        resp = await client.get(f"{PANEL_BASE}/permissions")
+        assert resp.status_code == 200
+        perms = resp.json()
+        assert perms["volume"] is False
+        assert perms["effects"] is True and perms["queue_clear"] is True and perms["seek"] is True
+        resp = await client.post(f"{PANEL_BASE}/volume", json={"volume": 10})
+        assert resp.status_code == 403
+    finally:
+        deps.set_access_mock(session_id, GUILD_ID, "owner")

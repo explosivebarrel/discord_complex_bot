@@ -47,6 +47,9 @@ export function NowPlayingScreen({
   /** Push from the dock's "Lyrics" row: open the screen with the lyrics
       column visible. */
   openLyrics = false,
+  /** Seek permission: without it the progress line and lyric clicks do
+      not seek (the backend rejects anyway). */
+  canSeek = true,
 }: {
   state: PlayerState;
   gid: string;
@@ -62,6 +65,7 @@ export function NowPlayingScreen({
   onMenu: (e: React.MouseEvent) => void;
   onClose: () => void;
   openLyrics?: boolean;
+  canSeek?: boolean;
 }) {
   const current = state.current;
   const paused = !!current?.paused;
@@ -348,27 +352,31 @@ export function NowPlayingScreen({
               {fmt(dragMs ?? position)}
             </Typography>
             <Box
-              sx={{ flex: 1, py: 1, cursor: "pointer", touchAction: "none" }}
-              onPointerDown={(e) => {
-                dragRef.current = true;
-                e.currentTarget.setPointerCapture(e.pointerId);
-                const rect = e.currentTarget.getBoundingClientRect();
-                setDragMs(Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1) * length);
-              }}
-              onPointerMove={(e) => {
-                if (!dragRef.current) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                setDragMs(Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1) * length);
-              }}
-              onPointerUp={(e) => {
-                if (!dragRef.current) return;
-                dragRef.current = false;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const ms = Math.round(Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1) * length);
-                setDragMs(null);
-                onSeek(ms);
-                setLivePos(ms);
-              }}
+              sx={{ flex: 1, py: 1, cursor: canSeek ? "pointer" : "default", touchAction: "none" }}
+              {...(canSeek
+                ? {
+                    onPointerDown: (e: React.PointerEvent) => {
+                      dragRef.current = true;
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setDragMs(Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1) * length);
+                    },
+                    onPointerMove: (e: React.PointerEvent) => {
+                      if (!dragRef.current) return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setDragMs(Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1) * length);
+                    },
+                    onPointerUp: (e: React.PointerEvent) => {
+                      if (!dragRef.current) return;
+                      dragRef.current = false;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const ms = Math.round(Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1) * length);
+                      setDragMs(null);
+                      onSeek(ms);
+                      setLivePos(ms);
+                    },
+                  }
+                : {})}
             >
               {/* Same thin seek line as the dock: 4px, rounded, lavender fill. */}
               <Box sx={{ position: "relative", height: 4, borderRadius: 999, bgcolor: "rgba(255,255,255,.25)" }}>
@@ -445,10 +453,10 @@ export function NowPlayingScreen({
                 <Typography
                   key={i}
                   data-active={i === activeLine}
-                  onClick={() => onSeek(Math.round(sec * 1000))}
+                  onClick={canSeek ? () => onSeek(Math.round(sec * 1000)) : undefined}
                   sx={{
                     textAlign: "center",
-                    cursor: "pointer",
+                    cursor: canSeek ? "pointer" : "default",
                     color: "#fff",
                     py: 1.6,
                     // Identical font metrics for every line: the wrap point

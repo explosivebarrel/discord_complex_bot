@@ -22,6 +22,7 @@ from app.api.deps import (
     get_oauth,
     ensure_player_access,
     is_admin_tier,
+    player_can,
     require_guild_member,
 )
 from app.core.config import Config
@@ -129,6 +130,24 @@ class PlaylistPlayBody(BaseModel):
 
 class UserPlaylistPlayBody(BaseModel):
     index: int
+
+
+@router.get("/permissions")
+async def player_permissions(
+    guild_id: int,
+    user: CurrentUser = Depends(require_guild_member),
+    db: Database = Depends(get_db),
+    oauth: DiscordOAuthClient = Depends(get_oauth),
+    bot: ComplexBot = Depends(get_bot),
+) -> dict[str, bool]:
+    """Effective player-action permissions for the current user, so the
+    panel hides the controls it cannot use (routes still 403)."""
+    return {
+        "volume": await player_can(guild_id, user, "volume_access", db=db, oauth=oauth, bot=bot),
+        "effects": await player_can(guild_id, user, "effects_access", db=db, oauth=oauth, bot=bot),
+        "queue_clear": await player_can(guild_id, user, "queue_clear_access", db=db, oauth=oauth, bot=bot),
+        "seek": await player_can(guild_id, user, "seek_access", db=db, oauth=oauth, bot=bot),
+    }
 
 
 @router.get("/state")

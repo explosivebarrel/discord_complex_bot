@@ -325,6 +325,33 @@ async def require_guild_member(
     return user
 
 
+async def player_can(
+    guild_id: int,
+    user: CurrentUser,
+    key: str,
+    *,
+    db: Database,
+    oauth: DiscordOAuthClient,
+    bot: ComplexBot,
+) -> bool:
+    """Player action permission as a predicate: volume_access /
+    effects_access / queue_clear_access / seek_access. Levels like the
+    panel sections, but "off" leaves the action to the server owner and
+    the bot's super-admin (is_admin_tier already covers both for the
+    "admins" level). The panel uses this to hide controls; the routes
+    still 403 (defense in depth)."""
+    if _superadmin_unmocked(user, guild_id):
+        return True
+    guild = bot.get_guild(guild_id)
+    if guild is not None and guild.owner_id == user.discord_id:
+        return True
+    settings = await db.get_guild_settings(guild_id)
+    level = getattr(settings, key, "members")
+    if level == "members":
+        return True
+    return level == "admins" and await is_admin_tier(guild_id, user, oauth, bot, db)
+
+
 async def ensure_player_access(
     guild_id: int,
     user: CurrentUser,
@@ -334,22 +361,8 @@ async def ensure_player_access(
     oauth: DiscordOAuthClient,
     bot: ComplexBot,
 ) -> None:
-    """Player action permission: volume_access / effects_access /
-    queue_clear_access / seek_access. Levels like the panel sections, but
-    "off" leaves the action to the server owner and the bot's super-admin
-    (is_admin_tier already covers both for the "admins" level)."""
-    if _superadmin_unmocked(user, guild_id):
-        return
-    guild = bot.get_guild(guild_id)
-    if guild is not None and guild.owner_id == user.discord_id:
-        return
-    settings = await db.get_guild_settings(guild_id)
-    level = getattr(settings, key, "members")
-    if level == "members":
-        return
-    if level == "admins" and await is_admin_tier(guild_id, user, oauth, bot, db):
-        return
-    raise HTTPException(status_code=403, detail="This action is restricted by the server owner")
+    if not await player_can(guild_id, user, key, db=db, oauth=oauth, bot=bot):
+        raise HTTPException(status_code=403, detail="This action is restricted by the server owner")
 
 
 def section_allows(level: str, is_admin_tier: bool) -> bool:

@@ -32,7 +32,7 @@ function fmt(ms: number): string {
 /** Thin draggable seek line along the top edge of the dock. Rendered in the
     DOM on every theme (the canvas cannot draw DOM content on top of the
     glass, so the line is never a scene island). */
-function SeekLine({ position, length, onSeek }: { position: number; length: number; onSeek: (ms: number) => void }) {
+function SeekLine({ position, length, onSeek, interactive = true }: { position: number; length: number; onSeek: (ms: number) => void; interactive?: boolean }) {
   const barRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dragMs, setDragMs] = useState(0);
@@ -46,19 +46,19 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
   return (
     <Box
       ref={barRef}
-      onPointerDown={(e) => {
+      onPointerDown={interactive ? (e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         setDragging(true);
         setDragMs(msAt(e.clientX));
-      }}
-      onPointerMove={(e) => {
+      } : undefined}
+      onPointerMove={interactive ? (e) => {
         if (dragging) setDragMs(msAt(e.clientX));
-      }}
-      onPointerUp={(e) => {
+      } : undefined}
+      onPointerUp={interactive ? (e) => {
         if (!dragging) return;
         setDragging(false);
         onSeek(Math.round(msAt(e.clientX)));
-      }}
+      } : undefined}
       sx={{
         position: "absolute",
         top: -9,
@@ -66,7 +66,7 @@ function SeekLine({ position, length, onSeek }: { position: number; length: numb
         right: 28,
         zIndex: 1,
         height: 20,
-        cursor: "pointer",
+        cursor: interactive ? "pointer" : "default",
         touchAction: "none",
         display: "flex",
         alignItems: "center",
@@ -142,6 +142,7 @@ export function PlayerDock({
   playlistTrack,
   onOpenNowPlaying,
   onOpenLyrics,
+  permissions,
 }: {
   state: PlayerState | null;
   volume: number;
@@ -165,6 +166,9 @@ export function PlayerDock({
   /** Opens the now-playing view with the lyrics column visible (the
       "Lyrics" row of the more-sheet). */
   onOpenLyrics?: () => void;
+  /** Effective player-action permissions for the current user; controls
+      the user cannot use are hidden (the backend still 403s). */
+  permissions?: { volume: boolean; effects: boolean; queue_clear: boolean; seek: boolean };
 }) {
   const current = state?.current;
   const paused = !!current?.paused;
@@ -173,6 +177,10 @@ export function PlayerDock({
   const isLoading = !!current?.loading;
   const hasHistory = (state?.played?.length ?? 0) > 0;
   const repeat = state?.repeat ?? "off";
+  const canVolume = permissions?.volume !== false;
+  const canEffects = permissions?.effects !== false;
+  const canQueueClear = permissions?.queue_clear !== false;
+  const canSeek = permissions?.seek !== false;
   const [livePos, setLivePos] = useState(0);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -315,7 +323,7 @@ export function PlayerDock({
           <LinearProgress sx={{ height: 4, borderRadius: 999 }} />
         </Box>
       ) : !isLive ? (
-        <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} />      ) : null)}
+        <SeekLine position={position} length={Math.max(current.length, 1)} onSeek={onSeek} interactive={canSeek} />      ) : null)}
 
       {/* Dock content rides above the warp layer, so text and controls
           never take the lens distortion. The row-vs-stack decision keys off
@@ -517,14 +525,16 @@ export function PlayerDock({
             {repeat === "one" ? <RepeatOne /> : <Repeat />}
           </IconButton>
         </Tooltip>
-        <Tooltip title="Stop and clear the queue">
-          <span>
-            <IconButton onClick={onStop} disabled={!current && !state.queue.length} sx={{ color: "error.main" }}>
-              <Stop />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title="More: effects, sleep timer, add to playlist">
+        {canQueueClear && (
+          <Tooltip title="Stop and clear the queue">
+            <span>
+              <IconButton onClick={onStop} disabled={!current && !state.queue.length} sx={{ color: "error.main" }}>
+                <Stop />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
+        <Tooltip title={canEffects || canQueueClear ? "More: effects, sleep timer, add to playlist" : "More: add to playlist"}>
           <IconButton onClick={() => openMore()} aria-label="More player actions">
             <MoreHoriz />
           </IconButton>
@@ -532,7 +542,7 @@ export function PlayerDock({
         {/* The inline slider needs ~120px on top of the five icons: with a
             wide dock it fits, otherwise the icon + popover takes over (the
             popover caption shows the exact percent). */}
-        {showSliderBox && (
+        {showSliderBox && canVolume && (
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: 120, ml: 1 }}>
             <VolumeUp fontSize="small" sx={{ color: "text.secondary" }} />
             <Slider
@@ -551,7 +561,7 @@ export function PlayerDock({
           </Box>
         )}
         {/* Narrow dock: the icon opens the volume popover instead. */}
-        {!showSliderBox && (
+        {!showSliderBox && canVolume && (
           <Box sx={{ display: "flex" }}>
             <Tooltip title={`Volume: ${Math.round(volume)}%`}>
               <span>
@@ -609,6 +619,7 @@ export function PlayerDock({
         <List sx={{ px: 1, pb: 2 }}>
           {moreView === "root" && (
             <>
+              {canEffects && (
               <ListItemButton onClick={() => setMoreView("effects")}>
                 <ListItemIcon sx={{ minWidth: 40 }}>
                   <GraphicEq sx={effect !== "none" ? { color: "primary.main" } : undefined} />
@@ -619,6 +630,8 @@ export function PlayerDock({
                   slotProps={{ secondary: { color: effect !== "none" ? "primary" : undefined } }}
                 />
               </ListItemButton>
+              )}
+              {canVolume && (
               <ListItemButton onClick={() => setMoreView("sleep")}>
                 <ListItemIcon sx={{ minWidth: 40 }}>
                   <Bedtime sx={sleepRemaining ? { color: "primary.main" } : undefined} />
@@ -628,6 +641,7 @@ export function PlayerDock({
                   secondary={sleepRemaining ? `${Math.max(1, Math.round(sleepRemaining / 60))} min left` : "Off"}
                 />
               </ListItemButton>
+              )}
               {current && (onOpenLyrics || onOpenNowPlaying) && (
                 <ListItemButton onClick={() => { closeMore(); (onOpenLyrics ?? onOpenNowPlaying)?.(); }}>
                   <ListItemIcon sx={{ minWidth: 40 }}>
