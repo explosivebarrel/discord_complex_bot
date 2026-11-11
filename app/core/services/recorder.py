@@ -172,7 +172,14 @@ def wav_to_whisper_array(path: Path) -> np.ndarray:
     if target_len == 0:
         return np.zeros(0, dtype=np.float32)
     x_new = np.linspace(0, len(samples) - 1, target_len)
-    return np.interp(x_new, np.arange(len(samples)), samples).astype(np.float32)
+    audio = np.interp(x_new, np.arange(len(samples)), samples).astype(np.float32)
+    # Remove DC offset (eliminates low-frequency electrical/mic rumble)
+    audio = audio - float(np.mean(audio))
+    # Peak normalization: boost quiet microphones into Whisper's ideal dynamic range
+    peak = float(np.max(np.abs(audio)))
+    if peak > 1e-4:
+        audio = (audio / peak * 0.90).astype(np.float32)
+    return audio
 
 
 def format_transcript_txt(segments: list[dict], usernames: dict[int, str]) -> str:
@@ -600,7 +607,9 @@ class RecorderService:
         segments_out: list[dict] = []
         try:
             model = await self._get_model()
-            pinned = self.config.transcribe_language or None
+            pinned = (self.config.transcribe_language or "ru").strip().lower()
+            if pinned == "auto":
+                pinned = None
 
             def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
                 # Whisper's own multilingual mode detects language per 30s
@@ -621,9 +630,21 @@ class RecorderService:
                         continue
                     start_s = t["start"] / WHISPER_RATE
                     segs, _info = model.transcribe(
-                        chunk, language=pinned, vad_filter=False, word_timestamps=True
+                        chunk,
+                        language=pinned,
+                        vad_filter=False,
+                        word_timestamps=True,
+                        condition_on_previous_text=False,
+                        no_speech_threshold=0.5,
                     )
                     for seg in segs:
+                        txt = seg.text.strip()
+                        if not txt:
+                            continue
+                        # Drop YouTube subtitle hallucination credits on noise
+                        low = txt.lower()
+                        if "субтитр" in low or "dimatext" in low:
+                            continue
                         words = [
                             {
                                 "w": w.word.strip(),
@@ -632,7 +653,7 @@ class RecorderService:
                             }
                             for w in (seg.words or [])
                         ]
-                        out.append((start_s + seg.start, seg.end - seg.start, seg.text.strip(), words))
+                        out.append((start_s + seg.start, seg.end - seg.start, txt, words))
                 return out
 
             for uid, path in session.speaker_files.items():
