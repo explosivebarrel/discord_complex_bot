@@ -614,13 +614,15 @@ class RecorderService:
             model = await self._get_model()
 
             def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
-                # Multi-pass transcription:
-                # Pass 1: Speaker Language Profiling - detect the speaker's main language
-                # from their longest speech chunks so quiet murmurs/hiss never hallucinate
-                # into random foreign languages.
-                # Pass 2: Transcribe utterances using the speaker's primary language.
+                # Multi-pass transcription with dynamic language state tracking:
+                # Pass 1: Speaker Language Profiling - detect the initial language from
+                # the longest speech chunks.
+                # Pass 2: Transcribe utterances using the speaker's active language with
+                # repetition_penalty to avoid runaway hallucination loops on silence.
                 # Pass 3: Low-confidence re-scoring - if an utterance has low confidence in
-                # the primary language, re-score against the secondary language (e.g. English phrase).
+                # the primary language, re-score against the secondary language.
+                # State tracking: If speaker switches language for 2+ consecutive substantial
+                # utterances (> 1.5s), update the active language for subsequent speech.
                 from faster_whisper.vad import VadOptions, get_speech_timestamps
 
                 chunks = get_speech_timestamps(
@@ -634,7 +636,9 @@ class RecorderService:
                 cfg_lang = (self.config.transcribe_language or "").strip().lower()
                 if cfg_lang and cfg_lang != "auto":
                     primary_lang = cfg_lang
+                    dynamic_tracking = False
                 else:
+                    dynamic_tracking = True
                     sorted_chunks = sorted(chunks, key=lambda t: t["end"] - t["start"], reverse=True)
                     sample = np.concatenate([audio[t["start"] : t["end"]] for t in sorted_chunks[:3]])
                     try:
@@ -643,21 +647,25 @@ class RecorderService:
                     except Exception:
                         primary_lang = "ru"
 
-                secondary_lang = "en" if primary_lang == "ru" else "ru"
+                current_lang = primary_lang
+                secondary_lang = "en" if current_lang == "ru" else "ru"
+                consecutive_alt = 0
 
                 out: list[tuple[float, float, str, list[dict]]] = []
                 for t in chunks:
                     chunk = audio[t["start"] : t["end"]]
-                    if len(chunk) < WHISPER_RATE // 2:  # shorter than 0.5s
+                    chunk_dur = len(chunk) / WHISPER_RATE
+                    if chunk_dur < 0.5:  # shorter than 0.5s
                         continue
                     start_s = t["start"] / WHISPER_RATE
                     segs, _info = model.transcribe(
                         chunk,
-                        language=primary_lang,
+                        language=current_lang,
                         vad_filter=False,
                         word_timestamps=True,
                         condition_on_previous_text=False,
                         no_speech_threshold=0.5,
+                        repetition_penalty=1.15,
                     )
                     for seg in segs:
                         if getattr(seg, "no_speech_prob", 0.0) > 0.65:
@@ -680,7 +688,9 @@ class RecorderService:
                         ]
 
                         # Pass 3: Low-confidence re-scoring against secondary language
-                        if getattr(seg, "avg_logprob", 0.0) < -0.75 and secondary_lang:
+                        # Stricter margin: avg_logprob < -0.85 and delta > +0.35
+                        used_alt = False
+                        if getattr(seg, "avg_logprob", 0.0) < -0.85 and secondary_lang:
                             try:
                                 alt_segs, _ = model.transcribe(
                                     chunk,
@@ -689,6 +699,7 @@ class RecorderService:
                                     word_timestamps=True,
                                     condition_on_previous_text=False,
                                     no_speech_threshold=0.5,
+                                    repetition_penalty=1.15,
                                 )
                                 alt_list = list(alt_segs)
                                 if alt_list:
@@ -696,8 +707,8 @@ class RecorderService:
                                     alt_txt = alt.text.strip()
                                     if (
                                         alt_txt
-                                        and getattr(alt, "avg_logprob", -99.0) > seg.avg_logprob + 0.25
-                                        and getattr(alt, "no_speech_prob", 1.0) < 0.55
+                                        and getattr(alt, "avg_logprob", -99.0) > seg.avg_logprob + 0.35
+                                        and getattr(alt, "no_speech_prob", 1.0) < 0.50
                                         and "субтитр" not in alt_txt.lower()
                                     ):
                                         txt = alt_txt
@@ -710,8 +721,21 @@ class RecorderService:
                                             }
                                             for w in (alt.words or [])
                                         ]
+                                        used_alt = True
                             except Exception:
                                 pass
+
+                        # Dynamic language state machine with hysteresis:
+                        # If dynamic tracking is on and speaker produces 2+ consecutive
+                        # substantial utterances (> 1.5s) in secondary language, switch active state.
+                        if dynamic_tracking and chunk_dur >= 1.5:
+                            if used_alt:
+                                consecutive_alt += 1
+                                if consecutive_alt >= 2:
+                                    current_lang, secondary_lang = secondary_lang, current_lang
+                                    consecutive_alt = 0
+                            else:
+                                consecutive_alt = 0
 
                         out.append((start_s + seg.start, dur, txt, words))
                 return out
