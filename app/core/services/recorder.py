@@ -269,6 +269,8 @@ class RecorderService:
         channel = guild.get_channel(channel_id)
         if channel is None or not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
             raise RecordingError("Voice channel not found.")
+
+        row = await self.db.add_voice_recording(guild_id, channel.id, requester_id, channel.name)
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(row["id"])
         session_dir.mkdir(parents=True, exist_ok=True)
 
