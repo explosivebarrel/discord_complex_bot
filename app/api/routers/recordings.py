@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,21 @@ def _recording_dir(config: Config, guild_id: int, recording_id: int) -> Path:
     return Path(config.recordings_dir) / str(guild_id) / str(recording_id)
 
 
+def _load_file_segments(config: Config, guild_id: int, recording_id: int) -> list[dict[str, Any]] | None:
+    path = _recording_dir(config, guild_id, recording_id) / "transcript.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data.get("segments", [])
+        if isinstance(data, list):
+            return data
+    except Exception:
+        return None
+    return None
+
+
 @router.get("")
 async def list_recordings(
     guild_id: int,
@@ -42,14 +58,20 @@ async def recording_details(
     recording = await db.get_recording(recording_id, guild_id)
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
-    segments = await db.get_segments(recording_id)
+    segments = _load_file_segments(config, guild_id, recording_id)
+    if segments is None:
+        segments = await db.get_segments(recording_id)
     speakers: dict[int, str] = {}
     for seg in segments:
-        speakers.setdefault(seg["user_id"], seg["username"] or f"user {seg['user_id']}")
+        speakers.setdefault(seg["user_id"], seg.get("username") or f"user {seg['user_id']}")
     directory = _recording_dir(config, guild_id, recording_id)
     # Speakers with wav audio on disk (the transcript may lag the files).
     for wav in sorted(directory.glob("*.wav")):
-        speakers.setdefault(int(wav.stem), f"user {wav.stem}")
+        try:
+            uid = int(wav.stem)
+            speakers.setdefault(uid, f"user {uid}")
+        except ValueError:
+            pass
     recording["speakers"] = [{"user_id": uid, "username": name} for uid, name in speakers.items()]
     return recording
 
@@ -61,11 +83,14 @@ async def recording_transcript(
     fmt: str = "segments",  # segments (phrases with nested words) | words (flat timeline)
     user: CurrentUser = Depends(section),
     db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
 ) -> list[dict[str, Any]]:
     recording = await db.get_recording(recording_id, guild_id)
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
-    segments = await db.get_segments(recording_id)
+    segments = _load_file_segments(config, guild_id, recording_id)
+    if segments is None:
+        segments = await db.get_segments(recording_id)
     if fmt == "words":
         # Flat per-word timeline across all speakers — for karaoke-style
         # UIs, seeking and word-level analytics.
@@ -77,7 +102,7 @@ async def recording_transcript(
                     "start": w["start"],
                     "end": w["end"],
                     "user_id": seg["user_id"],
-                    "username": seg["username"],
+                    "username": seg.get("username", ""),
                 })
         words.sort(key=lambda w: w["start"])
         return words
@@ -91,18 +116,40 @@ async def recording_download(
     fmt: str = "txt",
     user: CurrentUser = Depends(section),
     db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
 ) -> Response:
     recording = await db.get_recording(recording_id, guild_id)
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
-    segments = await db.get_segments(recording_id)
-    usernames = {s["user_id"]: s["username"] for s in segments}
+    directory = _recording_dir(config, guild_id, recording_id)
     if fmt == "srt":
+        srt_file = directory / "transcript.srt"
+        if srt_file.is_file():
+            return PlainTextResponse(
+                srt_file.read_text(encoding="utf-8"),
+                media_type="application/x-subrip",
+                headers={"Content-Disposition": f'attachment; filename="recording-{recording_id}.srt"'},
+            )
+        segments = _load_file_segments(config, guild_id, recording_id)
+        if segments is None:
+            segments = await db.get_segments(recording_id)
+        usernames = {s["user_id"]: s.get("username", "") for s in segments}
         return PlainTextResponse(
             format_transcript_srt(segments, usernames),
             media_type="application/x-subrip",
             headers={"Content-Disposition": f'attachment; filename="recording-{recording_id}.srt"'},
         )
+    txt_file = directory / "transcript.txt"
+    if txt_file.is_file():
+        return PlainTextResponse(
+            txt_file.read_text(encoding="utf-8"),
+            media_type="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="recording-{recording_id}.txt"'},
+        )
+    segments = _load_file_segments(config, guild_id, recording_id)
+    if segments is None:
+        segments = await db.get_segments(recording_id)
+    usernames = {s["user_id"]: s.get("username", "") for s in segments}
     return PlainTextResponse(
         format_transcript_txt(segments, usernames),
         media_type="text/plain",

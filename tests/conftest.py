@@ -73,6 +73,7 @@ def config(tmp_path: Path) -> Config:
         log_level="INFO",
         data_dir=tmp_path,
         music_library_dir=tmp_path / "music",
+        recordings_dir=tmp_path / "voice",
         internal_base_url="http://localhost:8000",
     )
 

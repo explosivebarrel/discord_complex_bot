@@ -686,19 +686,59 @@ class RecorderService:
                         "offset_s": round(base + start, 2),
                         "duration_s": round(duration, 2),
                         "text": text,
-                        "words": json.dumps(
-                            [
-                                {**w, "start": round(base + w["start"], 2), "end": round(base + w["end"], 2)}
-                                for w in words
-                            ],
-                            ensure_ascii=False,
-                        ),
+                        "words": [
+                            {**w, "start": round(base + w["start"], 2), "end": round(base + w["end"], 2)}
+                            for w in words
+                        ],
                     })
             segments_out.sort(key=lambda s: s["offset_s"])
-            await self.db.add_recording_segments(session.recording_id, segments_out)
+
+            session_dir = Path(self.config.recordings_dir) / str(session.guild_id) / str(session.recording_id)
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+            # 1. transcript.json: structured format with per-word timestamps
+            transcript_data = {
+                "recording_id": session.recording_id,
+                "guild_id": session.guild_id,
+                "segments": segments_out,
+            }
+            try:
+                (session_dir / "transcript.json").write_text(
+                    json.dumps(transcript_data, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception:
+                logger.exception("Failed to write transcript.json for recording #%s", session.recording_id)
+
+            # 2. transcript.txt: human-readable timestamped text
+            try:
+                (session_dir / "transcript.txt").write_text(
+                    format_transcript_txt(segments_out, session.usernames),
+                    encoding="utf-8",
+                )
+            except Exception:
+                logger.exception("Failed to write transcript.txt for recording #%s", session.recording_id)
+
+            # 3. transcript.srt: standard subtitle format
+            try:
+                (session_dir / "transcript.srt").write_text(
+                    format_transcript_srt(segments_out, session.usernames),
+                    encoding="utf-8",
+                )
+            except Exception:
+                logger.exception("Failed to write transcript.srt for recording #%s", session.recording_id)
+
+            # Backwards compatibility: keep database write
+            db_segments = [
+                {
+                    **seg,
+                    "words": json.dumps(seg["words"], ensure_ascii=False) if not isinstance(seg["words"], str) else seg["words"],
+                }
+                for seg in segments_out
+            ]
+            await self.db.add_recording_segments(session.recording_id, db_segments)
             await self.db.update_recording_status(session.recording_id, "done")
             # Prune temporary debug dumps to free disk space once transcription succeeded
-            session_dir = Path(self.config.recordings_dir) / str(session.guild_id) / str(session.recording_id)
             if session_dir.exists():
                 for bin_file in session_dir.glob("dave_*.bin"):
                     with contextlib.suppress(OSError):

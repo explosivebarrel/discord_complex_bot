@@ -451,3 +451,45 @@ async def test_recording_delete_by_non_starter_is_403(recordings_api, db) -> Non
     row = await db.add_voice_recording(GUILD_ID, 999, started_by=USER_ID + 7, title="tavern")
     r = await recordings_api.delete(f"/api/guilds/{GUILD_ID}/recordings/{row['id']}")
     assert r.status_code == 403
+
+
+async def test_transcript_and_download_prefer_filesystem_bundle(recordings_api, db, config) -> None:
+    """When transcript files exist on disk, API serves them directly."""
+    row = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "tavern")
+    rec_dir = Path(config.recordings_dir) / str(GUILD_ID) / str(row["id"])
+    rec_dir.mkdir(parents=True, exist_ok=True)
+
+    json_payload = {
+        "recording_id": row["id"],
+        "guild_id": GUILD_ID,
+        "segments": [
+            {
+                "user_id": 42,
+                "username": "DiskUser",
+                "offset_s": 5.0,
+                "duration_s": 1.5,
+                "text": "served from disk",
+                "words": [{"w": "served", "start": 5.0, "end": 5.5}, {"w": "from", "start": 5.5, "end": 5.8}, {"w": "disk", "start": 5.8, "end": 6.5}],
+            }
+        ],
+    }
+    import json
+    (rec_dir / "transcript.json").write_text(json.dumps(json_payload), encoding="utf-8")
+    (rec_dir / "transcript.txt").write_text("[00:00:05] DiskUser: served from disk\n", encoding="utf-8")
+    (rec_dir / "transcript.srt").write_text("1\n00:00:05,000 --> 00:00:06,500\nDiskUser: served from disk\n\n", encoding="utf-8")
+
+    # DB has no segments - everything comes from disk bundle
+    segs = (await recordings_api.get(f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/transcript")).json()
+    assert len(segs) == 1
+    assert segs[0]["text"] == "served from disk"
+    assert segs[0]["username"] == "DiskUser"
+
+    words = (await recordings_api.get(f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/transcript?fmt=words")).json()
+    assert [w["w"] for w in words] == ["served", "from", "disk"]
+    assert words[0]["username"] == "DiskUser"
+
+    txt = await recordings_api.get(f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/download?fmt=txt")
+    assert txt.status_code == 200 and "DiskUser: served from disk" in txt.text
+
+    srt = await recordings_api.get(f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/download?fmt=srt")
+    assert srt.status_code == 200 and "00:00:05,000 --> 00:00:06,500" in srt.text
