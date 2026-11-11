@@ -148,8 +148,19 @@ if voice_recv is not None:
                     session.prepare_transition(
                         int(data["transition_id"]), int(data["protocol_version"])
                     )
+                    logger.info(
+                        "DAVE prepare tid=%s version=%s members=%s",
+                        data["transition_id"],
+                        data["protocol_version"],
+                        session.get_user_ids(),
+                    )
                 elif op == _OP_EXECUTE:
                     session.execute_transition(int(data["transition_id"]))
+                    logger.info(
+                        "DAVE execute tid=%s members=%s",
+                        data["transition_id"],
+                        session.get_user_ids(),
+                    )
             except Exception as exc:
                 logger.warning("DAVE transition op %s failed: %r", op, exc)
 
