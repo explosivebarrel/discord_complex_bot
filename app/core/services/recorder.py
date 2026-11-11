@@ -29,6 +29,11 @@ except ImportError:  # pragma: no cover - allows unit tests without discord
     discord = None  # type: ignore[assignment]
     voice_recv = None  # type: ignore[assignment]
 
+try:
+    import davey
+except ImportError:  # pragma: no cover
+    davey = None  # type: ignore[assignment]
+
 if voice_recv is not None:
     # Upstream treats any single decode error as fatal: PacketRouter.run()
     # dies on the first corrupt RTP packet (a routine thing on real voice
@@ -45,6 +50,39 @@ if voice_recv is not None:
         return None
 
     voice_recv.opus.PacketDecoder.pop_data = _pop_data_resilient
+
+    # DAVE (E2EE): discord.py's voice websocket runs the MLS session on
+    # every voice client (VoiceConnectionState.dave_session), but voice_recv
+    # never unwraps inbound frames — they reach the opus decoder as
+    # ciphertext and decode into loud noise. Unwrap the DAVE layer before
+    # decoding, using the per-sender ratchet of the session discord.py
+    # already maintains.
+    def _dave_decrypt_frame(self, packet) -> None:
+        state = getattr(self.sink.voice_client, "_connection", None)
+        session = getattr(state, "dave_session", None)
+        if session is None or not session.ready or getattr(state, "dave_protocol_version", 0) == 0:
+            return
+        if not packet or not hasattr(packet, "decrypted_data"):
+            return  # fake/silence frames carry no payload
+        user_id = self._cached_id or self.sink.voice_client._get_id_from_ssrc(self.ssrc)
+        if user_id is None:
+            return  # no sender yet — cannot pick the right ratchet
+        self._cached_id = user_id
+        packet.decrypted_data = session.decrypt(
+            int(user_id), davey.MediaType.audio, bytes(packet.decrypted_data)
+        )
+
+    _upstream_process_packet = voice_recv.opus.PacketDecoder._process_packet
+
+    def _process_packet_dave(self, packet):
+        try:
+            _dave_decrypt_frame(self, packet)
+        except Exception as exc:
+            logger.debug("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
+        return _upstream_process_packet(self, packet)
+
+    if davey is not None:
+        voice_recv.opus.PacketDecoder._process_packet = _process_packet_dave
 
 from app.core.config import Config
 from app.core.db.database import Database
@@ -281,6 +319,13 @@ class RecorderService:
             await self.db.update_recording_status(row["id"], "failed", error=str(exc)[:500])
             raise RecordingError(f"Failed to connect: {exc}") from exc
         vc.listen(sink)
+        state = getattr(vc, "_connection", None)
+        logger.info(
+            "Recording #%s voice recv: dave_protocol_version=%s session_ready=%s",
+            row["id"],
+            getattr(state, "dave_protocol_version", 0),
+            bool(getattr(getattr(state, "dave_session", None), "ready", False)),
+        )
 
         session = RecordingSession(
             recording_id=row["id"],

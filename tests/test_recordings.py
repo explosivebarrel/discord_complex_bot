@@ -76,6 +76,69 @@ def test_format_transcript_srt_blocks() -> None:
     assert srt.rstrip().endswith("Alice: bye")
 
 
+# --- DAVE (E2EE) frame unwrap ---
+
+class _FakeDAVE:
+    def __init__(self, *, ready=True, fail=False):
+        self.ready = ready
+        self.calls = []
+        self._fail = fail
+
+    def decrypt(self, user_id, media_type, packet):
+        self.calls.append((user_id, media_type, packet))
+        if self._fail:
+            raise RuntimeError("boom")
+        return b"PLAIN"
+
+
+def _fake_decoder(session, version, cached_id=None, ssrc_map=None):
+    from types import SimpleNamespace as NS
+
+    sink = NS(voice_client=NS(
+        _connection=NS(dave_session=session, dave_protocol_version=version),
+        _get_id_from_ssrc=lambda s: (ssrc_map or {}).get(s),
+    ))
+    return NS(sink=sink, _cached_id=cached_id, ssrc=2967)
+
+
+def test_dave_decrypt_unwraps_frame_with_resolved_sender() -> None:
+    import davey
+    import app.core.services.recorder as rec
+
+    session = _FakeDAVE()
+    dec = _fake_decoder(session, version=1, ssrc_map={2967: 42})
+    packet = SimpleNamespace(decrypted_data=b"CIPHER")
+
+    rec._dave_decrypt_frame(dec, packet)
+    assert packet.decrypted_data == b"PLAIN"
+    assert session.calls == [(42, davey.MediaType.audio, b"CIPHER")]
+    assert dec._cached_id == 42
+
+
+def test_dave_decrypt_noops_without_session() -> None:
+    import app.core.services.recorder as rec
+
+    dec = _fake_decoder(None, version=0)
+    packet = SimpleNamespace(decrypted_data=b"CIPHER")
+    rec._dave_decrypt_frame(dec, packet)
+    assert packet.decrypted_data == b"CIPHER"
+
+    dec = _fake_decoder(_FakeDAVE(ready=False), version=1)
+    rec._dave_decrypt_frame(dec, packet)
+    assert packet.decrypted_data == b"CIPHER"
+
+
+def test_dave_decrypt_noops_for_unmapped_ssrc() -> None:
+    import app.core.services.recorder as rec
+
+    session = _FakeDAVE()
+    dec = _fake_decoder(session, version=1, ssrc_map={})
+    packet = SimpleNamespace(decrypted_data=b"CIPHER")
+    rec._dave_decrypt_frame(dec, packet)
+    assert packet.decrypted_data == b"CIPHER"
+    assert session.calls == []
+
+
 # --- SpeakerSink ---
 
 def _fake_voice_data(pcm: bytes) -> SimpleNamespace:
