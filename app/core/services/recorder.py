@@ -607,15 +607,15 @@ class RecorderService:
         segments_out: list[dict] = []
         try:
             model = await self._get_model()
-            pinned = (self.config.transcribe_language or "ru").strip().lower()
-            if pinned == "auto":
-                pinned = None
 
             def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
-                # Whisper's own multilingual mode detects language per 30s
-                # window — useless when the speaker switches every few
-                # seconds. Split the audio into per-utterance chunks with
-                # VAD and detect the language for each chunk separately.
+                # Multi-pass transcription:
+                # Pass 1: Speaker Language Profiling - detect the speaker's main language
+                # from their longest speech chunks so quiet murmurs/hiss never hallucinate
+                # into random foreign languages.
+                # Pass 2: Transcribe utterances using the speaker's primary language.
+                # Pass 3: Low-confidence re-scoring - if an utterance has low confidence in
+                # the primary language, re-score against the secondary language (e.g. English phrase).
                 from faster_whisper.vad import VadOptions, get_speech_timestamps
 
                 chunks = get_speech_timestamps(
@@ -623,6 +623,23 @@ class RecorderService:
                     VadOptions(min_silence_duration_ms=400, speech_pad_ms=200),
                     sampling_rate=WHISPER_RATE,
                 )
+                if not chunks:
+                    return []
+
+                cfg_lang = (self.config.transcribe_language or "").strip().lower()
+                if cfg_lang and cfg_lang != "auto":
+                    primary_lang = cfg_lang
+                else:
+                    sorted_chunks = sorted(chunks, key=lambda t: t["end"] - t["start"], reverse=True)
+                    sample = np.concatenate([audio[t["start"] : t["end"]] for t in sorted_chunks[:3]])
+                    try:
+                        detected_lang, prob, _ = model.detect_language(sample)
+                        primary_lang = detected_lang if prob >= 0.40 else "ru"
+                    except Exception:
+                        primary_lang = "ru"
+
+                secondary_lang = "en" if primary_lang == "ru" else "ru"
+
                 out: list[tuple[float, float, str, list[dict]]] = []
                 for t in chunks:
                     chunk = audio[t["start"] : t["end"]]
@@ -631,20 +648,23 @@ class RecorderService:
                     start_s = t["start"] / WHISPER_RATE
                     segs, _info = model.transcribe(
                         chunk,
-                        language=pinned,
+                        language=primary_lang,
                         vad_filter=False,
                         word_timestamps=True,
                         condition_on_previous_text=False,
                         no_speech_threshold=0.5,
                     )
                     for seg in segs:
+                        if getattr(seg, "no_speech_prob", 0.0) > 0.65:
+                            continue
                         txt = seg.text.strip()
                         if not txt:
                             continue
-                        # Drop YouTube subtitle hallucination credits on noise
                         low = txt.lower()
                         if "субтитр" in low or "dimatext" in low:
                             continue
+
+                        dur = seg.end - seg.start
                         words = [
                             {
                                 "w": w.word.strip(),
@@ -653,7 +673,42 @@ class RecorderService:
                             }
                             for w in (seg.words or [])
                         ]
-                        out.append((start_s + seg.start, seg.end - seg.start, txt, words))
+
+                        # Pass 3: Low-confidence re-scoring against secondary language
+                        if getattr(seg, "avg_logprob", 0.0) < -0.75 and secondary_lang:
+                            try:
+                                alt_segs, _ = model.transcribe(
+                                    chunk,
+                                    language=secondary_lang,
+                                    vad_filter=False,
+                                    word_timestamps=True,
+                                    condition_on_previous_text=False,
+                                    no_speech_threshold=0.5,
+                                )
+                                alt_list = list(alt_segs)
+                                if alt_list:
+                                    alt = alt_list[0]
+                                    alt_txt = alt.text.strip()
+                                    if (
+                                        alt_txt
+                                        and getattr(alt, "avg_logprob", -99.0) > seg.avg_logprob + 0.25
+                                        and getattr(alt, "no_speech_prob", 1.0) < 0.55
+                                        and "субтитр" not in alt_txt.lower()
+                                    ):
+                                        txt = alt_txt
+                                        dur = alt.end - alt.start
+                                        words = [
+                                            {
+                                                "w": w.word.strip(),
+                                                "start": round(start_s + w.start, 2),
+                                                "end": round(start_s + w.end, 2),
+                                            }
+                                            for w in (alt.words or [])
+                                        ]
+                            except Exception:
+                                pass
+
+                        out.append((start_s + seg.start, dur, txt, words))
                 return out
 
             for uid, path in session.speaker_files.items():
