@@ -79,8 +79,11 @@ def test_format_transcript_srt_blocks() -> None:
 # --- DAVE (E2EE) frame unwrap ---
 
 class _FakeDAVE:
-    def __init__(self, *, ready=True, fail=False):
+    def __init__(self, *, ready=True, fail=False, active=True):
+        import davey
+
         self.ready = ready
+        self.status = davey.SessionStatus.active if active else davey.SessionStatus.pending
         self.calls = []
         self._fail = fail
 
@@ -124,6 +127,17 @@ def test_dave_decrypt_noops_without_session() -> None:
     assert packet.decrypted_data == b"CIPHER"
 
     dec = _fake_decoder(_FakeDAVE(ready=False), version=1)
+    rec._dave_decrypt_frame(dec, packet)
+    assert packet.decrypted_data == b"CIPHER"
+
+    # davey 0.1.6 keeps ready=False on active sessions: the gate is status.
+    dec = _fake_decoder(_FakeDAVE(ready=False), version=1)
+    packet = SimpleNamespace(decrypted_data=b"CIPHER")
+    rec._dave_decrypt_frame(dec, packet)
+    assert packet.decrypted_data == b"PLAIN"
+
+    dec = _fake_decoder(_FakeDAVE(active=False), version=1)
+    packet = SimpleNamespace(decrypted_data=b"CIPHER")
     rec._dave_decrypt_frame(dec, packet)
     assert packet.decrypted_data == b"CIPHER"
 

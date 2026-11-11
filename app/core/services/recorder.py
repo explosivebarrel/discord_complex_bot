@@ -69,7 +69,11 @@ if voice_recv is not None:
     def _dave_decrypt_frame(self, packet) -> None:
         state = getattr(self.sink.voice_client, "_connection", None)
         session = getattr(state, "dave_session", None)
-        if session is None or not session.ready or getattr(state, "dave_protocol_version", 0) == 0:
+        if session is None or getattr(state, "dave_protocol_version", 0) == 0:
+            return
+        # davey 0.1.6 keeps ready=False on active sessions; the honest
+        # "keys are usable" signal is the status reaching active.
+        if session.status != davey.SessionStatus.active:
             return
         if not packet or not hasattr(packet, "decrypted_data"):
             return  # fake/silence frames carry no payload
