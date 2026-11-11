@@ -35,6 +35,8 @@ except ImportError:  # pragma: no cover
     davey = None  # type: ignore[assignment]
 
 if voice_recv is not None:
+    _last_drop_log = 0.0
+
     # Upstream treats any single decode error as fatal: PacketRouter.run()
     # dies on the first corrupt RTP packet (a routine thing on real voice
     # links — loss and reorder happen) and the capture stops after ~0.5s.
@@ -42,11 +44,18 @@ if voice_recv is not None:
     _upstream_pop_data = voice_recv.opus.PacketDecoder.pop_data
 
     def _pop_data_resilient(self, *, timeout: float = 0):
+        global _last_drop_log
         for _ in range(64):
             try:
                 return _upstream_pop_data(self, timeout=timeout)
             except Exception as exc:
-                logger.warning("Dropping corrupt voice packet (ssrc %s): %s", self.ssrc, exc)
+                # Rate-limited: at teardown / loss bursts this fires dozens
+                # of times per second and would drown the logs.
+                import time as _time
+
+                if _time.monotonic() - _last_drop_log > 5:
+                    _last_drop_log = _time.monotonic()
+                    logger.warning("Dropping corrupt voice packets (ssrc %s): %s", self.ssrc, exc)
         return None
 
     voice_recv.opus.PacketDecoder.pop_data = _pop_data_resilient
@@ -75,10 +84,15 @@ if voice_recv is not None:
     _upstream_process_packet = voice_recv.opus.PacketDecoder._process_packet
 
     def _process_packet_dave(self, packet):
+        global _last_drop_log
         try:
             _dave_decrypt_frame(self, packet)
         except Exception as exc:
-            logger.debug("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
+            import time as _time
+
+            if _time.monotonic() - _last_drop_log > 5:
+                _last_drop_log = _time.monotonic()
+                logger.warning("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
         return _upstream_process_packet(self, packet)
 
     if davey is not None:
@@ -400,6 +414,23 @@ class RecorderService:
                 except RecordingError:
                     pass
                 return
+            # Periodic DAVE health: the session becomes ready seconds after
+            # connect (MLS commit processed); if it never flips, frames stay
+            # ciphertext and the transcript is noise.
+            state = getattr(vc, "_connection", None)
+            dave_session = getattr(state, "dave_session", None)
+            if dave_session is not None:
+                stats = dave_session.get_decryption_stats()
+                logger.info(
+                    "Recording #%s DAVE: ready=%s epoch=%s status=%s decrypted=%s failed=%s passthrough=%s",
+                    session.recording_id,
+                    dave_session.ready,
+                    dave_session.epoch,
+                    dave_session.status,
+                    getattr(stats, "successes", "?"),
+                    getattr(stats, "failures", "?"),
+                    dave_session.can_passthrough,
+                )
             if vc is None or not vc.is_connected():
                 logger.warning("Recording #%s lost its voice client; auto-stopping", session.recording_id)
                 try:
@@ -407,8 +438,6 @@ class RecorderService:
                 except RecordingError:
                     pass
                 return
-
-    # --- transcription ---
 
     # --- transcription queue ---
 
@@ -462,14 +491,13 @@ class RecorderService:
         segments_out: list[dict] = []
         try:
             model = await self._get_model()
-            for uid, path in session.speaker_files.items():
-                if not path.exists() or path.stat().st_size <= 44:
-                    continue
-                audio = await asyncio.to_thread(wav_to_whisper_array, path)
-                if len(audio) < WHISPER_RATE // 2:  # shorter than 0.5s
-                    continue
-                raw_segments, _info = await asyncio.to_thread(
-                    model.transcribe,
+
+            def _run(audio: np.ndarray) -> list:
+                # The transcribe generator does all the compute lazily while
+                # being iterated — run the whole iteration on a worker thread,
+                # otherwise the event loop (and every bot reply) freezes for
+                # the length of the transcription.
+                raw_segments, _info = model.transcribe(
                     audio,
                     language=self.config.transcribe_language or None,
                     # Auto mode: detect the language per speech segment, so a
@@ -479,6 +507,15 @@ class RecorderService:
                     multilingual=self.config.transcribe_language == "",
                     vad_filter=True,
                 )
+                return list(raw_segments)
+
+            for uid, path in session.speaker_files.items():
+                if not path.exists() or path.stat().st_size <= 44:
+                    continue
+                audio = await asyncio.to_thread(wav_to_whisper_array, path)
+                if len(audio) < WHISPER_RATE // 2:  # shorter than 0.5s
+                    continue
+                raw_segments = await asyncio.to_thread(_run, audio)
                 base = session.first_offsets.get(uid, 0.0)
                 for seg in raw_segments:
                     segments_out.append({
