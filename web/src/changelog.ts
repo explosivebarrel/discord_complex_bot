@@ -27,6 +27,7 @@ export const CHANGELOG: ChangelogBlock[] = [
       "Local transcription with faster-whisper (TRANSCRIBE_MODEL, TRANSCRIBE_LANGUAGE envs; no external API, the model downloads into data/voice/models on first use)",
       "Recordings page in the panel (Show more section): live status chips, per-line transcript [time] speaker: text, txt/srt downloads, per-speaker wav audio, delete",
       "Access gating: recordings_access (admins by default, owner-editable in Manage), the bot's voice permission is a hard limit; recording start/stop is audited and hits the notification bell",
+      "Optional dedicated recorder bot (RECORDER_BOT_TOKEN): /record runs as a second user and records while the main bot plays music; without it the exclusive mode stays",
     ],
   },
   {

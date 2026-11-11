@@ -174,6 +174,10 @@ class RecorderService:
         self.sessions: dict[int, RecordingSession] = {}
         self._queue: asyncio.Queue[RecordingSession] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
+        # Dedicated recorder bot (only when RECORDER_BOT_TOKEN is set);
+        # started lazily on the first recording and stays online after.
+        self._client = None
+        self._client_task: asyncio.Task | None = None
         self._model = None
         self._model_lock = asyncio.Lock()
 
@@ -185,25 +189,48 @@ class RecorderService:
     def session(self, guild_id: int) -> RecordingSession | None:
         return self.sessions.get(guild_id)
 
+    def exclusive(self) -> bool:
+        """True when recordings share the main bot's voice connection and
+        cannot run while music plays (no dedicated recorder token set)."""
+        return not self.config.recorder_bot_token
+
+    async def _ensure_client(self):
+        """Lazily start the dedicated recorder bot; it stays online after.
+
+        A second Discord user owns its own voice session, so recordings do
+        not touch the main bot's Lavalink connection at all — music and
+        recording run in parallel, and the main bot's playback never
+        reaches the sink (bot users are skipped there anyway).
+        """
+        if self._client is not None:
+            return self._client
+        client = discord.Client(intents=discord.Intents.default())
+        self._client = client
+        self._client_task = asyncio.create_task(
+            client.start(self.config.recorder_bot_token), name="recorder-client"
+        )
+
+        def _dropped(task: asyncio.Task) -> None:
+            if self._client is client:
+                self._client = None
+                self._client_task = None
+
+        self._client_task.add_done_callback(_dropped)
+        for _ in range(240):  # up to 2 minutes for the first login
+            await asyncio.sleep(0.5)
+            if client.is_ready():
+                logger.info("Recorder bot ready as %s#%s", client.user.name, client.user.discriminator)
+                return client
+            if self._client_task.done():
+                exc = self._client_task.exception()
+                raise RecordingError(f"The recorder bot failed to start: {exc}")
+        raise RecordingError("The recorder bot did not come online in time.")
+
     # --- lifecycle ---
 
     async def start(self, guild_id: int, channel_id: int, requester_id: int) -> dict:
         if self.is_recording(guild_id):
             raise RecordingError("A recording is already running in this server.")
-        guild = self.bot.get_guild(guild_id)
-        if guild is None:
-            raise RecordingError("Bot is not on this server.")
-        channel = guild.get_channel(channel_id)
-        if channel is None or not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
-            raise RecordingError("Voice channel not found.")
-        # Exclusive mode: refuse while music plays, evict an idle connection.
-        music = getattr(self.bot, "music", None)
-        player = music.get_player(guild_id) if music is not None else None
-        if player is not None and player.playing:
-            raise RecordingError("Stop playback first — recording and music cannot run together.")
-        if player is not None:
-            await music.disconnect(guild_id)
-
         # voice receive decodes opus locally (the music path leaves it to
         # Lavalink), so the shared libopus must be loaded once per process.
         # discord.py 2.7's load_opus demands an explicit library name.
@@ -221,7 +248,27 @@ class RecorderService:
         except Exception:
             logger.exception("Failed to load libopus — recording will not capture audio")
 
-        row = await self.db.add_voice_recording(guild_id, channel.id, requester_id, channel.name)
+        if self.exclusive():
+            # One voice connection for everything: refuse while music
+            # plays, evict an idle player connection.
+            music = getattr(self.bot, "music", None)
+            player = music.get_player(guild_id) if music is not None else None
+            if player is not None and player.playing:
+                raise RecordingError("Stop playback first — recording and music cannot run together.")
+            if player is not None:
+                await music.disconnect(guild_id)
+            client = self.bot
+        else:
+            client = await self._ensure_client()
+
+        guild = client.get_guild(guild_id)
+        if guild is None:
+            if self.exclusive():
+                raise RecordingError("Bot is not on this server.")
+            raise RecordingError("The recorder bot is not on this server — invite it first.")
+        channel = guild.get_channel(channel_id)
+        if channel is None or not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            raise RecordingError("Voice channel not found.")
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(row["id"])
         session_dir.mkdir(parents=True, exist_ok=True)
 
@@ -416,6 +463,14 @@ class RecorderService:
         """App shutdown: drop live sessions (the files stay on disk)."""
         if self._worker_task is not None:
             self._worker_task.cancel()
+        if self._client is not None:
+            client, self._client = self._client, None
+            if self._client_task is not None:
+                self._client_task.cancel()
+            try:
+                asyncio.get_running_loop().create_task(client.close())
+            except Exception:
+                pass
         for guild_id in list(self.sessions):
             session = self.sessions.pop(guild_id)
             if session.watch_task is not None:

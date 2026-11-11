@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import contextlib
 import json
 import logging
 import random
 import re
+import time
 from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -247,9 +247,10 @@ class MusicService:
         guild = self.get_guild(guild_id)
         if guild is None:
             raise MusicServiceError("Bot is not on this server.")
-        # Exclusive voice connection: a live recording owns it.
+        # Exclusive voice connection: a live recording owns it — but only
+        # when there is no dedicated recorder bot (own voice session).
         recorder = getattr(self, "recorder", None)
-        if recorder is not None and recorder.is_recording(guild_id):
+        if recorder is not None and recorder.exclusive() and recorder.is_recording(guild_id):
             raise MusicServiceError("A call recording is running — stop it before playing music.")
         channel = guild.get_channel(channel_id)
         if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):

@@ -146,9 +146,27 @@ async def test_recorder_stop_without_session(db, config) -> None:
 async def test_music_connect_refuses_while_recording(db, config) -> None:
     service = MusicService(None, db, config)
     service.get_guild = lambda gid: SimpleNamespace(get_channel=lambda cid: None)  # type: ignore[method-assign]
-    service.recorder = SimpleNamespace(is_recording=lambda gid: True)
+    service.recorder = SimpleNamespace(is_recording=lambda gid: True, exclusive=lambda: True)
     with pytest.raises(MusicServiceError, match="recording"):
         await service.connect(GUILD_ID, 1, USER_ID)
+
+
+async def test_music_connect_allowed_with_dedicated_recorder(db, config) -> None:
+    """A dedicated recorder bot owns its voice session: music joins freely."""
+    service = MusicService(None, db, config)
+    service.get_guild = lambda gid: SimpleNamespace(get_channel=lambda cid: None)  # type: ignore[method-assign]
+    service.recorder = SimpleNamespace(is_recording=lambda gid: True, exclusive=lambda: False)
+    # Reaches the "Voice channel not found." check — i.e. past the guard.
+    with pytest.raises(MusicServiceError, match="channel"):
+        await service.connect(GUILD_ID, 1, USER_ID)
+
+
+def test_recorder_exclusive_depends_on_token(config) -> None:
+    from dataclasses import replace
+
+    assert RecorderService(None, None, config).exclusive()
+    dedicated = replace(config, recorder_bot_token="second-token")
+    assert not RecorderService(None, None, dedicated).exclusive()
 
 
 # --- transcription queue ---

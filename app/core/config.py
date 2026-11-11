@@ -47,6 +47,10 @@ class Config:
     # covers 99 languages; pin one only for a single-language server).
     transcribe_model: str = "small"
     transcribe_language: str = ""
+    # Optional dedicated bot for recordings: recordings then run as a
+    # second user and can run while the main bot plays music. Empty =
+    # exclusive mode (recording and music share the one voice connection).
+    recorder_bot_token: str = ""
 
 
 def load_config() -> Config:
@@ -86,6 +90,7 @@ def load_config() -> Config:
         bot_name=os.getenv("BOT_NAME", "discord_complex_bot"),
         transcribe_model=os.getenv("TRANSCRIBE_MODEL", "small"),
         transcribe_language=os.getenv("TRANSCRIBE_LANGUAGE", ""),
+        recorder_bot_token=os.getenv("RECORDER_BOT_TOKEN", ""),
     )
 
 
