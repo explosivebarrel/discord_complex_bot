@@ -101,7 +101,22 @@ if voice_recv is not None:
                 logger.warning("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
         return _upstream_process_packet(self, packet)
 
+    # discord.py swallows MLS commit/welcome failures silently (it sends
+    # an invalid-commit recovery and hangs in pending forever). Surface
+    # them: a failing commit is exactly why a session never turns ready.
     if davey is not None:
+        for _op in ("process_commit", "process_welcome", "process_proposals"):
+            _upstream_mls = getattr(davey.DaveSession, _op)
+
+            def _mls_logged(self, *args, _op: str = _op, _up=_upstream_mls, **kwargs):
+                try:
+                    return _up(self, *args, **kwargs)
+                except Exception as exc:
+                    logger.error("DAVE MLS %s failed: %r", _op, exc)
+                    raise
+
+            setattr(davey.DaveSession, _op, _mls_logged)
+
         voice_recv.opus.PacketDecoder._process_packet = _process_packet_dave
 
 from app.core.config import Config
@@ -444,18 +459,30 @@ class RecorderService:
             # ciphertext and the transcript is noise.
             state = getattr(vc, "_connection", None)
             dave_session = getattr(state, "dave_session", None)
-            if dave_session is not None:
-                stats = dave_session.get_decryption_stats()
-                logger.info(
-                    "Recording #%s DAVE: ready=%s epoch=%s status=%s decrypted=%s failed=%s passthrough=%s",
-                    session.recording_id,
-                    dave_session.ready,
-                    dave_session.epoch,
-                    dave_session.status,
-                    getattr(stats, "successes", "?"),
-                    getattr(stats, "failures", "?"),
-                    dave_session.can_passthrough,
-                )
+            try:
+                if dave_session is None:
+                    logger.info(
+                        "Recording #%s DAVE: session is None (protocol version %s)",
+                        session.recording_id,
+                        getattr(state, "dave_protocol_version", "?"),
+                    )
+                else:
+                    line = (
+                        f"Recording #{session.recording_id} DAVE: ready={dave_session.ready} "
+                        f"epoch={dave_session.epoch} status={dave_session.status}"
+                    )
+                    try:
+                        stats = dave_session.get_decryption_stats(state.user.id)
+                        line += (
+                            f" decrypted={getattr(stats, 'successes', '?')}"
+                            f" failed={getattr(stats, 'failures', '?')}"
+                            f" passthrough={getattr(stats, 'passthroughs', '?')}"
+                        )
+                    except Exception:
+                        pass
+                    logger.info(line)
+            except Exception:
+                logger.exception("Recording #%s DAVE health check failed", session.recording_id)
             if vc is None or not vc.is_connected():
                 logger.warning("Recording #%s lost its voice client; auto-stopping", session.recording_id)
                 try:
