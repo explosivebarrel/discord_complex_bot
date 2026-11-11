@@ -598,12 +598,18 @@ class RecorderService:
                 from faster_whisper import WhisperModel
 
                 size = self.config.transcribe_model
-                logger.info("Loading faster-whisper model %r (first use may download it)", size)
+                threads = max(1, getattr(self.config, "transcribe_threads", 2))
+                logger.info(
+                    "Loading faster-whisper model %r with %d CPU thread(s) (first use may download it)",
+                    size,
+                    threads,
+                )
                 self._model = await asyncio.to_thread(
                     WhisperModel,
                     size,
                     device="cpu",
                     compute_type="int8",
+                    cpu_threads=threads,
                     download_root=str(Path(self.config.recordings_dir) / "models"),
                 )
             return self._model
@@ -614,130 +620,53 @@ class RecorderService:
             model = await self._get_model()
 
             def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
-                # Multi-pass transcription with dynamic language state tracking:
-                # Pass 1: Speaker Language Profiling - detect the initial language from
-                # the longest speech chunks.
-                # Pass 2: Transcribe utterances using the speaker's active language with
-                # repetition_penalty to avoid runaway hallucination loops on silence.
-                # Pass 3: Low-confidence re-scoring - if an utterance has low confidence in
-                # the primary language, re-score against the secondary language.
-                # State tracking: If speaker switches language for 2+ consecutive substantial
-                # utterances (> 1.5s), update the active language for subsequent speech.
-                from faster_whisper.vad import VadOptions, get_speech_timestamps
-
-                chunks = get_speech_timestamps(
-                    audio,
-                    VadOptions(min_silence_duration_ms=400, speech_pad_ms=200),
-                    sampling_rate=WHISPER_RATE,
-                )
-                if not chunks:
-                    return []
-
+                # Batched VAD-filtered transcription with speaker language profiling:
+                # 1. Speaker Language Profiling: identify starting language from speech.
+                # 2. Batched VAD pass: uses CTranslate2 C++ Silero VAD to process the track
+                #    in a single optimized batch instead of dozens of padded individual calls.
+                # 3. Soft repetition penalty (1.15) to prevent runaway hallucination loops
+                #    on long pauses while fully preserving intentional repeated words.
                 cfg_lang = (self.config.transcribe_language or "").strip().lower()
                 if cfg_lang and cfg_lang != "auto":
                     primary_lang = cfg_lang
-                    dynamic_tracking = False
                 else:
-                    dynamic_tracking = True
-                    sorted_chunks = sorted(chunks, key=lambda t: t["end"] - t["start"], reverse=True)
-                    sample = np.concatenate([audio[t["start"] : t["end"]] for t in sorted_chunks[:3]])
                     try:
-                        detected_lang, prob, _ = model.detect_language(sample)
+                        detected_lang, prob, _ = model.detect_language(audio)
                         primary_lang = detected_lang if prob >= 0.40 else "ru"
                     except Exception:
                         primary_lang = "ru"
 
-                current_lang = primary_lang
-                secondary_lang = "en" if current_lang == "ru" else "ru"
-                consecutive_alt = 0
+                segs, _info = model.transcribe(
+                    audio,
+                    language=primary_lang,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
+                    word_timestamps=True,
+                    condition_on_previous_text=False,
+                    repetition_penalty=1.15,
+                )
 
                 out: list[tuple[float, float, str, list[dict]]] = []
-                for t in chunks:
-                    chunk = audio[t["start"] : t["end"]]
-                    chunk_dur = len(chunk) / WHISPER_RATE
-                    if chunk_dur < 0.5:  # shorter than 0.5s
+                for seg in segs:
+                    if getattr(seg, "no_speech_prob", 0.0) > 0.65:
                         continue
-                    start_s = t["start"] / WHISPER_RATE
-                    segs, _info = model.transcribe(
-                        chunk,
-                        language=current_lang,
-                        vad_filter=False,
-                        word_timestamps=True,
-                        condition_on_previous_text=False,
-                        no_speech_threshold=0.5,
-                        repetition_penalty=1.15,
-                    )
-                    for seg in segs:
-                        if getattr(seg, "no_speech_prob", 0.0) > 0.65:
-                            continue
-                        txt = seg.text.strip()
-                        if not txt:
-                            continue
-                        low = txt.lower()
-                        if "субтитр" in low or "dimatext" in low:
-                            continue
+                    txt = seg.text.strip()
+                    if not txt:
+                        continue
+                    low = txt.lower()
+                    if "субтитр" in low or "dimatext" in low:
+                        continue
 
-                        dur = seg.end - seg.start
-                        words = [
-                            {
-                                "w": w.word.strip(),
-                                "start": round(start_s + w.start, 2),
-                                "end": round(start_s + w.end, 2),
-                            }
-                            for w in (seg.words or [])
-                        ]
-
-                        # Pass 3: Low-confidence re-scoring against secondary language
-                        # Stricter margin: avg_logprob < -0.85 and delta > +0.35
-                        used_alt = False
-                        if getattr(seg, "avg_logprob", 0.0) < -0.85 and secondary_lang:
-                            try:
-                                alt_segs, _ = model.transcribe(
-                                    chunk,
-                                    language=secondary_lang,
-                                    vad_filter=False,
-                                    word_timestamps=True,
-                                    condition_on_previous_text=False,
-                                    no_speech_threshold=0.5,
-                                    repetition_penalty=1.15,
-                                )
-                                alt_list = list(alt_segs)
-                                if alt_list:
-                                    alt = alt_list[0]
-                                    alt_txt = alt.text.strip()
-                                    if (
-                                        alt_txt
-                                        and getattr(alt, "avg_logprob", -99.0) > seg.avg_logprob + 0.35
-                                        and getattr(alt, "no_speech_prob", 1.0) < 0.50
-                                        and "субтитр" not in alt_txt.lower()
-                                    ):
-                                        txt = alt_txt
-                                        dur = alt.end - alt.start
-                                        words = [
-                                            {
-                                                "w": w.word.strip(),
-                                                "start": round(start_s + w.start, 2),
-                                                "end": round(start_s + w.end, 2),
-                                            }
-                                            for w in (alt.words or [])
-                                        ]
-                                        used_alt = True
-                            except Exception:
-                                pass
-
-                        # Dynamic language state machine with hysteresis:
-                        # If dynamic tracking is on and speaker produces 2+ consecutive
-                        # substantial utterances (> 1.5s) in secondary language, switch active state.
-                        if dynamic_tracking and chunk_dur >= 1.5:
-                            if used_alt:
-                                consecutive_alt += 1
-                                if consecutive_alt >= 2:
-                                    current_lang, secondary_lang = secondary_lang, current_lang
-                                    consecutive_alt = 0
-                            else:
-                                consecutive_alt = 0
-
-                        out.append((start_s + seg.start, dur, txt, words))
+                    dur = seg.end - seg.start
+                    words = [
+                        {
+                            "w": w.word.strip(),
+                            "start": round(w.start, 2),
+                            "end": round(w.end, 2),
+                        }
+                        for w in (seg.words or [])
+                    ]
+                    out.append((round(seg.start, 2), round(dur, 2), txt, words))
                 return out
 
             for uid, path in session.speaker_files.items():

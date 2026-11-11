@@ -504,7 +504,9 @@ class Database:
             query = select(ModWarning).where(ModWarning.guild_id == guild_id)
             if user_id is not None:
                 query = query.where(ModWarning.user_id == user_id)
-            result = await session.execute(query.order_by(ModWarning.created_at.desc()).limit(limit))
+            result = await session.execute(
+                query.order_by(ModWarning.created_at.desc(), ModWarning.id.desc()).limit(limit)
+            )
             return [
                 {
                     "id": row.id,
