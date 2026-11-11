@@ -77,9 +77,15 @@ if voice_recv is not None:
         if user_id is None:
             return  # no sender yet — cannot pick the right ratchet
         self._cached_id = user_id
-        packet.decrypted_data = session.decrypt(
-            int(user_id), davey.MediaType.audio, bytes(packet.decrypted_data)
-        )
+        payload = bytes(packet.decrypted_data)
+        sink = self.sink
+        dumping = getattr(sink, "_dump_dave", False)
+        if dumping:
+            sink._dump_write(self.ssrc, "pre", payload)
+        out = session.decrypt(int(user_id), davey.MediaType.audio, payload)
+        if dumping:
+            sink._dump_write(self.ssrc, "post", bytes(out))
+        packet.decrypted_data = out
 
     _upstream_process_packet = voice_recv.opus.PacketDecoder._process_packet
 
@@ -156,7 +162,7 @@ if voice_recv is not None:  # the sink needs the discord.py extension at runtime
     class SpeakerSink(voice_recv.AudioSink):
         """Writes one wav per speaking user (bots are skipped)."""
 
-        def __init__(self, session_dir: Path):
+        def __init__(self, session_dir: Path, dump_dave: bool = False):
             super().__init__()
             self._dir = session_dir
             self._files: dict[int, wave.Wave_write] = {}
@@ -164,6 +170,19 @@ if voice_recv is not None:  # the sink needs the discord.py extension at runtime
             self._first_offset: dict[int, float] = {}
             self._t0 = time.monotonic()
             self._frames = 0
+            self._dump_dave = dump_dave
+            self._dumps: dict[tuple[int, str], object] = {}
+
+        def _dump_write(self, ssrc: int, kind: str, payload: bytes) -> None:
+            """Append one length-prefixed frame to a debug dump file."""
+            import struct
+
+            key = (ssrc, kind)
+            f = self._dumps.get(key)
+            if f is None:
+                f = open(self._dir / f"dave_{kind}_{ssrc}.bin", "wb")
+                self._dumps[key] = f
+            f.write(struct.pack(">H", len(payload)) + payload)
 
         def wants_opus(self) -> bool:
             return False
@@ -193,6 +212,12 @@ if voice_recv is not None:  # the sink needs the discord.py extension at runtime
                 except Exception:
                     pass
             self._files.clear()
+            for f in self._dumps.values():
+                try:
+                    f.close()
+                except Exception:
+                    pass
+            self._dumps.clear()
 
 
 @dataclass
@@ -326,7 +351,7 @@ class RecorderService:
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(row["id"])
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        sink = SpeakerSink(session_dir)
+        sink = SpeakerSink(session_dir, dump_dave=self.config.record_debug)
         try:
             vc = await channel.connect(cls=voice_recv.VoiceRecvClient, self_deaf=False)
         except discord.ClientException as exc:

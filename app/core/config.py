@@ -51,6 +51,9 @@ class Config:
     # second user and can run while the main bot plays music. Empty =
     # exclusive mode (recording and music share the one voice connection).
     recorder_bot_token: str = ""
+    # Dump raw DAVE frames and their decryption results next to each
+    # recording (dave_pre_*.bin / dave_post_*.bin) for offline analysis.
+    record_debug: bool = False
 
 
 def load_config() -> Config:
@@ -91,6 +94,7 @@ def load_config() -> Config:
         transcribe_model=os.getenv("TRANSCRIBE_MODEL", "small"),
         transcribe_language=os.getenv("TRANSCRIBE_LANGUAGE", ""),
         recorder_bot_token=os.getenv("RECORDER_BOT_TOKEN", ""),
+        record_debug=os.getenv("RECORD_DEBUG", "").lower() in ("1", "true", "yes"),
     )
 
 
