@@ -131,7 +131,7 @@ def test_dave_decrypt_noops_without_session() -> None:
     assert packet.decrypted_data == b"CIPHER"
 
     # davey 0.1.6 keeps ready=False on active sessions: the gate is status.
-    dec = _fake_decoder(_FakeDAVE(ready=False), version=1)
+    dec = _fake_decoder(_FakeDAVE(ready=False), version=1, ssrc_map={2967: 42})
     packet = SimpleNamespace(decrypted_data=b"CIPHER")
     rec._dave_decrypt_frame(dec, packet)
     assert packet.decrypted_data == b"PLAIN"
