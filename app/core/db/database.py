@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, event, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from app.core.config import Config
@@ -37,6 +37,15 @@ from app.core.db.models import (
 class Database:
     def __init__(self, config: Config) -> None:
         self.engine: AsyncEngine = create_async_engine(config.database_url, echo=False)
+        if config.database_url.startswith("sqlite"):
+            @event.listens_for(self.engine.sync_engine, "connect")
+            def _set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
         self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
 
     async def create_all(self) -> None:

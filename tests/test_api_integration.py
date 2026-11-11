@@ -406,3 +406,20 @@ async def test_player_permissions_endpoint(api) -> None:
         assert resp.status_code == 403
     finally:
         deps.set_access_mock(session_id, GUILD_ID, "owner")
+
+
+def test_write_env_line_atomic(tmp_path: Path) -> None:
+    from app.api.routers.system import _write_env_line
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("FOO=bar\nBAZ=qux\n", encoding="utf-8")
+
+    # Update existing
+    assert _write_env_line(env_file, "FOO", "new_val") is True
+    assert "FOO=new_val\n" in env_file.read_text(encoding="utf-8")
+
+    # Add new
+    assert _write_env_line(env_file, "NEW_KEY", "hello") is True
+    content = env_file.read_text(encoding="utf-8")
+    assert "NEW_KEY=hello" in content
+    assert "FOO=new_val" in content

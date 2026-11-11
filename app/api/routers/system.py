@@ -52,11 +52,16 @@ class VkAuthBody(BaseModel):
 
 
 def _write_env_line(env_path: Any, key: str, value: str) -> bool:
-    """Update one KEY= line in the .env file. False when the file is not writable."""
+    """Update one KEY= line in the .env file atomically. False when the file is not writable."""
+    import contextlib
+    import os
     import re
+    import tempfile
+    from pathlib import Path
 
+    p = Path(env_path)
     try:
-        text = env_path.read_text(encoding="utf-8")
+        text = p.read_text(encoding="utf-8")
     except OSError:
         return False
     line = f"{key}={value}"
@@ -64,9 +69,17 @@ def _write_env_line(env_path: Any, key: str, value: str) -> bool:
         text = re.sub(rf"(?m)^{key}=.*$", line, text)
     else:
         text = text.rstrip() + f"\n{line}\n"
+    temp_name: str | None = None
     try:
-        env_path.write_text(text, encoding="utf-8")
+        dir_path = p.parent
+        with tempfile.NamedTemporaryFile("w", dir=dir_path, delete=False, encoding="utf-8") as tf:
+            tf.write(text)
+            temp_name = tf.name
+        os.replace(temp_name, p)
     except OSError:
+        if temp_name and os.path.exists(temp_name):
+            with contextlib.suppress(OSError):
+                os.remove(temp_name)
         return False
     return True
 

@@ -190,6 +190,18 @@ def test_speaker_sink_writes_per_user_wav_and_skips_bots(tmp_path: Path) -> None
     assert 3 not in sink._first_offset
 
 
+def test_speaker_sink_records_bots_when_enabled(tmp_path: Path) -> None:
+    from app.core.services.recorder import SpeakerSink
+
+    sink = SpeakerSink(tmp_path, record_bots=True)
+    sink.write(_fake_user(1), _fake_voice_data(b"\x00\x00\x00\x00" * 10))
+    sink.write(_fake_user(2, bot=True), _fake_voice_data(b"\x00\x00\x00\x00" * 20))
+    sink.cleanup()
+    files = sorted(tmp_path.glob("*.wav"))
+    assert [f.name for f in files] == ["1.wav", "2.wav"]
+    assert sink._users[2] == "u2"
+
+
 def test_speaker_sink_records_first_packet_offset(tmp_path: Path) -> None:
     import time
 
@@ -273,6 +285,31 @@ async def test_transcription_queue_processes_fifo(db, config) -> None:
     assert order == [s.recording_id for s in sessions]
     statuses = [(await db.get_recording(s.recording_id, GUILD_ID))["status"] for s in sessions]
     assert statuses == ["done", "done", "done"]
+
+
+async def test_transcribe_cleans_dave_dumps_and_marks_done(db, config) -> None:
+    from unittest.mock import AsyncMock
+
+    recorder = _service(db, config)
+    row = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "test-rec")
+    rid = row["id"]
+
+    rec_dir = Path(config.recordings_dir) / str(GUILD_ID) / str(rid)
+    rec_dir.mkdir(parents=True, exist_ok=True)
+    dave_file = rec_dir / "dave_pre_1234.bin"
+    dave_file.write_bytes(b"temp debug dump")
+
+    recorder._get_model = AsyncMock()
+    recorder.notify = AsyncMock()
+
+    session = RecordingSession(
+        recording_id=rid, guild_id=GUILD_ID, channel_id=999, started_by=USER_ID
+    )
+    await recorder._transcribe(session)
+
+    saved = await db.get_recording(rid, GUILD_ID)
+    assert saved["status"] == "done"
+    assert not dave_file.exists()
 
 
 async def test_fail_stale_recordings_cleans_after_restart(db, config) -> None:

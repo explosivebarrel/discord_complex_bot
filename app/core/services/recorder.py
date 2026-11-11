@@ -14,6 +14,7 @@ MusicService.connect refuses while a recording is live.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -36,6 +37,16 @@ except ImportError:  # pragma: no cover
     davey = None  # type: ignore[assignment]
 
 if voice_recv is not None:
+    # Patch discord-ext-voice-recv UDP keepalive:
+    # Upstream bug sets delay=5000 (ms intention) and passes it to time.sleep(5000),
+    # which sleeps for 83 minutes! Without outbound UDP keepalive, Discord voice
+    # servers drop the NAT binding after ~30s of silence, halting incoming audio.
+    if hasattr(voice_recv, "reader") and hasattr(voice_recv.reader, "UDPKeepAlive"):
+        voice_recv.reader.UDPKeepAlive.delay = 5
+
+    # Silence verbose RTCP SenderReport (type 200) info logs from voice_recv reader
+    logging.getLogger("discord.ext.voice_recv.reader").setLevel(logging.WARNING)
+
     _last_drop_log = 0.0
 
     # Upstream treats any single decode error as fatal: PacketRouter.run()
@@ -72,15 +83,21 @@ if voice_recv is not None:
         session = getattr(state, "dave_session", None)
         if session is None or getattr(state, "dave_protocol_version", 0) == 0:
             return
-        if not (session.ready or session.status == davey.SessionStatus.active):
-            return
         if not packet or not hasattr(packet, "decrypted_data"):
             return  # fake/silence frames carry no payload
+        payload = bytes(packet.decrypted_data)
+        if payload == b"\xf8\xff\xfe":
+            return  # standard Opus silence packet, already unencrypted
+        if not (session.ready or session.status == davey.SessionStatus.active):
+            return
         user_id = self._cached_id or self.sink.voice_client._get_id_from_ssrc(self.ssrc)
         if user_id is None:
             return  # no sender yet — cannot pick the right ratchet
         self._cached_id = user_id
-        payload = bytes(packet.decrypted_data)
+        if hasattr(session, "get_user_ids"):
+            user_ids = session.get_user_ids()
+            if user_ids and int(user_id) not in user_ids:
+                return  # sender not in MLS group (e.g. non-E2EE bot) — plain Opus
         sink = self.sink
         dumping = getattr(sink, "_dump_dave", False)
         if dumping:
@@ -97,11 +114,20 @@ if voice_recv is not None:
         try:
             _dave_decrypt_frame(self, packet)
         except Exception as exc:
-            import time as _time
+            err_msg = str(exc)
+            if "UnencryptedWhenPassthroughDisabled" in err_msg:
+                # Normal: Discord client sent unencrypted trailing silence/comfort frames
+                pass
+            else:
+                import time as _time
 
-            if _time.monotonic() - _last_drop_log > 5:
-                _last_drop_log = _time.monotonic()
-                logger.warning("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
+                if _time.monotonic() - _last_drop_log > 5:
+                    _last_drop_log = _time.monotonic()
+                    logger.warning("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
+            # Crucial: replace failed decrypt payload with silence so opus decoder
+            # never decodes raw encrypted ciphertext into full-scale noise
+            if packet and hasattr(packet, "decrypted_data"):
+                packet.decrypted_data = b"\xf8\xff\xfe"
         return _upstream_process_packet(self, packet)
 
     # discord.py swallows MLS commit/welcome failures silently (it sends
@@ -178,9 +204,9 @@ def format_transcript_srt(segments: list[dict], usernames: dict[int, str]) -> st
 if voice_recv is not None:  # the sink needs the discord.py extension at runtime
 
     class SpeakerSink(voice_recv.AudioSink):
-        """Writes one wav per speaking user (bots are skipped)."""
+        """Writes one wav per speaking user (or audio stream)."""
 
-        def __init__(self, session_dir: Path, dump_dave: bool = False):
+        def __init__(self, session_dir: Path, dump_dave: bool = False, record_bots: bool = False):
             super().__init__()
             self._dir = session_dir
             self._files: dict[int, wave.Wave_write] = {}
@@ -189,6 +215,7 @@ if voice_recv is not None:  # the sink needs the discord.py extension at runtime
             self._t0 = time.monotonic()
             self._frames = 0
             self._dump_dave = dump_dave
+            self._record_bots = record_bots
             self._dumps: dict[tuple[int, str], object] = {}
 
         def _dump_write(self, ssrc: int, kind: str, payload: bytes) -> None:
@@ -206,22 +233,49 @@ if voice_recv is not None:  # the sink needs the discord.py extension at runtime
             return False
 
         def write(self, user, data) -> None:  # types: discord User | VoiceData
-            if user is None or getattr(user, "bot", False):
+            vc = getattr(self, "voice_client", None)
+            bot_id = getattr(getattr(vc, "user", None), "id", None)
+            # Never record the recorder bot itself (prevents echo)
+            if user is not None and bot_id is not None and user.id == bot_id:
                 return
+
+            if user is not None and getattr(user, "bot", False) and not self._record_bots:
+                return
+
+            uid: int
+            name: str
+            if user is not None:
+                uid = user.id
+                name = getattr(user, "display_name", None) or getattr(user, "name", str(user.id))
+            else:
+                # If member is not cached (e.g. without Member Intent), resolve via SSRC
+                ssrc = getattr(getattr(data, "packet", None), "ssrc", None)
+                if ssrc is not None and vc is not None:
+                    resolved_id = vc._get_id_from_ssrc(ssrc)
+                    if resolved_id:
+                        uid = resolved_id
+                        member = vc.guild.get_member(uid) if vc.guild else None
+                        name = member.display_name if member else f"user_{uid}"
+                    else:
+                        uid = -int(ssrc)
+                        name = f"Speaker #{ssrc}"
+                else:
+                    return
+
             offset = time.monotonic() - self._t0
-            if user.id not in self._files:
-                self._users[user.id] = user.display_name
-                self._first_offset[user.id] = offset
-                wf = wave.open(str(self._dir / f"{user.id}.wav"), "wb")
+            if uid not in self._files:
+                self._users[uid] = name
+                self._first_offset[uid] = offset
+                wf = wave.open(str(self._dir / f"{uid}.wav"), "wb")
                 wf.setnchannels(2)
                 wf.setsampwidth(2)  # s16le
                 wf.setframerate(PCM_RATE)
-                self._files[user.id] = wf
+                self._files[uid] = wf
             try:
-                self._files[user.id].writeframes(data.pcm)
+                self._files[uid].writeframes(data.pcm)
                 self._frames += 1
             except Exception:  # a broken stream must not kill the reader thread
-                logger.exception("Failed to write voice frames for user %s", user.id)
+                logger.exception("Failed to write voice frames for user %s", uid)
 
         def cleanup(self) -> None:
             for wf in self._files.values():
@@ -369,7 +423,7 @@ class RecorderService:
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(row["id"])
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        sink = SpeakerSink(session_dir, dump_dave=self.config.record_debug)
+        sink = SpeakerSink(session_dir, dump_dave=self.config.record_debug, record_bots=True)
         try:
             vc = await channel.connect(cls=voice_recv.VoiceRecvClient, self_deaf=False)
         except discord.ClientException as exc:
@@ -609,6 +663,12 @@ class RecorderService:
             segments_out.sort(key=lambda s: s["offset_s"])
             await self.db.add_recording_segments(session.recording_id, segments_out)
             await self.db.update_recording_status(session.recording_id, "done")
+            # Prune temporary debug dumps to free disk space once transcription succeeded
+            session_dir = Path(self.config.recordings_dir) / str(session.guild_id) / str(session.recording_id)
+            if session_dir.exists():
+                for bin_file in session_dir.glob("dave_*.bin"):
+                    with contextlib.suppress(OSError):
+                        bin_file.unlink(missing_ok=True)
             await self.notify(
                 session.guild_id, "Transcript ready",
                 f"Recording #{session.recording_id}: {len(segments_out)} lines.",
