@@ -18,6 +18,9 @@ dependencies = [
     "yt-dlp>=2025.1.26",
     "mutagen>=1.47",
     "discord-ext-voice_recv>=0.5.2a179",
+    # 0.2.0 exposes prepare/execute_transition: discord.py never signals
+    # DAVE transitions into the session, so decryptors never existed.
+    "davey>=0.2.0",
     "faster-whisper>=1.2",
 ]
 

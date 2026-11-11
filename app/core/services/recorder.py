@@ -123,6 +123,39 @@ if voice_recv is not None:
 
         voice_recv.opus.PacketDecoder._process_packet = _process_packet_dave
 
+    # Signal DAVE transitions to the session: discord.py's voice WS
+    # tracks PrepareTransition/ExecuteTransition on its own bookkeeping but
+    # never calls into davey ("In the future, the session should be signaled
+    # too" — their comment), so decryptors were never provisioned and every
+    # frame failed with NoDecryptorForUser. The voice_recv hook sees every
+    # JSON message after discord.py processed it — wire ops 21/22 there.
+    if davey is not None:
+        from discord.gateway import DiscordVoiceWebSocket
+
+        _OP_PREPARE = DiscordVoiceWebSocket.DAVE_PREPARE_TRANSITION
+        _OP_EXECUTE = DiscordVoiceWebSocket.DAVE_EXECUTE_TRANSITION
+        _upstream_hook = voice_recv.gateway.hook
+
+        async def _hook_with_dave_transitions(ws, msg):
+            await _upstream_hook(ws, msg)
+            state = ws._connection
+            session = getattr(state, "dave_session", None)
+            if session is None:
+                return
+            op, data = msg.get("op"), msg.get("d") or {}
+            try:
+                if op == _OP_PREPARE:
+                    session.prepare_transition(
+                        int(data["transition_id"]), int(data["protocol_version"])
+                    )
+                elif op == _OP_EXECUTE:
+                    session.execute_transition(int(data["transition_id"]))
+            except Exception as exc:
+                logger.warning("DAVE transition op %s failed: %r", op, exc)
+
+        voice_recv.gateway.hook = _hook_with_dave_transitions
+        voice_recv.voice_client.hook = _hook_with_dave_transitions
+
 from app.core.config import Config
 from app.core.db.database import Database
 
