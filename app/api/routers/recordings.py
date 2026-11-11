@@ -58,13 +58,30 @@ async def recording_details(
 async def recording_transcript(
     guild_id: int,
     recording_id: int,
+    fmt: str = "segments",  # segments (phrases with nested words) | words (flat timeline)
     user: CurrentUser = Depends(section),
     db: Database = Depends(get_db),
 ) -> list[dict[str, Any]]:
     recording = await db.get_recording(recording_id, guild_id)
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
-    return await db.get_segments(recording_id)
+    segments = await db.get_segments(recording_id)
+    if fmt == "words":
+        # Flat per-word timeline across all speakers — for karaoke-style
+        # UIs, seeking and word-level analytics.
+        words: list[dict[str, Any]] = []
+        for seg in segments:
+            for w in seg.get("words", []):
+                words.append({
+                    "w": w["w"],
+                    "start": w["start"],
+                    "end": w["end"],
+                    "user_id": seg["user_id"],
+                    "username": seg["username"],
+                })
+        words.sort(key=lambda w: w["start"])
+        return words
+    return segments
 
 
 @router.get("/{recording_id}/download")

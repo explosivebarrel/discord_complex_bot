@@ -106,6 +106,7 @@ def _fake_decoder(session, version, cached_id=None, ssrc_map=None):
 
 def test_dave_decrypt_unwraps_frame_with_resolved_sender() -> None:
     import davey
+
     import app.core.services.recorder as rec
 
     session = _FakeDAVE()
@@ -370,6 +371,32 @@ async def test_recordings_list_and_404_contract(recordings_api, db) -> None:
     assert r.status_code == 200 and r.json() == []
     r = await client.delete(f"/api/guilds/{GUILD_ID}/recordings/{row['id'] + 5}")
     assert r.status_code == 404
+
+
+async def test_transcript_words_format(recordings_api, db) -> None:
+    """fmt=words flattens all speakers' words into one time-sorted timeline."""
+    row = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "tavern")
+    await db.add_recording_segments(row["id"], [
+        {"user_id": 1, "username": "Alice", "offset_s": 10.0, "duration_s": 2.0, "text": "hi there",
+         "words": [
+             {"w": "hi", "start": 10.0, "end": 10.4},
+             {"w": "there", "start": 10.5, "end": 11.0},
+         ]},
+        {"user_id": 2, "username": "Bob", "offset_s": 2.0, "duration_s": 1.0, "text": "yo",
+         "words": [{"w": "yo", "start": 2.0, "end": 2.3}]},
+    ])
+    words = (await recordings_api.get(
+        f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/transcript?fmt=words"
+    )).json()
+    # Sorted by time across speakers, each word carries its speaker.
+    assert [w["w"] for w in words] == ["yo", "hi", "there"]
+    assert words[0]["username"] == "Bob" and words[1]["username"] == "Alice"
+    assert words[1]["start"] == 10.0
+    # Default format stays segments-with-nested-words.
+    segs = (await recordings_api.get(
+        f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/transcript"
+    )).json()
+    assert segs[0]["text"] == "yo" and len(segs[0]["words"]) == 1
 
 
 async def test_recording_download_formats(recordings_api, db) -> None:
