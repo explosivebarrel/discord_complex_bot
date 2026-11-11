@@ -425,6 +425,11 @@ class RecorderService:
                     model.transcribe,
                     audio,
                     language=self.config.transcribe_language or None,
+                    # Auto mode: detect the language per speech segment, so a
+                    # call that mixes Russian and English transcribes both
+                    # instead of bending everything into the first detected
+                    # language. A pinned TRANSCRIBE_LANGUAGE disables it.
+                    multilingual=self.config.transcribe_language == "",
                     vad_filter=True,
                 )
                 base = session.first_offsets.get(uid, 0.0)
