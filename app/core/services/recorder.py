@@ -95,8 +95,8 @@ if voice_recv is not None:
             return  # no sender yet — cannot pick the right ratchet
         self._cached_id = user_id
         if hasattr(session, "get_user_ids"):
-            user_ids = session.get_user_ids()
-            if user_ids and int(user_id) not in user_ids:
+            user_ids = {str(uid) for uid in session.get_user_ids()}
+            if user_ids and str(user_id) not in user_ids:
                 return  # sender not in MLS group (e.g. non-E2EE bot) — plain Opus
         sink = self.sink
         dumping = getattr(sink, "_dump_dave", False)
@@ -115,15 +115,20 @@ if voice_recv is not None:
             _dave_decrypt_frame(self, packet)
         except Exception as exc:
             err_msg = str(exc)
+            if "NoDecryptorForUser" in err_msg:
+                # Sender not registered in DAVE MLS; packet is plain Opus audio
+                return _upstream_process_packet(self, packet)
             if "UnencryptedWhenPassthroughDisabled" in err_msg:
-                # Normal: Discord client sent unencrypted trailing silence/comfort frames
-                pass
-            else:
-                import time as _time
+                # Discord client sent unencrypted trailing silence/transition frame
+                if packet and hasattr(packet, "decrypted_data"):
+                    packet.decrypted_data = b"\xf8\xff\xfe"
+                return _upstream_process_packet(self, packet)
 
-                if _time.monotonic() - _last_drop_log > 5:
-                    _last_drop_log = _time.monotonic()
-                    logger.warning("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
+            import time as _time
+
+            if _time.monotonic() - _last_drop_log > 5:
+                _last_drop_log = _time.monotonic()
+                logger.warning("DAVE decrypt failed for ssrc %s: %s", self.ssrc, exc)
             # Crucial: replace failed decrypt payload with silence so opus decoder
             # never decodes raw encrypted ciphertext into full-scale noise
             if packet and hasattr(packet, "decrypted_data"):
