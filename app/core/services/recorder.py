@@ -14,6 +14,7 @@ MusicService.connect refuses while a recording is live.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import wave
@@ -545,23 +546,40 @@ class RecorderService:
         segments_out: list[dict] = []
         try:
             model = await self._get_model()
+            pinned = self.config.transcribe_language or None
 
-            def _run(audio: np.ndarray) -> list:
-                # The transcribe generator does all the compute lazily while
-                # being iterated — run the whole iteration on a worker thread,
-                # otherwise the event loop (and every bot reply) freezes for
-                # the length of the transcription.
-                raw_segments, _info = model.transcribe(
+            def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
+                # Whisper's own multilingual mode detects language per 30s
+                # window — useless when the speaker switches every few
+                # seconds. Split the audio into per-utterance chunks with
+                # VAD and detect the language for each chunk separately.
+                from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+                chunks = get_speech_timestamps(
                     audio,
-                    language=self.config.transcribe_language or None,
-                    # Auto mode: detect the language per speech segment, so a
-                    # call that mixes Russian and English transcribes both
-                    # instead of bending everything into the first detected
-                    # language. A pinned TRANSCRIBE_LANGUAGE disables it.
-                    multilingual=self.config.transcribe_language == "",
-                    vad_filter=True,
+                    VadOptions(min_silence_duration_ms=400, speech_pad_ms=200),
+                    sampling_rate=WHISPER_RATE,
                 )
-                return list(raw_segments)
+                out: list[tuple[float, float, str, list[dict]]] = []
+                for t in chunks:
+                    chunk = audio[t["start"] : t["end"]]
+                    if len(chunk) < WHISPER_RATE // 2:  # shorter than 0.5s
+                        continue
+                    start_s = t["start"] / WHISPER_RATE
+                    segs, _info = model.transcribe(
+                        chunk, language=pinned, vad_filter=False, word_timestamps=True
+                    )
+                    for seg in segs:
+                        words = [
+                            {
+                                "w": w.word.strip(),
+                                "start": round(start_s + w.start, 2),
+                                "end": round(start_s + w.end, 2),
+                            }
+                            for w in (seg.words or [])
+                        ]
+                        out.append((start_s + seg.start, seg.end - seg.start, seg.text.strip(), words))
+                return out
 
             for uid, path in session.speaker_files.items():
                 if not path.exists() or path.stat().st_size <= 44:
@@ -571,13 +589,22 @@ class RecorderService:
                     continue
                 raw_segments = await asyncio.to_thread(_run, audio)
                 base = session.first_offsets.get(uid, 0.0)
-                for seg in raw_segments:
+                for start, duration, text, words in raw_segments:
+                    if not text:
+                        continue
                     segments_out.append({
                         "user_id": uid,
                         "username": session.usernames.get(uid, ""),
-                        "offset_s": round(base + seg.start, 2),
-                        "duration_s": round(seg.end - seg.start, 2),
-                        "text": seg.text.strip(),
+                        "offset_s": round(base + start, 2),
+                        "duration_s": round(duration, 2),
+                        "text": text,
+                        "words": json.dumps(
+                            [
+                                {**w, "start": round(base + w["start"], 2), "end": round(base + w["end"], 2)}
+                                for w in words
+                            ],
+                            ensure_ascii=False,
+                        ),
                     })
             segments_out.sort(key=lambda s: s["offset_s"])
             await self.db.add_recording_segments(session.recording_id, segments_out)

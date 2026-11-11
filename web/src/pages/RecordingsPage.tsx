@@ -16,7 +16,7 @@ import { useDeleteRecording, useRecordingTranscript, useRecordings } from "../qu
 import { useAuth } from "../useAuth";
 import { AppShell } from "../components/AppShell";
 import { CardSkeleton } from "../components/Skeletons";
-import type { VoiceRecordingInfo } from "../api";
+import type { TranscriptWord, VoiceRecordingInfo } from "../api";
 
 function timeAgo(iso: string): string {
   // SQLite stores naive UTC; the api returns it without a zone suffix.
@@ -43,6 +43,19 @@ function stamp(seconds: number): string {
   return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
+function WordSpan({ word }: { word: TranscriptWord }) {
+  return (
+    <Typography
+      component="span"
+      variant="body2"
+      sx={{ display: "inline", color: "text.primary", cursor: "default" }}
+      title={`${stamp(word.start)} – ${stamp(word.end)}`}
+    >
+      {word.w}{" "}
+    </Typography>
+  );
+}
+
 function Transcript({ guildId, id }: { guildId: string; id: number }) {
   const { data, isPending, error } = useRecordingTranscript(guildId, id);
   if (isPending) return <Typography variant="body2" sx={{ color: "text.secondary", px: 2 }}>Loading…</Typography>;
@@ -58,7 +71,13 @@ function Transcript({ guildId, id }: { guildId: string; id: number }) {
           </Typography>
           <ListItemText
             primary={seg.username || `user ${seg.user_id}`}
-            secondary={seg.text}
+            secondary={
+              seg.words?.length ? (
+                seg.words.map((w, j) => <WordSpan key={j} word={w} />)
+              ) : (
+                seg.text
+              )
+            }
             slotProps={{
               primary: { variant: "body2", sx: { fontWeight: 600, display: "inline", mr: 1 } },
               secondary: { variant: "body2", sx: { display: "inline", color: "text.primary" } },

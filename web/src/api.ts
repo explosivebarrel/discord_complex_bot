@@ -304,12 +304,20 @@ export interface VoiceRecordingInfo {
   speakers?: { user_id: string; username: string }[];
 }
 
+export interface TranscriptWord {
+  w: string;
+  start: number;
+  end: number;
+}
+
 export interface TranscriptSegment {
   user_id: string;
   username: string;
   offset_s: number;
   duration_s: number;
   text: string;
+  /** Per-word timecodes; absent on old recordings. */
+  words?: TranscriptWord[];
 }
 
 export interface GuildStats {

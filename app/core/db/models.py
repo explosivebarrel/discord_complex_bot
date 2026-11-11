@@ -348,3 +348,6 @@ class VoiceRecordingSegment(Base):
     offset_s: Mapped[float] = mapped_column(Float)
     duration_s: Mapped[float] = mapped_column(Float, default=0.0)
     text: Mapped[str] = mapped_column(Text)
+    # JSON array of {w, start, end} — per-word timecodes (absolute within
+    # the recording, same base as offset_s). Empty list = not word-timed.
+    words: Mapped[str] = mapped_column(Text, default="[]")

@@ -28,6 +28,8 @@ export const CHANGELOG: ChangelogBlock[] = [
       "Recordings page in the panel (Show more section): live status chips, per-line transcript [time] speaker: text, txt/srt downloads, per-speaker wav audio, delete",
       "Access gating: recordings_access (admins by default, owner-editable in Manage), the bot's voice permission is a hard limit; recording start/stop is audited and hits the notification bell",
       "Optional dedicated recorder bot (RECORDER_BOT_TOKEN): /record runs as a second user and records while the main bot plays music; without it the exclusive mode stays",
+      "DAVE E2EE decryption on receive (the reason every earlier capture was noise): frames are unwrapped through the MLS session discord.py already maintains; davey pinned to 0.1.x (0.2.0 moved key updates into transitions discord.py never signals)",
+      "Transcription reworked: per-utterance VAD chunks each get their own language detection (rapid ru/en/de/fr/ja switching finally transcribes), and every word carries its own timecode — shown on hover in the panel and stored in the API",
     ],
   },
   {

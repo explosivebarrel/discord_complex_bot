@@ -1087,7 +1087,14 @@ class Database:
     async def add_recording_segments(self, recording_id: int, segments: list[dict[str, Any]]) -> None:
         async with self.session_factory() as session:
             for seg in segments:
-                session.add(VoiceRecordingSegment(recording_id=recording_id, **seg))
+                words = seg.pop("words", "[]")
+                if isinstance(words, list):
+                    import json as _json
+
+                    words = _json.dumps(words, ensure_ascii=False)
+                session.add(
+                    VoiceRecordingSegment(recording_id=recording_id, words=words, **seg)
+                )
             await session.commit()
 
     async def list_voice_recordings(self, guild_id: int, limit: int = 50) -> list[dict[str, Any]]:
@@ -1114,6 +1121,8 @@ class Database:
                 .where(VoiceRecordingSegment.recording_id == recording_id)
                 .order_by(VoiceRecordingSegment.offset_s, VoiceRecordingSegment.id)
             )
+            import json as _json
+
             return [
                 {
                     "user_id": r.user_id,
@@ -1121,6 +1130,7 @@ class Database:
                     "offset_s": r.offset_s,
                     "duration_s": r.duration_s,
                     "text": r.text,
+                    "words": _json.loads(r.words or "[]"),
                 }
                 for r in rows.scalars()
             ]
