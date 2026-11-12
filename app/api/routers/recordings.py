@@ -142,14 +142,17 @@ async def recording_details(
     for seg in segments:
         speakers.setdefault(seg["user_id"], seg.get("username") or f"user {seg['user_id']}")
     directory = _recording_dir(config, guild_id, recording_id)
-    # Speakers with wav audio on disk (the transcript may lag the files).
-    for wav in sorted(directory.glob("*.wav")):
+    # Speakers with audio on disk (the transcript may lag the files).
+    for audio_file in sorted(directory.glob("*.opus")) + sorted(directory.glob("*.wav")):
         try:
-            uid = int(wav.stem)
+            if audio_file.stem == "mixed":
+                continue
+            uid = int(audio_file.stem)
             speakers.setdefault(uid, f"user {uid}")
         except ValueError:
             pass
     recording["speakers"] = [{"user_id": uid, "username": name} for uid, name in speakers.items()]
+    recording["has_mixed_audio"] = (directory / "mixed.opus").is_file() or (directory / "mixed.wav").is_file()
     return recording
 
 
@@ -296,6 +299,43 @@ async def recording_download(
     )
 
 
+@router.get("/{recording_id}/audio")
+async def recording_audio_stream(
+    guild_id: int,
+    recording_id: int,
+    user_id: str = "mixed",  # "mixed" for full call mix, or specific numeric user_id
+    user: CurrentUser = Depends(section),
+    db: Database = Depends(get_db),
+    config: Config = Depends(get_config),
+) -> Response:
+    recording = await db.get_recording(recording_id, guild_id)
+    if recording is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    directory = _recording_dir(config, guild_id, recording_id)
+
+    # Prefer lightweight .opus, fall back to .wav
+    path_opus = directory / f"{user_id}.opus"
+    path_wav = directory / f"{user_id}.wav"
+
+    if path_opus.is_file():
+        return Response(
+            content=path_opus.read_bytes(),
+            media_type="audio/ogg",
+            headers={
+                "Content-Disposition": f'inline; filename="recording-{recording_id}-{user_id}.opus"'
+            },
+        )
+    if path_wav.is_file():
+        return Response(
+            content=path_wav.read_bytes(),
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": f'inline; filename="recording-{recording_id}-{user_id}.wav"'
+            },
+        )
+    raise HTTPException(status_code=404, detail="Audio file not found")
+
+
 @router.get("/{recording_id}/audio/{user_id}")
 async def recording_audio(
     guild_id: int,
@@ -305,20 +345,13 @@ async def recording_audio(
     db: Database = Depends(get_db),
     config: Config = Depends(get_config),
 ) -> Response:
-    recording = await db.get_recording(recording_id, guild_id)
-    if recording is None:
-        raise HTTPException(status_code=404, detail="Recording not found")
-    path = _recording_dir(config, guild_id, recording_id) / f"{user_id}.wav"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Audio not found")
-    return Response(
-        content=path.read_bytes(),
-        media_type="audio/wav",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="recording-{recording_id}-{user_id}.wav"'
-            )
-        },
+    return await recording_audio_stream(
+        guild_id=guild_id,
+        recording_id=recording_id,
+        user_id=str(user_id),
+        user=user,
+        db=db,
+        config=config,
     )
 
 

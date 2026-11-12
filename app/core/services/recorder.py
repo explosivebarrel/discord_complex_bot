@@ -17,6 +17,8 @@ import asyncio
 import contextlib
 import json
 import logging
+import shutil
+import subprocess
 import time
 import wave
 from dataclasses import dataclass, field
@@ -211,6 +213,85 @@ def format_transcript_srt(segments: list[dict], usernames: dict[int, str]) -> st
         end = _stamp(seg["offset_s"] + max(seg.get("duration_s", 0.0), 1.0))
         blocks.append(f"{i}\n{start} --> {end}\n{name}: {seg['text']}")
     return "\n\n".join(blocks) + "\n"
+
+
+def detect_speech_language(audio: np.ndarray, model: Any, default: str = "ru") -> str:
+    """VAD-guided speech language detection.
+
+    Samples solid speech blocks across the audio timeline (avoiding silence/noise)
+    and uses Whisper to detect the spoken language with high confidence.
+    """
+    if len(audio) < WHISPER_RATE:
+        return default
+    try:
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+        ts = get_speech_timestamps(audio, VadOptions(min_speech_duration_ms=500, min_silence_duration_ms=400))
+        if not ts:
+            return default
+        solid = [b for b in ts if (b["end"] - b["start"]) >= WHISPER_RATE * 1.5]
+        if not solid:
+            solid = ts
+
+        # Take up to 3 distributed samples across the timeline
+        n_samples = min(3, len(solid))
+        step = len(solid) // n_samples
+        sampled_blocks = [solid[i * step] for i in range(n_samples)]
+
+        composite_parts = []
+        for b in sampled_blocks:
+            c = audio[b["start"]:b["end"]]
+            composite_parts.append(c[:min(len(c), int(3.5 * WHISPER_RATE))])
+
+        sample = np.concatenate(composite_parts)
+        lang, prob, _ = model.detect_language(sample)
+        logger.info("VAD speech language profiling: detected '%s' (confidence %.2f)", lang, prob)
+        if prob >= 0.40:
+            return lang
+    except Exception:
+        logger.exception("VAD speech language detection failed; falling back to %r", default)
+    return default
+
+
+def compress_recording_audio(session_dir: Path) -> dict[str, str]:
+    """Compresses speaker WAV files to Opus and creates a mixed call track.
+
+    Uses ffmpeg when available. Returns a mapping of created opus files.
+    """
+    if not shutil.which("ffmpeg"):
+        return {}
+    results: dict[str, str] = {}
+    try:
+        wavs = sorted(p for p in session_dir.glob("*.wav") if p.is_file() and p.stat().st_size > 44)
+        if not wavs:
+            return {}
+
+        for w in wavs:
+            out_opus = w.with_suffix(".opus")
+            cmd = ["ffmpeg", "-y", "-i", str(w), "-c:a", "libopus", "-b:a", "64k", str(out_opus)]
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode == 0 and out_opus.is_file():
+                results[w.stem] = out_opus.name
+
+        # Create mixed call audio if 1 or more speakers
+        out_mix = session_dir / "mixed.opus"
+        inputs: list[str] = []
+        for w in wavs:
+            inputs.extend(["-i", str(w)])
+
+        if len(wavs) == 1:
+            cmd = ["ffmpeg", "-y", "-i", str(wavs[0]), "-c:a", "libopus", "-b:a", "96k", str(out_mix)]
+        else:
+            filter_complex = f"amix=inputs={len(wavs)}:duration=longest:dropout_transition=2"
+            cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex, "-c:a", "libopus", "-b:a", "96k", str(out_mix)]
+
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if res.returncode == 0 and out_mix.is_file():
+            results["mixed"] = out_mix.name
+            logger.info("Compressed call audio into %s (%d KB)", out_mix.name, out_mix.stat().st_size // 1024)
+    except Exception:
+        logger.exception("Failed to compress recording audio in %s", session_dir)
+    return results
 
 
 if voice_recv is not None:  # the sink needs the discord.py extension at runtime
@@ -794,26 +875,20 @@ class RecorderService:
             elif cfg_lang and cfg_lang != "auto":
                 target_lang = cfg_lang
             else:
-                target_lang = None
+                target_lang = ""
 
-            def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
-                # Batched VAD-filtered transcription with speaker language profiling:
-                # 1. Speaker Language Profiling: identify starting language from speech.
+            def _run(audio: np.ndarray, lang: str | None = None) -> list[tuple[float, float, str, list[dict]]]:
+                # Batched VAD-filtered transcription:
+                # 1. Uses explicit language or VAD-detected speech language.
                 # 2. Batched VAD pass: uses CTranslate2 C++ Silero VAD to process the track
                 #    in a single optimized batch instead of dozens of padded individual calls.
                 # 3. Soft repetition penalty (1.15) to prevent runaway hallucination loops
                 #    on long pauses while fully preserving intentional repeated words.
-                primary_lang = target_lang
-                if not primary_lang:
-                    try:
-                        detected_lang, prob, _ = model.detect_language(audio)
-                        primary_lang = detected_lang if prob >= 0.40 else "ru"
-                    except Exception:
-                        primary_lang = "ru"
+                chosen_lang = lang or target_lang or detect_speech_language(audio, model, default="ru")
 
                 segs, _info = model.transcribe(
                     audio,
-                    language=primary_lang,
+                    language=chosen_lang,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
                     word_timestamps=True,
@@ -845,6 +920,20 @@ class RecorderService:
                     out.append((round(seg.start, 2), round(dur, 2), txt, words))
                 return out
 
+            # Speaker language profiling: pre-detect language per speaker across whole timeline
+            speaker_langs: dict[int, str] = {}
+            if target_lang:
+                speaker_langs = {uid: target_lang for uid in (session.usernames.keys() or session.speaker_files.keys())}
+            else:
+                for uid, path in session.speaker_files.items():
+                    if path.is_file() and path.stat().st_size > 44:
+                        try:
+                            spk_audio = await asyncio.to_thread(wav_to_whisper_array, path)
+                            spk_l = await asyncio.to_thread(detect_speech_language, spk_audio, model, "ru")
+                            speaker_langs[uid] = spk_l
+                        except Exception:
+                            speaker_langs[uid] = "ru"
+
             chunks_json_path = session_dir / "chunks.json"
             chunks = []
             if chunks_json_path.is_file():
@@ -861,9 +950,9 @@ class RecorderService:
                     audio = await asyncio.to_thread(wav_to_whisper_array, c_path)
                     if len(audio) < WHISPER_RATE // 4:  # shorter than 0.25s
                         continue
-                    raw_segments = await asyncio.to_thread(_run, audio)
-                    base_offset = float(chunk["offset_start"])
                     uid = int(chunk["user_id"])
+                    raw_segments = await asyncio.to_thread(_run, audio, speaker_langs.get(uid))
+                    base_offset = float(chunk["offset_start"])
                     uname = chunk.get("username") or session.usernames.get(uid, "")
                     for start, duration, text, words in raw_segments:
                         if not text:
@@ -886,7 +975,7 @@ class RecorderService:
                     audio = await asyncio.to_thread(wav_to_whisper_array, path)
                     if len(audio) < WHISPER_RATE // 2:  # shorter than 0.5s
                         continue
-                    raw_segments = await asyncio.to_thread(_run, audio)
+                    raw_segments = await asyncio.to_thread(_run, audio, speaker_langs.get(uid))
                     base = session.first_offsets.get(uid, 0.0)
                     for start, duration, text, words in raw_segments:
                         if not text:
@@ -962,6 +1051,9 @@ class RecorderService:
                 for bin_file in session_dir.glob("dave_*.bin"):
                     with contextlib.suppress(OSError):
                         bin_file.unlink(missing_ok=True)
+            # Compress speaker WAVs to Opus and generate mixed track
+            await asyncio.to_thread(compress_recording_audio, session_dir)
+
             await self.notify(
                 session.guild_id, "Transcript ready",
                 f"Recording #{session.recording_id}: {len(segments_out)} lines.",
