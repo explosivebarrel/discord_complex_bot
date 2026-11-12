@@ -1205,6 +1205,18 @@ class Database:
         """After a restart no session or transcription can still be live;
         rows stuck in those statuses would never resolve on their own."""
         async with self.session_factory() as session:
+            try:
+                from sqlalchemy import text
+                res = await session.execute(text("PRAGMA table_info(voice_recordings)"))
+                cols = {row[1] for row in res.fetchall()}
+                if cols and "prompt" not in cols:
+                    await session.execute(text("ALTER TABLE voice_recordings ADD COLUMN prompt TEXT DEFAULT ''"))
+                if cols and "language" not in cols:
+                    await session.execute(text("ALTER TABLE voice_recordings ADD COLUMN language VARCHAR(16) DEFAULT ''"))
+                await session.commit()
+            except Exception:
+                pass
+
             result = await session.execute(
                 update(VoiceRecording)
                 .where(VoiceRecording.status.in_(("recording", "queued", "transcribing")))
