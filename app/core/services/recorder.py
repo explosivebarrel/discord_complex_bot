@@ -561,7 +561,15 @@ class RecorderService:
 
     # --- lifecycle ---
 
-    async def start(self, guild_id: int, channel_id: int, requester_id: int) -> dict:
+    async def start(
+        self,
+        guild_id: int,
+        channel_id: int,
+        requester_id: int,
+        title: str | None = None,
+        prompt: str | None = None,
+        language: str | None = None,
+    ) -> dict:
         if self.is_recording(guild_id):
             raise RecordingError("A recording is already running in this server.")
         # voice receive decodes opus locally (the music path leaves it to
