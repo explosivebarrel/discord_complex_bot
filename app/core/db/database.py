@@ -53,6 +53,17 @@ class Database:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
+            def _migrate_columns(sync_conn):
+                from sqlalchemy import text
+                res = sync_conn.execute(text("PRAGMA table_info(voice_recordings)"))
+                cols = {row[1] for row in res.fetchall()}
+                if cols and "prompt" not in cols:
+                    sync_conn.execute(text("ALTER TABLE voice_recordings ADD COLUMN prompt TEXT DEFAULT ''"))
+                if cols and "language" not in cols:
+                    sync_conn.execute(text("ALTER TABLE voice_recordings ADD COLUMN language VARCHAR(16) DEFAULT ''"))
+
+            await conn.run_sync(_migrate_columns)
+
     async def dispose(self) -> None:
         await self.engine.dispose()
 
@@ -1070,13 +1081,45 @@ class Database:
     # --- voice recordings ---
 
     async def add_voice_recording(
-        self, guild_id: int, channel_id: int, started_by: int, title: str
+        self,
+        guild_id: int,
+        channel_id: int,
+        started_by: int,
+        title: str,
+        prompt: str = "",
+        language: str = "",
     ) -> dict[str, Any]:
         async with self.session_factory() as session:
             row = VoiceRecording(
-                guild_id=guild_id, channel_id=channel_id, started_by=started_by, title=title
+                guild_id=guild_id,
+                channel_id=channel_id,
+                started_by=started_by,
+                title=title,
+                prompt=prompt,
+                language=language,
             )
             session.add(row)
+            await session.commit()
+            return self._recording_dict(row)
+
+    async def update_recording_metadata(
+        self,
+        recording_id: int,
+        guild_id: int,
+        title: str | None = None,
+        prompt: str | None = None,
+        language: str | None = None,
+    ) -> dict[str, Any] | None:
+        async with self.session_factory() as session:
+            row = await session.get(VoiceRecording, recording_id)
+            if row is None or row.guild_id != guild_id:
+                return None
+            if title is not None:
+                row.title = title
+            if prompt is not None:
+                row.prompt = prompt
+            if language is not None:
+                row.language = language
             await session.commit()
             return self._recording_dict(row)
 
@@ -1182,4 +1225,6 @@ class Database:
             "status": row.status,
             "error": row.error,
             "title": row.title,
+            "prompt": getattr(row, "prompt", "") or "",
+            "language": getattr(row, "language", "") or "",
         }

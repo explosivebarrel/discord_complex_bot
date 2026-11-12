@@ -216,18 +216,37 @@ def format_transcript_srt(segments: list[dict], usernames: dict[int, str]) -> st
 if voice_recv is not None:  # the sink needs the discord.py extension at runtime
 
     class SpeakerSink(voice_recv.AudioSink):
-        """Writes one wav per speaking user (or audio stream)."""
+        """Writes per-speaker audio in speech activity chunks with exact timecodes."""
 
-        def __init__(self, session_dir: Path, dump_dave: bool = False, record_bots: bool = False):
+        def __init__(
+            self,
+            session_dir: Path,
+            dump_dave: bool = False,
+            record_bots: bool = False,
+            gap_threshold: float = 1.8,
+        ):
             super().__init__()
             self._dir = session_dir
-            self._files: dict[int, wave.Wave_write] = {}
-            self._users: dict[int, str] = {}
-            self._first_offset: dict[int, float] = {}
-            self._t0 = time.monotonic()
-            self._frames = 0
+            self._chunks_dir = session_dir / "chunks"
+            self._chunks_dir.mkdir(parents=True, exist_ok=True)
             self._dump_dave = dump_dave
             self._record_bots = record_bots
+            self._gap_threshold = gap_threshold
+
+            self._t0 = time.monotonic()
+            self._frames = 0
+            self._users: dict[int, str] = {}
+            self._first_offset: dict[int, float] = {}
+
+            # Chunk tracking per user:
+            self._active_chunks: dict[int, wave.Wave_write | None] = {}
+            self._chunk_idx: dict[int, int] = {}
+            self._chunk_start: dict[int, float] = {}
+            self._last_time: dict[int, float] = {}
+            self._chunks_meta: list[dict[str, Any]] = []
+
+            # Master concatenated wave files per user (for backward compatibility)
+            self._files: dict[int, wave.Wave_write] = {}
             self._dumps: dict[tuple[int, str], object] = {}
 
         def _dump_write(self, ssrc: int, kind: str, payload: bytes) -> None:
@@ -274,22 +293,91 @@ if voice_recv is not None:  # the sink needs the discord.py extension at runtime
                 else:
                     return
 
-            offset = time.monotonic() - self._t0
+            now = time.monotonic() - self._t0
             if uid not in self._files:
                 self._users[uid] = name
-                self._first_offset[uid] = offset
+                self._first_offset[uid] = now
                 wf = wave.open(str(self._dir / f"{uid}.wav"), "wb")
                 wf.setnchannels(2)
                 wf.setsampwidth(2)  # s16le
                 wf.setframerate(PCM_RATE)
                 self._files[uid] = wf
+                self._chunk_idx[uid] = 0
+                self._active_chunks[uid] = None
+                self._last_time[uid] = now
+
+            # Check if previous chunk timed out (speech gap > threshold)
+            last_t = self._last_time.get(uid, now)
+            active_chunk = self._active_chunks.get(uid)
+            if active_chunk is None or (now - last_t) > self._gap_threshold:
+                if active_chunk is not None:
+                    try:
+                        active_chunk.close()
+                    except Exception:
+                        pass
+                    start_t = self._chunk_start.get(uid, last_t)
+                    self._chunks_meta.append({
+                        "user_id": uid,
+                        "username": name,
+                        "chunk_index": self._chunk_idx[uid],
+                        "offset_start": round(start_t, 3),
+                        "offset_end": round(last_t + 0.02, 3),
+                        "duration_s": round(max(0.02, (last_t + 0.02) - start_t), 3),
+                        "filename": f"chunks/{uid}_{self._chunk_idx[uid]}.wav",
+                    })
+                    self._chunk_idx[uid] += 1
+
+                # Start new chunk
+                idx = self._chunk_idx[uid]
+                chunk_path = self._chunks_dir / f"{uid}_{idx}.wav"
+                cwf = wave.open(str(chunk_path), "wb")
+                cwf.setnchannels(2)
+                cwf.setsampwidth(2)
+                cwf.setframerate(PCM_RATE)
+                self._active_chunks[uid] = cwf
+                self._chunk_start[uid] = now
+
             try:
-                self._files[uid].writeframes(data.pcm)
-                self._frames += 1
-            except Exception:  # a broken stream must not kill the reader thread
+                if data.pcm:
+                    self._active_chunks[uid].writeframes(data.pcm)
+                    self._files[uid].writeframes(data.pcm)
+                    self._frames += 1
+                    self._last_time[uid] = now
+            except Exception:
                 logger.exception("Failed to write voice frames for user %s", uid)
 
         def cleanup(self) -> None:
+            # Finalize active chunks
+            for uid, cwf in list(self._active_chunks.items()):
+                if cwf is not None:
+                    try:
+                        cwf.close()
+                    except Exception:
+                        pass
+                    last_t = self._last_time.get(uid, self._chunk_start.get(uid, 0.0))
+                    start_t = self._chunk_start.get(uid, last_t)
+                    self._chunks_meta.append({
+                        "user_id": uid,
+                        "username": self._users.get(uid, f"user {uid}"),
+                        "chunk_index": self._chunk_idx.get(uid, 0),
+                        "offset_start": round(start_t, 3),
+                        "offset_end": round(last_t + 0.02, 3),
+                        "duration_s": round(max(0.02, (last_t + 0.02) - start_t), 3),
+                        "filename": f"chunks/{uid}_{self._chunk_idx.get(uid, 0)}.wav",
+                    })
+            self._active_chunks.clear()
+
+            # Save chunks.json
+            if self._chunks_meta:
+                try:
+                    self._chunks_meta.sort(key=lambda c: (c["offset_start"], c["user_id"]))
+                    (self._dir / "chunks.json").write_text(
+                        json.dumps(self._chunks_meta, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    logger.exception("Failed to write chunks.json")
+
             for wf in self._files.values():
                 try:
                     wf.close()
@@ -317,6 +405,9 @@ class RecordingSession:
     speaker_files: dict[int, Path] = field(default_factory=dict)
     usernames: dict[int, str] = field(default_factory=dict)
     first_offsets: dict[int, float] = field(default_factory=dict)
+    prompt: str = ""
+    language: str = ""
+    chunks: list[dict[str, Any]] = field(default_factory=list)
 
 
 class RecorderService:
@@ -431,7 +522,16 @@ class RecorderService:
         if channel is None or not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
             raise RecordingError("Voice channel not found.")
 
-        row = await self.db.add_voice_recording(guild_id, channel.id, requester_id, channel.name)
+        prompt_val = (prompt or "").strip()
+        lang_val = (language or "").strip()
+        row = await self.db.add_voice_recording(
+            guild_id,
+            channel.id,
+            requester_id,
+            title or channel.name,
+            prompt=prompt_val,
+            language=lang_val,
+        )
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(row["id"])
         session_dir.mkdir(parents=True, exist_ok=True)
 
@@ -457,6 +557,8 @@ class RecorderService:
             started_by=requester_id,
             vc=vc,
             sink=sink,
+            prompt=prompt_val,
+            language=lang_val,
         )
         self.sessions[guild_id] = session
         session.watch_task = asyncio.create_task(self._watch(session), name=f"recording-watch-{guild_id}")
@@ -486,6 +588,7 @@ class RecorderService:
         }
         session.usernames = dict(sink._users)
         session.first_offsets = dict(sink._first_offset)
+        session.chunks = list(getattr(sink, "_chunks_meta", []))
 
         total_bytes = sum(p.stat().st_size for p in session.speaker_files.values() if p.exists())
         if total_bytes <= 44:  # a bare wav header = nothing was captured
@@ -503,6 +606,55 @@ class RecorderService:
                           f"Queued for transcription (position {self._queue.qsize() + 1}).")
         self._enqueue(session)
         return await self.db.get_recording(session.recording_id, guild_id)
+
+    async def retranscribe(
+        self,
+        recording_id: int,
+        guild_id: int,
+        prompt: str | None = None,
+        language: str | None = None,
+    ) -> dict[str, Any]:
+        row = await self.db.get_recording(recording_id, guild_id)
+        if row is None:
+            raise RecordingError("Recording not found.")
+        if row["status"] in ("recording", "transcribing", "queued"):
+            raise RecordingError("Recording is currently active or being transcribed.")
+
+        session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(recording_id)
+        if not session_dir.exists():
+            raise RecordingError("Recording audio files not found on disk.")
+
+        if prompt is not None or language is not None:
+            await self.db.update_recording_metadata(
+                recording_id,
+                guild_id,
+                prompt=prompt if prompt is not None else row.get("prompt", ""),
+                language=language if language is not None else row.get("language", ""),
+            )
+            row = await self.db.get_recording(recording_id, guild_id)
+
+        speaker_files = {}
+        for wav in session_dir.glob("*.wav"):
+            try:
+                uid = int(wav.stem)
+                speaker_files[uid] = wav
+            except ValueError:
+                pass
+
+        session = RecordingSession(
+            recording_id=recording_id,
+            guild_id=guild_id,
+            channel_id=row["channel_id"],
+            started_by=row["started_by"],
+            speaker_files=speaker_files,
+            usernames={uid: f"user {uid}" for uid in speaker_files},
+            prompt=row.get("prompt", "") or "",
+            language=row.get("language", "") or "",
+        )
+
+        await self.db.update_recording_status(recording_id, "queued")
+        self._enqueue(session)
+        return await self.db.get_recording(recording_id, guild_id)
 
     async def _watch(self, session: RecordingSession) -> None:
         """Auto-stop when the voice client dies (kick, channel delete, crash).
@@ -618,6 +770,31 @@ class RecorderService:
         segments_out: list[dict] = []
         try:
             model = await self._get_model()
+            session_dir = Path(self.config.recordings_dir) / str(session.guild_id) / str(session.recording_id)
+            session_dir.mkdir(parents=True, exist_ok=True)
+
+            # Extract chunks archive if needed
+            chunks_tar = session_dir / "chunks.tar.gz"
+            chunks_dir = session_dir / "chunks"
+            if chunks_tar.is_file() and not chunks_dir.exists():
+                try:
+                    import tarfile
+                    with tarfile.open(chunks_tar, "r:gz") as tar:
+                        tar.extractall(session_dir)
+                except Exception:
+                    logger.exception("Failed to extract chunks.tar.gz for recording #%s", session.recording_id)
+
+            rec_row = await self.db.get_recording(session.recording_id, session.guild_id)
+            initial_prompt = (session.prompt or (rec_row.get("prompt") if rec_row else "") or "").strip()
+            session_lang = (session.language or (rec_row.get("language") if rec_row else "") or "").strip()
+
+            cfg_lang = (self.config.transcribe_language or "").strip().lower()
+            if session_lang and session_lang != "auto":
+                target_lang = session_lang
+            elif cfg_lang and cfg_lang != "auto":
+                target_lang = cfg_lang
+            else:
+                target_lang = None
 
             def _run(audio: np.ndarray) -> list[tuple[float, float, str, list[dict]]]:
                 # Batched VAD-filtered transcription with speaker language profiling:
@@ -626,10 +803,8 @@ class RecorderService:
                 #    in a single optimized batch instead of dozens of padded individual calls.
                 # 3. Soft repetition penalty (1.15) to prevent runaway hallucination loops
                 #    on long pauses while fully preserving intentional repeated words.
-                cfg_lang = (self.config.transcribe_language or "").strip().lower()
-                if cfg_lang and cfg_lang != "auto":
-                    primary_lang = cfg_lang
-                else:
+                primary_lang = target_lang
+                if not primary_lang:
                     try:
                         detected_lang, prob, _ = model.detect_language(audio)
                         primary_lang = detected_lang if prob >= 0.40 else "ru"
@@ -640,10 +815,11 @@ class RecorderService:
                     audio,
                     language=primary_lang,
                     vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
+                    vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
                     word_timestamps=True,
                     condition_on_previous_text=False,
                     repetition_penalty=1.15,
+                    initial_prompt=initial_prompt if initial_prompt else None,
                 )
 
                 out: list[tuple[float, float, str, list[dict]]] = []
@@ -669,32 +845,64 @@ class RecorderService:
                     out.append((round(seg.start, 2), round(dur, 2), txt, words))
                 return out
 
-            for uid, path in session.speaker_files.items():
-                if not path.exists() or path.stat().st_size <= 44:
-                    continue
-                audio = await asyncio.to_thread(wav_to_whisper_array, path)
-                if len(audio) < WHISPER_RATE // 2:  # shorter than 0.5s
-                    continue
-                raw_segments = await asyncio.to_thread(_run, audio)
-                base = session.first_offsets.get(uid, 0.0)
-                for start, duration, text, words in raw_segments:
-                    if not text:
-                        continue
-                    segments_out.append({
-                        "user_id": uid,
-                        "username": session.usernames.get(uid, ""),
-                        "offset_s": round(base + start, 2),
-                        "duration_s": round(duration, 2),
-                        "text": text,
-                        "words": [
-                            {**w, "start": round(base + w["start"], 2), "end": round(base + w["end"], 2)}
-                            for w in words
-                        ],
-                    })
-            segments_out.sort(key=lambda s: s["offset_s"])
+            chunks_json_path = session_dir / "chunks.json"
+            chunks = []
+            if chunks_json_path.is_file():
+                try:
+                    chunks = json.loads(chunks_json_path.read_text(encoding="utf-8"))
+                except Exception:
+                    chunks = []
 
-            session_dir = Path(self.config.recordings_dir) / str(session.guild_id) / str(session.recording_id)
-            session_dir.mkdir(parents=True, exist_ok=True)
+            if chunks:
+                for chunk in chunks:
+                    c_path = session_dir / chunk["filename"]
+                    if not c_path.is_file() or c_path.stat().st_size <= 44:
+                        continue
+                    audio = await asyncio.to_thread(wav_to_whisper_array, c_path)
+                    if len(audio) < WHISPER_RATE // 4:  # shorter than 0.25s
+                        continue
+                    raw_segments = await asyncio.to_thread(_run, audio)
+                    base_offset = float(chunk["offset_start"])
+                    uid = int(chunk["user_id"])
+                    uname = chunk.get("username") or session.usernames.get(uid, "")
+                    for start, duration, text, words in raw_segments:
+                        if not text:
+                            continue
+                        segments_out.append({
+                            "user_id": uid,
+                            "username": uname,
+                            "offset_s": round(base_offset + start, 2),
+                            "duration_s": round(duration, 2),
+                            "text": text,
+                            "words": [
+                                {**w, "start": round(base_offset + w["start"], 2), "end": round(base_offset + w["end"], 2)}
+                                for w in words
+                            ],
+                        })
+            else:
+                for uid, path in session.speaker_files.items():
+                    if not path.exists() or path.stat().st_size <= 44:
+                        continue
+                    audio = await asyncio.to_thread(wav_to_whisper_array, path)
+                    if len(audio) < WHISPER_RATE // 2:  # shorter than 0.5s
+                        continue
+                    raw_segments = await asyncio.to_thread(_run, audio)
+                    base = session.first_offsets.get(uid, 0.0)
+                    for start, duration, text, words in raw_segments:
+                        if not text:
+                            continue
+                        segments_out.append({
+                            "user_id": uid,
+                            "username": session.usernames.get(uid, ""),
+                            "offset_s": round(base + start, 2),
+                            "duration_s": round(duration, 2),
+                            "text": text,
+                            "words": [
+                                {**w, "start": round(base + w["start"], 2), "end": round(base + w["end"], 2)}
+                                for w in words
+                            ],
+                        })
+            segments_out.sort(key=lambda s: s["offset_s"])
 
             # 1. transcript.json: structured format with per-word timestamps
             transcript_data = {
@@ -727,6 +935,17 @@ class RecorderService:
                 )
             except Exception:
                 logger.exception("Failed to write transcript.srt for recording #%s", session.recording_id)
+
+            # Archive chunks into chunks.tar.gz to save disk space and file descriptors
+            if chunks_dir.exists() and any(chunks_dir.iterdir()):
+                try:
+                    import tarfile
+                    with tarfile.open(session_dir / "chunks.tar.gz", "w:gz") as tar:
+                        tar.add(chunks_dir, arcname="chunks")
+                    import shutil as _shutil
+                    _shutil.rmtree(chunks_dir, ignore_errors=True)
+                except Exception:
+                    logger.exception("Failed to archive chunks for recording #%s", session.recording_id)
 
             # Backwards compatibility: keep database write
             db_segments = [

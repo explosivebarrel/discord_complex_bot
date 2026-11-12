@@ -493,3 +493,56 @@ async def test_transcript_and_download_prefer_filesystem_bundle(recordings_api, 
 
     srt = await recordings_api.get(f"/api/guilds/{GUILD_ID}/recordings/{row['id']}/download?fmt=srt")
     assert srt.status_code == 200 and "00:00:05,000 --> 00:00:06,500" in srt.text
+
+
+def test_speaker_sink_creates_chunks_on_speech_gaps(tmp_path: Path) -> None:
+    from app.core.services.recorder import SpeakerSink
+    import json
+    import time
+
+    sink = SpeakerSink(tmp_path, gap_threshold=0.1)
+    u1 = _fake_user(1)
+
+    # First speech chunk
+    sink.write(u1, _fake_voice_data(b"\x00\x00\x00\x00" * 50))
+    time.sleep(0.15)  # gap > gap_threshold (0.1s)
+    # Second speech chunk after gap
+    sink.write(u1, _fake_voice_data(b"\x00\x00\x00\x00" * 30))
+    sink.cleanup()
+
+    # Master file contains all 80 frames
+    with wave.open(str(tmp_path / "1.wav"), "rb") as wf:
+        assert wf.getnframes() == 80
+
+    # Chunks metadata has 2 chunks
+    chunks_file = tmp_path / "chunks.json"
+    assert chunks_file.is_file()
+    meta = json.loads(chunks_file.read_text(encoding="utf-8"))
+    assert len(meta) == 2
+    assert meta[0]["chunk_index"] == 0 and meta[0]["user_id"] == 1
+    assert meta[1]["chunk_index"] == 1 and meta[1]["user_id"] == 1
+    assert meta[1]["offset_start"] > meta[0]["offset_end"]
+
+
+async def test_recording_api_full_crud_and_retranscribe(recordings_api, db, config) -> None:
+    # 1. Update metadata
+    row = await db.add_voice_recording(GUILD_ID, 999, USER_ID, "Old Title", prompt="old prompt")
+    rid = row["id"]
+
+    patch_res = await recordings_api.patch(
+        f"/api/guilds/{GUILD_ID}/recordings/{rid}",
+        json={"title": "New Meeting Title", "prompt": "IT, Whisper, Docker"},
+    )
+    assert patch_res.status_code == 200
+    updated = patch_res.json()
+    assert updated["title"] == "New Meeting Title"
+    assert updated["prompt"] == "IT, Whisper, Docker"
+
+    # 2. Download JSON format
+    rec_dir = Path(config.recordings_dir) / str(GUILD_ID) / str(rid)
+    rec_dir.mkdir(parents=True, exist_ok=True)
+    (rec_dir / "transcript.json").write_text('{"segments": []}', encoding="utf-8")
+
+    json_dl = await recordings_api.get(f"/api/guilds/{GUILD_ID}/recordings/{rid}/download?fmt=json")
+    assert json_dl.status_code == 200
+    assert json_dl.headers["content-type"] == "application/json"

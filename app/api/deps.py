@@ -47,6 +47,11 @@ def get_music(request: Request) -> MusicService:
     return request.app.state.music
 
 
+def get_recorder(request: Request):
+    music = getattr(request.app.state, "music", None)
+    return getattr(music, "recorder", None) if music is not None else getattr(request.app.state, "recorder", None)
+
+
 def get_oauth(request: Request) -> DiscordOAuthClient:
     return request.app.state.oauth
 

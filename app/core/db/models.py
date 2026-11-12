@@ -330,6 +330,8 @@ class VoiceRecording(Base):
     status: Mapped[str] = mapped_column(String(16), default="recording")
     error: Mapped[str] = mapped_column(String(500), default="")
     title: Mapped[str] = mapped_column(String(200), default="")
+    prompt: Mapped[str] = mapped_column(Text, default="", server_default="")
+    language: Mapped[str] = mapped_column(String(16), default="", server_default="")
 
 
 class VoiceRecordingSegment(Base):

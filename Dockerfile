@@ -11,7 +11,7 @@ FROM python:3.12-slim AS runtime
 WORKDIR /srv
 # libopus: voice receive (call recording) decodes opus locally, unlike the
 # Lavalink path where the node does all decoding.
-RUN apt-get update && apt-get install -y --no-install-recommends libopus0 \
+RUN apt-get update && apt-get install -y --no-install-recommends libopus0 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

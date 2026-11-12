@@ -38,11 +38,17 @@ class RecordCog(commands.GroupCog, group_name="record"):
         return user.id in await self.bot.db.list_guild_admins(guild.id)
 
     @app_commands.command(name="start", description="Start recording the current voice call")
-    @app_commands.describe(channel="Voice channel (defaults to the one you are in)")
+    @app_commands.describe(
+        channel="Voice channel (defaults to the one you are in)",
+        title="Custom title for this recording (defaults to channel name)",
+        prompt="Initial prompt / topic keywords / vocabulary for Whisper transcription",
+    )
     async def start(
         self,
         interaction: discord.Interaction,
         channel: discord.VoiceChannel | discord.StageChannel | None = None,
+        title: str | None = None,
+        prompt: str | None = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
         if not await self._can_record(interaction):
@@ -55,7 +61,13 @@ class RecordCog(commands.GroupCog, group_name="record"):
             )
             return
         try:
-            row = await self.bot.music.recorder.start(interaction.guild_id, target.id, interaction.user.id)
+            row = await self.bot.music.recorder.start(
+                interaction.guild_id,
+                target.id,
+                interaction.user.id,
+                title=title,
+                prompt=prompt,
+            )
         except RecordingError as exc:
             await interaction.followup.send(f"❌ {exc}", ephemeral=True)
             return
