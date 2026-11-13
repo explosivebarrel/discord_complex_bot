@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, get_config, get_db, get_recorder, require_section_access
@@ -307,7 +307,7 @@ async def recording_audio_stream(
     user: CurrentUser = Depends(section),
     db: Database = Depends(get_db),
     config: Config = Depends(get_config),
-) -> Response:
+) -> FileResponse:
     recording = await db.get_recording(recording_id, guild_id)
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
@@ -318,20 +318,18 @@ async def recording_audio_stream(
     path_wav = directory / f"{user_id}.wav"
 
     if path_opus.is_file():
-        return Response(
-            content=path_opus.read_bytes(),
+        return FileResponse(
+            path=path_opus,
             media_type="audio/ogg",
-            headers={
-                "Content-Disposition": f'inline; filename="recording-{recording_id}-{user_id}.opus"'
-            },
+            filename=f"recording-{recording_id}-{user_id}.opus",
+            content_disposition_type="inline",
         )
     if path_wav.is_file():
-        return Response(
-            content=path_wav.read_bytes(),
+        return FileResponse(
+            path=path_wav,
             media_type="audio/wav",
-            headers={
-                "Content-Disposition": f'inline; filename="recording-{recording_id}-{user_id}.wav"'
-            },
+            filename=f"recording-{recording_id}-{user_id}.wav",
+            content_disposition_type="inline",
         )
     raise HTTPException(status_code=404, detail="Audio file not found")
 

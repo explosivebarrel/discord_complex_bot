@@ -253,7 +253,7 @@ def detect_speech_language(audio: np.ndarray, model: Any, default: str = "ru") -
     return default
 
 
-def compress_recording_audio(session_dir: Path) -> dict[str, str]:
+def compress_recording_audio(session_dir: Path, timeout: float = 300.0) -> dict[str, str]:
     """Compresses speaker WAV files to Opus and creates a mixed call track.
 
     Uses ffmpeg when available. Returns a mapping of created opus files.
@@ -269,9 +269,13 @@ def compress_recording_audio(session_dir: Path) -> dict[str, str]:
         for w in wavs:
             out_opus = w.with_suffix(".opus")
             cmd = ["ffmpeg", "-y", "-i", str(w), "-c:a", "libopus", "-b:a", "64k", str(out_opus)]
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if res.returncode == 0 and out_opus.is_file():
-                results[w.stem] = out_opus.name
+            try:
+                res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+                if res.returncode == 0 and out_opus.is_file():
+                    results[w.stem] = out_opus.name
+            except subprocess.TimeoutExpired:
+                logger.error("FFmpeg compression timed out after %ss for %s", timeout, w.name)
+                out_opus.unlink(missing_ok=True)
 
         # Create mixed call audio if 1 or more speakers
         out_mix = session_dir / "mixed.opus"
@@ -285,10 +289,14 @@ def compress_recording_audio(session_dir: Path) -> dict[str, str]:
             filter_complex = f"amix=inputs={len(wavs)}:duration=longest:dropout_transition=2"
             cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex, "-c:a", "libopus", "-b:a", "96k", str(out_mix)]
 
-        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if res.returncode == 0 and out_mix.is_file():
-            results["mixed"] = out_mix.name
-            logger.info("Compressed call audio into %s (%d KB)", out_mix.name, out_mix.stat().st_size // 1024)
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+            if res.returncode == 0 and out_mix.is_file():
+                results["mixed"] = out_mix.name
+                logger.info("Compressed call audio into %s (%d KB)", out_mix.name, out_mix.stat().st_size // 1024)
+        except subprocess.TimeoutExpired:
+            logger.error("FFmpeg mixing timed out after %ss for %s", timeout, session_dir)
+            out_mix.unlink(missing_ok=True)
     except Exception:
         logger.exception("Failed to compress recording audio in %s", session_dir)
     return results
