@@ -19,8 +19,18 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _table_exists(table: str) -> bool:
+    return table in _insp().get_table_names()
+
+
 def _columns(table: str) -> set[str]:
-        return {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+    if not _table_exists(table):
+        return set()
+    return {c["name"] for c in _insp().get_columns(table)}
 
 
 def upgrade() -> None:
@@ -42,7 +52,7 @@ def upgrade() -> None:
                 'guild_settings',
                 sa.Column(column, sa.String(length=16), nullable=False, server_default='members'),
             )
-    if 'lyrics_cache' not in sa.inspect(op.get_bind()).get_table_names():
+    if not _table_exists('lyrics_cache'):
         op.create_table(
             'lyrics_cache',
             sa.Column('key', sa.String(length=320), nullable=False),
@@ -53,9 +63,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table('lyrics_cache')
-    for column in ('volume_access', 'effects_access', 'queue_clear_access', 'seek_access',
-                   'np_message_id', 'np_channel_id', 'vote_skip'):
-        op.drop_column('guild_settings', column)
-    op.drop_column('music_snapshots', 'effect')
-    op.drop_column('music_snapshots', 'voice_channel_id')
+    if _table_exists('lyrics_cache'):
+        op.drop_table('lyrics_cache')
+    gs_cols = _columns('guild_settings')
+    to_drop = [col for col in ('volume_access', 'effects_access', 'queue_clear_access', 'seek_access',
+                               'np_message_id', 'np_channel_id', 'vote_skip') if col in gs_cols]
+    if to_drop:
+        with op.batch_alter_table('guild_settings') as batch:
+            for col in to_drop:
+                batch.drop_column(col)
+    ms_cols = _columns('music_snapshots')
+    ms_to_drop = [col for col in ('effect', 'voice_channel_id') if col in ms_cols]
+    if ms_to_drop:
+        with op.batch_alter_table('music_snapshots') as batch:
+            for col in ms_to_drop:
+                batch.drop_column(col)

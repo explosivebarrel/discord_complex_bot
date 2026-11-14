@@ -19,13 +19,19 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _has_column(insp, table: str, column: str) -> bool:
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _has_column(table: str, column: str) -> bool:
+    insp = _insp()
+    if table not in insp.get_table_names():
+        return False
     return any(c["name"] == column for c in insp.get_columns(table))
 
 
 def upgrade() -> None:
-    insp = sa.inspect(op.get_bind())
-    if not _has_column(insp, "voice_recording_segments", "words"):
+    if not _has_column("voice_recording_segments", "words"):
         op.add_column(
             'voice_recording_segments',
             sa.Column('words', sa.Text(), nullable=False, server_default='[]'),
@@ -33,6 +39,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    insp = sa.inspect(op.get_bind())
-    if _has_column(insp, "voice_recording_segments", "words"):
-        op.drop_column('voice_recording_segments', 'words')
+    if _has_column("voice_recording_segments", "words"):
+        with op.batch_alter_table('voice_recording_segments') as batch:
+            batch.drop_column('words')

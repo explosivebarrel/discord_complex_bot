@@ -24,29 +24,50 @@ _SERVICES = (
 )
 
 
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _table_exists(table: str) -> bool:
+    return table in _insp().get_table_names()
+
+
+def _index_exists(table: str, index_name: str) -> bool:
+    if not _table_exists(table):
+        return False
+    return any(ix["name"] == index_name for ix in _insp().get_indexes(table))
+
+
 def upgrade() -> None:
-    op.create_table(
-        'availability_samples',
-        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('ts', sa.DateTime(), nullable=False),
-        *[sa.Column(name, sa.SmallInteger(), nullable=True) for name in _SERVICES],
-        sa.Column('details', sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_availability_samples_ts', 'availability_samples', ['ts'])
-    op.create_table(
-        'availability_rollups',
-        sa.Column('hour_start', sa.DateTime(), nullable=False),
-        sa.Column('service', sa.String(length=24), nullable=False),
-        sa.Column('up', sa.Integer(), nullable=False),
-        sa.Column('degraded', sa.Integer(), nullable=False),
-        sa.Column('down', sa.Integer(), nullable=False),
-        sa.Column('na', sa.Integer(), nullable=False),
-        sa.PrimaryKeyConstraint('hour_start', 'service'),
-    )
+    if not _table_exists('availability_samples'):
+        op.create_table(
+            'availability_samples',
+            sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+            sa.Column('ts', sa.DateTime(), nullable=False),
+            *[sa.Column(name, sa.SmallInteger(), nullable=True) for name in _SERVICES],
+            sa.Column('details', sa.Text(), nullable=False),
+            sa.PrimaryKeyConstraint('id'),
+        )
+    if not _index_exists('availability_samples', 'ix_availability_samples_ts'):
+        op.create_index('ix_availability_samples_ts', 'availability_samples', ['ts'])
+
+    if not _table_exists('availability_rollups'):
+        op.create_table(
+            'availability_rollups',
+            sa.Column('hour_start', sa.DateTime(), nullable=False),
+            sa.Column('service', sa.String(length=24), nullable=False),
+            sa.Column('up', sa.Integer(), nullable=False),
+            sa.Column('degraded', sa.Integer(), nullable=False),
+            sa.Column('down', sa.Integer(), nullable=False),
+            sa.Column('na', sa.Integer(), nullable=False),
+            sa.PrimaryKeyConstraint('hour_start', 'service'),
+        )
 
 
 def downgrade() -> None:
-    op.drop_table('availability_rollups')
-    op.drop_index('ix_availability_samples_ts', table_name='availability_samples')
-    op.drop_table('availability_samples')
+    if _table_exists('availability_rollups'):
+        op.drop_table('availability_rollups')
+    if _index_exists('availability_samples', 'ix_availability_samples_ts'):
+        op.drop_index('ix_availability_samples_ts', table_name='availability_samples')
+    if _table_exists('availability_samples'):
+        op.drop_table('availability_samples')

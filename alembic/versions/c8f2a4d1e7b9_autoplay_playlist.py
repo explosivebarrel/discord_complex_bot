@@ -19,11 +19,24 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _column_exists(table: str, column: str) -> bool:
+    insp = _insp()
+    if table not in insp.get_table_names():
+        return False
+    return any(c["name"] == column for c in insp.get_columns(table))
+
+
 def upgrade() -> None:
-    with op.batch_alter_table('guild_settings') as batch:
-        batch.add_column(sa.Column('autoplay_playlist_id', sa.BigInteger(), nullable=True))
+    if not _column_exists('guild_settings', 'autoplay_playlist_id'):
+        with op.batch_alter_table('guild_settings') as batch:
+            batch.add_column(sa.Column('autoplay_playlist_id', sa.BigInteger(), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('guild_settings') as batch:
-        batch.drop_column('autoplay_playlist_id')
+    if _column_exists('guild_settings', 'autoplay_playlist_id'):
+        with op.batch_alter_table('guild_settings') as batch:
+            batch.drop_column('autoplay_playlist_id')

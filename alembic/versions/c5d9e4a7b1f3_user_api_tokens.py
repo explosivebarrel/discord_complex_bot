@@ -19,22 +19,40 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _table_exists(table: str) -> bool:
+    return table in _insp().get_table_names()
+
+
+def _index_exists(table: str, index_name: str) -> bool:
+    if not _table_exists(table):
+        return False
+    return any(ix["name"] == index_name for ix in _insp().get_indexes(table))
+
+
 def upgrade() -> None:
-    op.create_table(
-        'user_api_tokens',
-        sa.Column('id', sa.String(length=64), nullable=False),
-        sa.Column('discord_id', sa.BigInteger(), nullable=False),
-        sa.Column('username', sa.String(length=128), nullable=False),
-        sa.Column('global_name', sa.String(length=128), nullable=False),
-        sa.Column('label', sa.String(length=128), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.Column('last_used_at', sa.DateTime(), nullable=True),
-        sa.Column('revoked', sa.Boolean(), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index(op.f('ix_user_api_tokens_discord_id'), 'user_api_tokens', ['discord_id'])
+    if not _table_exists('user_api_tokens'):
+        op.create_table(
+            'user_api_tokens',
+            sa.Column('id', sa.String(length=64), nullable=False),
+            sa.Column('discord_id', sa.BigInteger(), nullable=False),
+            sa.Column('username', sa.String(length=128), nullable=False),
+            sa.Column('global_name', sa.String(length=128), nullable=False),
+            sa.Column('label', sa.String(length=128), nullable=False),
+            sa.Column('created_at', sa.DateTime(), nullable=False),
+            sa.Column('last_used_at', sa.DateTime(), nullable=True),
+            sa.Column('revoked', sa.Boolean(), nullable=False),
+            sa.PrimaryKeyConstraint('id'),
+        )
+    if not _index_exists('user_api_tokens', 'ix_user_api_tokens_discord_id'):
+        op.create_index(op.f('ix_user_api_tokens_discord_id'), 'user_api_tokens', ['discord_id'])
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_user_api_tokens_discord_id'), table_name='user_api_tokens')
-    op.drop_table('user_api_tokens')
+    if _index_exists('user_api_tokens', 'ix_user_api_tokens_discord_id'):
+        op.drop_index(op.f('ix_user_api_tokens_discord_id'), table_name='user_api_tokens')
+    if _table_exists('user_api_tokens'):
+        op.drop_table('user_api_tokens')

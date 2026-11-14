@@ -19,15 +19,25 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _table_exists(table: str) -> bool:
+    return table in _insp().get_table_names()
+
+
 def upgrade() -> None:
-    op.create_table(
-        'track_artwork',
-        sa.Column('key', sa.String(length=320), nullable=False),
-        sa.Column('artwork', sa.String(length=512), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint('key'),
-    )
+    if not _table_exists('track_artwork'):
+        op.create_table(
+            'track_artwork',
+            sa.Column('key', sa.String(length=320), nullable=False),
+            sa.Column('artwork', sa.String(length=512), nullable=False),
+            sa.Column('updated_at', sa.DateTime(), nullable=False),
+            sa.PrimaryKeyConstraint('key'),
+        )
 
 
 def downgrade() -> None:
-    op.drop_table('track_artwork')
+    if _table_exists('track_artwork'):
+        op.drop_table('track_artwork')

@@ -19,17 +19,27 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _insp():
+    return sa.inspect(op.get_bind())
+
+
+def _table_exists(table: str) -> bool:
+    return table in _insp().get_table_names()
+
+
 def upgrade() -> None:
-    op.create_table(
-        'music_snapshots',
-        sa.Column('guild_id', sa.BigInteger(), nullable=False),
-        sa.Column('queue', sa.Text(), nullable=False),
-        sa.Column('played', sa.Text(), nullable=False),
-        sa.Column('repeat', sa.String(length=8), nullable=False),
-        sa.Column('saved_at', sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint('guild_id'),
-    )
+    if not _table_exists('music_snapshots'):
+        op.create_table(
+            'music_snapshots',
+            sa.Column('guild_id', sa.BigInteger(), nullable=False),
+            sa.Column('queue', sa.Text(), nullable=False),
+            sa.Column('played', sa.Text(), nullable=False),
+            sa.Column('repeat', sa.String(length=8), nullable=False),
+            sa.Column('saved_at', sa.DateTime(), nullable=False),
+            sa.PrimaryKeyConstraint('guild_id'),
+        )
 
 
 def downgrade() -> None:
-    op.drop_table('music_snapshots')
+    if _table_exists('music_snapshots'):
+        op.drop_table('music_snapshots')
