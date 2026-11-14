@@ -955,17 +955,22 @@ class RecorderService:
             else:
                 target_lang = ""
 
-            def _run(audio: np.ndarray, lang: str | None = None) -> list[tuple[float, float, str, list[dict]]]:
-                # Batched VAD-filtered transcription:
-                # 1. Uses explicit language or VAD-detected speech language.
-                # 2. Batched VAD pass: uses CTranslate2 C++ Silero VAD to process the track
-                #    in a single optimized batch instead of dozens of padded individual calls.
-                # 3. Soft repetition penalty (1.15) to prevent runaway hallucination loops
-                #    on long pauses while fully preserving intentional repeated words.
-                chosen_lang = lang or target_lang or detect_speech_language(audio, model, default="ru")
+            def _transcribe_section(chunk: np.ndarray, lang: str | None = None) -> list[tuple[float, float, str, list[dict]]]:
+                chosen_lang = lang
+                if not chosen_lang:
+                    det_l, prob, all_probs = model.detect_language(chunk)
+                    probs = dict(all_probs[:10])
+                    # If model hallucinates exotic language (e.g. ko/ja on short english words),
+                    # prioritize en/ru if they have meaningful weight (>= 3%).
+                    if det_l not in ("en", "ru", "uk"):
+                        if probs.get("en", 0) >= 0.03:
+                            det_l = "en"
+                        elif probs.get("ru", 0) >= 0.03:
+                            det_l = "ru"
+                    chosen_lang = det_l
 
                 segs, _info = model.transcribe(
-                    audio,
+                    chunk,
                     language=chosen_lang,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
@@ -998,19 +1003,61 @@ class RecorderService:
                     out.append((round(seg.start, 2), round(dur, 2), txt, words))
                 return out
 
-            # Speaker language profiling: pre-detect language per speaker across whole timeline
+            def _run(audio: np.ndarray, lang: str | None = None) -> list[tuple[float, float, str, list[dict]]]:
+                # If explicit language is set (e.g. from session or user config), transcribe directly.
+                if lang or target_lang:
+                    return _transcribe_section(audio, lang=lang or target_lang)
+
+                # Multilingual adaptive transcription:
+                # If audio is longer than 5s, split at natural conversational pauses (>= 0.30s)
+                # so language transitions (e.g. English intro -> Russian talk) are transcribed natively.
+                from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+                try:
+                    ts = get_speech_timestamps(audio, VadOptions(min_speech_duration_ms=400, min_silence_duration_ms=400))
+                except Exception:
+                    ts = []
+
+                if not ts or len(audio) < WHISPER_RATE * 5:
+                    return _transcribe_section(audio, lang=None)
+
+                sections = []
+                cur_start = ts[0]["start"]
+                cur_end = ts[0]["end"]
+                for b in ts[1:]:
+                    pause_s = (b["start"] - cur_end) / WHISPER_RATE
+                    if pause_s >= 0.30:
+                        sections.append((cur_start, cur_end))
+                        cur_start = b["start"]
+                        cur_end = b["end"]
+                    else:
+                        cur_end = b["end"]
+                sections.append((cur_start, cur_end))
+
+                # If only 1 section, transcribe normally
+                if len(sections) <= 1:
+                    return _transcribe_section(audio, lang=None)
+
+                out_segments = []
+                pad = int(0.15 * WHISPER_RATE)
+                for s_idx, e_idx in sections:
+                    s_pad = max(0, s_idx - pad)
+                    e_pad = min(len(audio), e_idx + pad)
+                    chunk = audio[s_pad:e_pad]
+                    sec_res = _transcribe_section(chunk, lang=None)
+                    offset_delta = s_pad / WHISPER_RATE
+                    for start_s, dur_s, text, words in sec_res:
+                        adj_words = [
+                            {**w, "start": round(offset_delta + w["start"], 2), "end": round(offset_delta + w["end"], 2)}
+                            for w in words
+                        ]
+                        out_segments.append((round(offset_delta + start_s, 2), dur_s, text, adj_words))
+                return out_segments
+
+            # Speaker language profiling: pre-detect language per speaker if target_lang is pinned
             speaker_langs: dict[int, str] = {}
             if target_lang:
                 speaker_langs = {uid: target_lang for uid in (session.usernames.keys() or session.speaker_files.keys())}
-            else:
-                for uid, path in session.speaker_files.items():
-                    if path.is_file() and path.stat().st_size > 44:
-                        try:
-                            spk_audio = await asyncio.to_thread(audio_to_whisper_array, path)
-                            spk_l = await asyncio.to_thread(detect_speech_language, spk_audio, model, "ru")
-                            speaker_langs[uid] = spk_l
-                        except Exception:
-                            speaker_langs[uid] = "ru"
 
             chunks_json_path = session_dir / "chunks.json"
             chunks = []
@@ -1025,7 +1072,7 @@ class RecorderService:
                     c_path = session_dir / chunk["filename"]
                     if not c_path.is_file() or c_path.stat().st_size <= 44:
                         continue
-                    audio = await asyncio.to_thread(wav_to_whisper_array, c_path)
+                    audio = await asyncio.to_thread(audio_to_whisper_array, c_path)
                     if len(audio) < WHISPER_RATE // 4:  # shorter than 0.25s
                         continue
                     uid = int(chunk["user_id"])
