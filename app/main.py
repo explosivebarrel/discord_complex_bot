@@ -99,9 +99,11 @@ def create_app() -> FastAPI:
             availability.loop(config, db, bot, music), name="availability"
         )
         watchdog_task = asyncio.create_task(_lavalink_watchdog(app), name="lavalink-watchdog")
+        wav_purge_task = asyncio.create_task(_wav_purge_loop(recorder), name="wav-purge")
         try:
             yield
         finally:
+            wav_purge_task.cancel()
             persist_task.cancel()
             cleanup_task.cancel()
             search_cache_task.cancel()
@@ -198,6 +200,16 @@ async def _search_cache_cleanup_loop(db: Database) -> None:
             await db.prune_notifications(utcnow() - timedelta(days=7))
         except Exception:  # noqa: BLE001 - an error here must not stop the loop
             logger.exception("Cache cleanup failed")
+
+
+async def _wav_purge_loop(recorder: RecorderService) -> None:
+    """Periodically purge raw .wav files older than retention policy (e.g. 7 days)."""
+    while True:
+        try:
+            await recorder.purge_stale_wavs()
+        except Exception:
+            logger.exception("WAV retention purge error")
+        await asyncio.sleep(3600 * 6)  # run every 6 hours
 
 
 async def _lavalink_watchdog(app: FastAPI) -> None:

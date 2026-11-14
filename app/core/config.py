@@ -55,6 +55,8 @@ class Config:
     # Dump raw DAVE frames and their decryption results next to each
     # recording (dave_pre_*.bin / dave_post_*.bin) for offline analysis.
     record_debug: bool = False
+    # Number of days to keep heavy raw .wav files before purging them (keeps .opus intact)
+    wav_retention_days: int = 7
 
 
 def load_config() -> Config:
@@ -97,6 +99,7 @@ def load_config() -> Config:
         transcribe_threads=int(os.getenv("TRANSCRIBE_THREADS", "2")),
         recorder_bot_token=os.getenv("RECORDER_BOT_TOKEN", ""),
         record_debug=os.getenv("RECORD_DEBUG", "").lower() in ("1", "true", "yes"),
+        wav_retention_days=int(os.getenv("WAV_RETENTION_DAYS", "7")),
     )
 
 

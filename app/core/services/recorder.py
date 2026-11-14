@@ -168,6 +168,25 @@ class RecordingError(Exception):
     """User-facing recording failure."""
 
 
+def audio_to_whisper_array(path: Path) -> np.ndarray:
+    """Load audio file (WAV or Opus) as mono 16kHz float32 for Whisper."""
+    if path.suffix.lower() == ".wav":
+        return wav_to_whisper_array(path)
+    # If WAV has been purged, decode directly from .opus via ffmpeg
+    if not shutil.which("ffmpeg"):
+        raise RecordingError("ffmpeg is required to decode opus audio")
+    cmd = ["ffmpeg", "-nostdin", "-threads", "1", "-i", str(path), "-f", "f32le", "-ac", "1", "-ar", "16000", "-"]
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if res.returncode != 0 or not res.stdout:
+        return np.zeros(0, dtype=np.float32)
+    audio = np.frombuffer(res.stdout, dtype=np.float32).copy()
+    audio = audio - float(np.mean(audio))
+    peak = float(np.max(np.abs(audio)))
+    if peak > 1e-4:
+        audio = (audio / peak * 0.90).astype(np.float32)
+    return audio
+
+
 def wav_to_whisper_array(path: Path) -> np.ndarray:
     """Load a per-speaker wav (48kHz stereo s16le) as mono 16kHz float32."""
     with wave.open(str(path), "rb") as wf:
@@ -711,11 +730,11 @@ class RecorderService:
         prompt: str | None = None,
         language: str | None = None,
     ) -> dict[str, Any]:
+        if not await self.db.claim_recording_for_transcription(recording_id, guild_id):
+            raise RecordingError("Recording is currently active or being transcribed.")
         row = await self.db.get_recording(recording_id, guild_id)
         if row is None:
             raise RecordingError("Recording not found.")
-        if row["status"] in ("recording", "transcribing", "queued"):
-            raise RecordingError("Recording is currently active or being transcribed.")
 
         session_dir = Path(self.config.recordings_dir) / str(guild_id) / str(recording_id)
         if not session_dir.exists():
@@ -731,12 +750,19 @@ class RecorderService:
             row = await self.db.get_recording(recording_id, guild_id)
 
         speaker_files = {}
-        for wav in session_dir.glob("*.wav"):
+        # Look for .wav files first, then fall back to .opus
+        for audio_file in sorted(session_dir.glob("*.wav")) + sorted(session_dir.glob("*.opus")):
             try:
-                uid = int(wav.stem)
-                speaker_files[uid] = wav
+                if audio_file.stem == "mixed":
+                    continue
+                uid = int(audio_file.stem)
+                if uid not in speaker_files:
+                    speaker_files[uid] = audio_file
             except ValueError:
                 pass
+
+        if not speaker_files:
+            raise RecordingError("No speaker audio files found on disk.")
 
         session = RecordingSession(
             recording_id=recording_id,
@@ -749,7 +775,6 @@ class RecorderService:
             language=row.get("language", "") or "",
         )
 
-        await self.db.update_recording_status(recording_id, "queued")
         self._enqueue(session)
         return await self.db.get_recording(recording_id, guild_id)
 
@@ -808,6 +833,43 @@ class RecorderService:
                 except RecordingError:
                     pass
                 return
+
+    async def purge_stale_wavs(self) -> int:
+        """Purge raw .wav files older than wav_retention_days where .opus exists.
+
+        Saves ~95% disk space on long calls while preserving audio in opus format.
+        """
+        days = getattr(self.config, "wav_retention_days", 7)
+        if days <= 0:
+            return 0
+        cutoff = time.time() - (days * 86400)
+        purged = 0
+        root = Path(self.config.recordings_dir)
+        if not root.is_dir():
+            return 0
+        try:
+            for guild_dir in root.iterdir():
+                if not guild_dir.is_dir():
+                    continue
+                for rec_dir in guild_dir.iterdir():
+                    if not rec_dir.is_dir():
+                        continue
+                    # Only purge WAVs if mixed.opus or speaker .opus exist
+                    has_opus = (rec_dir / "mixed.opus").is_file() or any(rec_dir.glob("*.opus"))
+                    if not has_opus:
+                        continue
+                    for wav in rec_dir.glob("*.wav"):
+                        try:
+                            if wav.stat().st_mtime < cutoff:
+                                wav.unlink(missing_ok=True)
+                                purged += 1
+                        except OSError:
+                            pass
+            if purged:
+                logger.info("Purged %d stale raw .wav files older than %d days", purged, days)
+        except Exception:
+            logger.exception("Failed to purge stale .wav files")
+        return purged
 
     # --- transcription queue ---
 
@@ -944,7 +1006,7 @@ class RecorderService:
                 for uid, path in session.speaker_files.items():
                     if path.is_file() and path.stat().st_size > 44:
                         try:
-                            spk_audio = await asyncio.to_thread(wav_to_whisper_array, path)
+                            spk_audio = await asyncio.to_thread(audio_to_whisper_array, path)
                             spk_l = await asyncio.to_thread(detect_speech_language, spk_audio, model, "ru")
                             speaker_langs[uid] = spk_l
                         except Exception:
@@ -988,7 +1050,7 @@ class RecorderService:
                 for uid, path in session.speaker_files.items():
                     if not path.exists() or path.stat().st_size <= 44:
                         continue
-                    audio = await asyncio.to_thread(wav_to_whisper_array, path)
+                    audio = await asyncio.to_thread(audio_to_whisper_array, path)
                     if len(audio) < WHISPER_RATE // 2:  # shorter than 0.5s
                         continue
                     raw_segments = await asyncio.to_thread(_run, audio, speaker_langs.get(uid))

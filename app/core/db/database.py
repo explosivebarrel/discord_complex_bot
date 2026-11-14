@@ -1123,6 +1123,26 @@ class Database:
             await session.commit()
             return self._recording_dict(row)
 
+    async def claim_recording_for_transcription(
+        self, recording_id: int, guild_id: int
+    ) -> bool:
+        """Atomically claim recording to status 'queued' if not already processing."""
+        from sqlalchemy import update
+
+        async with self.session_factory() as session:
+            stmt = (
+                update(VoiceRecording)
+                .where(
+                    VoiceRecording.id == recording_id,
+                    VoiceRecording.guild_id == guild_id,
+                    VoiceRecording.status.notin_(["queued", "transcribing", "recording"]),
+                )
+                .values(status="queued")
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
     async def update_recording_status(
         self, recording_id: int, status: str, error: str = "", title: str | None = None
     ) -> None:
